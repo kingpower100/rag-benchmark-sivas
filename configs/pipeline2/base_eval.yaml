@@ -2,17 +2,17 @@ evaluation:
   eval_run_id: "eval_base"
   output_dir: "data/eval/runs/pipeline2"
 inputs:
-  rag_outputs:
-    - "data/runs/pipeline1/exp_001_fixed512_bge_qwen25_7b/results.jsonl"
+  rag_outputs: []
   qa_path: "data/raw/qa_test.jsonl"
   gold_contexts_path: "data/raw/ground_truth_contexts.jsonl"
 retrieval:
   k: 5
+  ks: [1, 3, 5]
 answer_quality:
   enable_numeric_accuracy: true
-optional_metrics:
-  enable_ragas: false
-  enable_llm_judge: false
+leaderboard:
+  sort_metric: "mean_recall_at_5"
+  sort_ascending: false
 runtime:
   overwrite: true
   save_csv: true

@@ -10,6 +10,7 @@ def load_pipeline_config_payload(config_path: str, validate_unique_experiment_id
     config_file = Path(config_path).resolve()
     payload = _load_with_extends(config_file)
     if validate_unique_experiment_id:
+        _validate_experiment_id_matches_config_name(config_file, payload)
         _validate_unique_experiment_id(config_file, payload)
     return payload
 
@@ -55,3 +56,14 @@ def _validate_unique_experiment_id(config_file: Path, payload: dict[str, Any]) -
     if len(same_ids) > 1:
         files = ", ".join(p.name for p in same_ids)
         raise ValueError(f"Duplicate experiment_id '{experiment_id}' found in configs/pipeline1/experiments: {files}")
+
+
+def _validate_experiment_id_matches_config_name(config_file: Path, payload: dict[str, Any]) -> None:
+    exp = payload.get("experiment") if isinstance(payload, dict) else None
+    experiment_id = exp.get("experiment_id") if isinstance(exp, dict) else None
+    if not experiment_id or config_file.parent.name != "experiments":
+        return
+    if config_file.stem != experiment_id:
+        raise ValueError(
+            f"experiment.experiment_id '{experiment_id}' must match config filename stem '{config_file.stem}'"
+        )

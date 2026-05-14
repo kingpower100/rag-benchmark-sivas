@@ -7,9 +7,10 @@ import time
 import subprocess
 from pathlib import Path
 
-from src.pipeline1.chunking.fixed_token_chunker import FixedTokenChunker
-from src.pipeline1.chunking.fixed_word_chunker import FixedWordChunker
-from src.pipeline1.chunking.sentence_chunker import SentenceChunker
+from src.pipeline1.chunking.fixed_token_chunker import FIXED_TOKEN_CHUNKER_VERSION, FixedTokenChunker
+from src.pipeline1.chunking.fixed_word_chunker import FIXED_WORD_CHUNKER_VERSION, FixedWordChunker
+from src.pipeline1.chunking.sentence_chunker import SENTENCE_CHUNKER_VERSION, SENTENCE_SPLITTER_VERSION, SentenceChunker
+from src.pipeline1.chunking.table_aware_chunker import TABLE_AWARE_CHUNKER_VERSION, TableAwareChunker
 from src.pipeline1.embedding.cache import EmbeddingCache
 from src.pipeline1.embedding.factory import build_embedder
 from src.pipeline1.generation.cost_estimator import estimate_cost
@@ -54,15 +55,24 @@ def run_pipeline(config_path: str) -> Path:
     if preflight_errors:
         raise RuntimeError("; ".join(preflight_errors))
     docs_path = project_root / cfg.data.documents_path
-    qa_path = project_root / cfg.data.qa_test_path
+    questions_path = project_root / cfg.data.questions_path
     print("[3/10] Loading documents")
-    docs = JsonlReader.read_documents(str(docs_path), require_context_id=True)
+    docs = JsonlReader.read_documents(
+        str(docs_path),
+        require_context_id=True,
+        text_field=cfg.data.document_text_field,
+        allow_text_fallback=cfg.data.allow_document_text_fallback,
+    )
 
     cache_dir = project_root / "data" / "processed"
+    chunker_versions = _chunker_versions(cfg)
     chunks_key = stable_hash_dict(
         {
             "documents_sha256": file_sha256(docs_path),
+            "document_text_field": cfg.data.document_text_field,
+            "allow_document_text_fallback": cfg.data.allow_document_text_fallback,
             "chunking": cfg.chunking.model_dump(),
+            "chunker_versions": chunker_versions,
         }
     )
     chunks_path = cache_dir / "chunks" / f"{chunks_key}.jsonl"
@@ -108,8 +118,16 @@ def run_pipeline(config_path: str) -> Path:
         logger.info("Built FAISS index: %s", index_path)
 
     print("[7/10] Loading questions")
-    queries = list(JsonlReader.iter_queries(str(qa_path), cfg.data.question_id_field, cfg.data.question_field, logger))
-    _log_run_info(logger, cfg, docs_count=len(docs), chunk_count=len(chunks), question_count=len(queries), qa_path=qa_path)
+    queries = list(
+        JsonlReader.iter_queries(
+            str(questions_path),
+            cfg.data.question_id_field,
+            cfg.data.question_field,
+            logger,
+            cfg.data.allow_unsafe_query_fields,
+        )
+    )
+    _log_run_info(logger, cfg, docs_count=len(docs), chunk_count=len(chunks), question_count=len(queries), questions_path=questions_path)
 
     retriever = build_retriever(cfg.retrieval, embedder, index, chunks)
     reranker = CrossEncoderReranker(cfg.reranker.model_name) if cfg.reranker.enabled and cfg.reranker.model_name else None
@@ -132,15 +150,17 @@ def run_pipeline(config_path: str) -> Path:
                 len(pending_queries),
             )
             retrieval_start = time.perf_counter()
-            if reranker is None:
-                raw_retrieved = retriever.retrieve(query.question, cfg.retrieval.fetch_k)
-                reranker_used = False
-            else:
-                candidates = retriever.retrieve(query.question, cfg.retrieval.fetch_k)
-                raw_retrieved = reranker.rerank(query.question, candidates, cfg.retrieval.fetch_k)
-                reranker_used = True
-            retrieved = dedupe_retrieval_by_original_context_id(raw_retrieved, cfg.retrieval.top_k)
+            raw_retrieved, retrieved, retrieval_warnings, reranker_used = retrieve_top_k_unique_contexts(
+                query.question,
+                retriever,
+                reranker,
+                cfg.retrieval.top_k,
+                cfg.retrieval.fetch_k,
+                max_candidates=len(chunks),
+            )
             retrieval_time_ms = (time.perf_counter() - retrieval_start) * 1000
+            for warning in retrieval_warnings:
+                logger.warning("row_retrieval_warning question_id=%s warning=%s", query.question_id, warning)
             logger.info(
                 "row_retrieved question_id=%s raw_candidates=%s unique_final_contexts=%s scores=%s retrieval_time_ms=%.2f",
                 query.question_id,
@@ -149,10 +169,10 @@ def run_pipeline(config_path: str) -> Path:
                 len([item.score for item in retrieved]),
                 retrieval_time_ms,
             )
-            retrieval_rows.append((query, retrieved, retrieval_time_ms, reranker_used))
+            retrieval_rows.append((query, retrieved, retrieval_time_ms, reranker_used, retrieval_warnings))
 
         print("[9/10] Generating answers")
-        for index, (query, retrieved, retrieval_time_ms, reranker_used) in enumerate(
+        for index, (query, retrieved, retrieval_time_ms, reranker_used, retrieval_warnings) in enumerate(
             tqdm(retrieval_rows, desc="Generating answers", unit="question"), start=1
         ):
             prompt_contexts = dedupe_prompt_contexts(retrieved)
@@ -199,9 +219,15 @@ def run_pipeline(config_path: str) -> Path:
                 retrieved_chunk_ids=[item.chunk_id for item in retrieved],
                 retrieved_original_context_ids=[item.original_context_id for item in retrieved],
                 retrieved_context_ids=[item.original_context_id for item in retrieved],
+                retrieved_chunk_units=[item.chunk_unit for item in retrieved],
                 retrieved_chunk_texts=[item.text for item in retrieved],
                 retrieved_context_texts=[item.text for item in retrieved],
                 retrieval_scores=[item.score for item in retrieved],
+                dense_scores=[item.dense_score for item in retrieved],
+                rerank_scores=[item.rerank_score for item in retrieved],
+                ranking_score_type="rerank_score" if reranker_used else "dense_score",
+                retrieved_unique_count=len({item.original_context_id for item in retrieved}),
+                retrieval_warnings=retrieval_warnings,
                 top_k=cfg.retrieval.top_k,
                 chunking_strategy=cfg.chunking.strategy,
                 chunk_size=cfg.chunking.chunk_size,
@@ -250,10 +276,18 @@ def run_pipeline(config_path: str) -> Path:
             "data_hashes": {
                 "documents_path": str(docs_path),
                 "documents_sha256": file_sha256(docs_path),
-                "questions_path": str(qa_path),
-                "questions_sha256": file_sha256(qa_path),
+                "questions_path": str(questions_path),
+                "questions_sha256": file_sha256(questions_path),
             },
             "cache_keys": {"chunks": chunks_key, "embeddings": embeddings_key, "index": index_key},
+            "cache_artifact_paths": {
+                "chunks": str(chunks_path),
+                "embeddings": str(embeddings_path),
+                "embeddings_meta": str(embeddings_path.with_suffix(embeddings_path.suffix + ".meta.json")),
+                "index": str(index_path),
+            },
+            "chunker_versions": chunker_versions,
+            "chunk_units": _chunk_unit_counts(chunks),
             "output_row_counts": output_counts,
             "run_stats": {"n_documents": len(docs), "n_queries": len(queries), "attempted": attempted, "written": written},
             "pipeline_version": "0.1.0",
@@ -279,13 +313,42 @@ def dedupe_retrieval_by_original_context_id(items: list, top_k: int) -> list:
     return unique
 
 
+def retrieve_top_k_unique_contexts(
+    question: str,
+    retriever,
+    reranker,
+    top_k: int,
+    fetch_k: int,
+    max_candidates: int,
+) -> tuple[list, list, list[str], bool]:
+    candidate_k = max(fetch_k, top_k)
+    raw_retrieved = []
+    retrieved = []
+    reranker_used = reranker is not None
+    while True:
+        dense_candidates = retriever.retrieve(question, candidate_k)
+        raw_retrieved = (
+            reranker.rerank(question, dense_candidates, candidate_k) if reranker is not None else dense_candidates
+        )
+        retrieved = dedupe_retrieval_by_original_context_id(raw_retrieved, top_k)
+        if len(retrieved) >= top_k or candidate_k >= max_candidates:
+            break
+        candidate_k = min(max_candidates, max(candidate_k + 1, candidate_k * 2))
+    warnings = []
+    if len(retrieved) < top_k:
+        warnings.append(
+            f"Only {len(retrieved)} unique original contexts were available after deduplication; requested top_k={top_k}."
+        )
+    return raw_retrieved, retrieved, warnings, reranker_used
+
+
 def _log_run_info(
     logger,
     cfg: PipelineConfig,
     docs_count: int,
     chunk_count: int | None,
     question_count: int,
-    qa_path: Path,
+    questions_path: Path,
 ) -> None:
     reranker_state = "enabled" if cfg.reranker.enabled else "disabled"
     logger.info("experiment_id=%s", cfg.experiment.experiment_id)
@@ -300,7 +363,7 @@ def _log_run_info(
     logger.info("reranker=%s", reranker_state)
     if cfg.reranker.enabled and cfg.reranker.model_name:
         logger.info("reranker_model=%s", cfg.reranker.model_name)
-    logger.info("question_input_path=%s", qa_path)
+    logger.info("question_input_path=%s", questions_path)
 
 
 def _project_root() -> Path:
@@ -309,11 +372,41 @@ def _project_root() -> Path:
 
 def _build_chunker(cfg: PipelineConfig):
     if cfg.chunking.strategy == "fixed_token":
-        return FixedTokenChunker(cfg.chunking.chunk_size, cfg.chunking.chunk_overlap, cfg.chunking.tokenizer_name)
+        return FixedTokenChunker(
+            cfg.chunking.chunk_size,
+            cfg.chunking.chunk_overlap,
+            cfg.chunking.tokenizer_name,
+            cfg.chunking.allow_word_fallback,
+        )
     if cfg.chunking.strategy == "fixed_word":
         return FixedWordChunker(cfg.chunking.chunk_size, cfg.chunking.chunk_overlap)
-    print("WARNING: chunking.strategy='sentence' currently uses whitespace word windows; it is not true sentence-aware.")
-    return SentenceChunker(cfg.chunking.chunk_size, cfg.chunking.chunk_overlap)
+    if cfg.chunking.strategy == "sentence":
+        print("Using sentence-aware chunking with regex sentence boundaries and full-sentence overlap.")
+        return SentenceChunker(cfg.chunking.chunk_size, cfg.chunking.chunk_overlap)
+    print("Using table-aware chunking that keeps markdown tables intact when possible.")
+    return TableAwareChunker(cfg.chunking.chunk_size, cfg.chunking.chunk_overlap)
+
+
+def _chunker_versions(cfg: PipelineConfig) -> dict[str, str]:
+    versions = {"chunker_implementation": ""}
+    if cfg.chunking.strategy == "fixed_token":
+        versions["chunker_implementation"] = FIXED_TOKEN_CHUNKER_VERSION
+    elif cfg.chunking.strategy == "fixed_word":
+        versions["chunker_implementation"] = FIXED_WORD_CHUNKER_VERSION
+    elif cfg.chunking.strategy == "sentence":
+        versions["chunker_implementation"] = SENTENCE_CHUNKER_VERSION
+        versions["sentence_splitter"] = SENTENCE_SPLITTER_VERSION
+    else:
+        versions["chunker_implementation"] = TABLE_AWARE_CHUNKER_VERSION
+    return versions
+
+
+def _chunk_unit_counts(chunks: list[ChunkRecord]) -> dict[str, int]:
+    counts: dict[str, int] = {}
+    for chunk in chunks:
+        unit = str(chunk.metadata.get("chunk_unit") or "unknown")
+        counts[unit] = counts.get(unit, 0) + 1
+    return counts
 
 
 def _load_chunks(path: Path) -> list[ChunkRecord] | None:

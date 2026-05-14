@@ -5,10 +5,11 @@ def test_single_gold_hit_recall_precision_and_mrr_case_a():
     metrics = compute_retrieval_metrics(["A", "B", "C"], ["A"], k=3)
 
     assert metrics == {
+        "duplicate_context_rate": 0.0,
         "hit_at_3": 1.0,
         "recall_at_3": 1.0,
-        "precision_at_3": 1 / 3,
         "mrr_at_3": 1.0,
+        "context_precision_at_3": 1 / 3,
     }
 
 
@@ -16,10 +17,11 @@ def test_multi_gold_full_recall_with_second_rank_first_hit_case_b():
     metrics = compute_retrieval_metrics(["X", "A", "B"], ["A", "B"], k=3)
 
     assert metrics == {
+        "duplicate_context_rate": 0.0,
         "hit_at_3": 1.0,
         "recall_at_3": 1.0,
-        "precision_at_3": 2 / 3,
         "mrr_at_3": 1 / 2,
+        "context_precision_at_3": 2 / 3,
     }
 
 
@@ -27,10 +29,11 @@ def test_multi_gold_partial_recall_case_c():
     metrics = compute_retrieval_metrics(["X", "A"], ["A", "B"], k=2)
 
     assert metrics == {
+        "duplicate_context_rate": 0.0,
         "hit_at_2": 1.0,
         "recall_at_2": 0.5,
-        "precision_at_2": 0.5,
         "mrr_at_2": 1 / 2,
+        "context_precision_at_2": 0.5,
     }
 
 
@@ -38,10 +41,11 @@ def test_no_overlap_case_d():
     metrics = compute_retrieval_metrics(["X", "Y"], ["A", "B"], k=2)
 
     assert metrics == {
+        "duplicate_context_rate": 0.0,
         "hit_at_2": 0.0,
         "recall_at_2": 0.0,
-        "precision_at_2": 0.0,
         "mrr_at_2": 0.0,
+        "context_precision_at_2": 0.0,
     }
 
 
@@ -49,17 +53,18 @@ def test_retrieval_metric_formulas_at_dynamic_k():
     metrics = compute_retrieval_metrics(["ctx_a", "ctx_b", "ctx_c"], ["ctx_b", "ctx_x"], k=5)
 
     assert metrics == {
+        "duplicate_context_rate": 0.0,
         "hit_at_5": 1.0,
         "recall_at_5": 0.5,
-        "precision_at_5": 1 / 3,
         "mrr_at_5": 0.5,
+        "context_precision_at_5": 1 / 5,
     }
 
 
 def test_retrieval_metric_names_use_configured_k():
     metrics = compute_retrieval_metrics(["ctx_a", "ctx_b"], ["ctx_c"], k=2)
 
-    assert set(metrics) == {"hit_at_2", "recall_at_2", "precision_at_2", "mrr_at_2"}
+    assert set(metrics) == {"duplicate_context_rate", "hit_at_2", "recall_at_2", "context_precision_at_2", "mrr_at_2"}
     assert all(value == 0.0 for value in metrics.values())
 
 
@@ -68,7 +73,7 @@ def test_recall_is_none_when_no_gold_contexts():
 
     assert metrics["hit_at_5"] == 0.0
     assert metrics["recall_at_5"] is None
-    assert metrics["precision_at_5"] == 0.0
+    assert metrics["context_precision_at_5"] == 0.0
     assert metrics["mrr_at_5"] == 0.0
 
 
@@ -77,5 +82,19 @@ def test_retrieved_ids_are_deduplicated_after_top_k():
 
     assert metrics["hit_at_3"] == 1.0
     assert metrics["recall_at_3"] == 1.0
-    assert metrics["precision_at_3"] == 1.0
+    assert metrics["context_precision_at_3"] == 2 / 3
     assert metrics["mrr_at_3"] == 1.0
+    assert metrics["duplicate_context_rate"] == 1 / 3
+
+
+def test_multi_k_retrieval_metrics_are_emitted():
+    from src.pipeline2.metrics.retrieval_metrics import compute_retrieval_metrics_for_ks
+
+    metrics = compute_retrieval_metrics_for_ks(["A", "B", "C"], ["B"], [1, 3, 5])
+
+    assert metrics["hit_at_1"] == 0.0
+    assert metrics["hit_at_3"] == 1.0
+    assert metrics["hit_at_5"] == 1.0
+    assert metrics["recall_at_3"] == 1.0
+    assert metrics["mrr_at_3"] == 0.5
+    assert metrics["context_precision_at_5"] == 1 / 5

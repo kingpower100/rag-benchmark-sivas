@@ -40,7 +40,7 @@ def test_pipeline1_manifest_contains_reproducibility_fields(tmp_path, monkeypatc
     data_dir = project_root / "data" / "raw"
     data_dir.mkdir(parents=True)
     (data_dir / "documents.jsonl").write_text(
-        '{"context_id":"ctx1","context":"alpha"}\n{"context_id":"ctx2","context":"beta"}\n',
+        '{"context_id":"ctx1","cleaned_context":"alpha"}\n{"context_id":"ctx2","cleaned_context":"beta"}\n',
         encoding="utf-8",
     )
     (data_dir / "questions_only.jsonl").write_text('{"id":"q1","question":"Q?"}\n', encoding="utf-8")
@@ -53,13 +53,17 @@ experiment:
   output_dir: "runs"
 data:
   documents_path: "data/raw/documents.jsonl"
-  qa_test_path: "data/raw/questions_only.jsonl"
+  questions_path: "data/raw/questions_only.jsonl"
   question_id_field: "id"
   question_field: "question"
+  document_text_field: "cleaned_context"
+  allow_document_text_fallback: false
+  allow_unsafe_query_fields: false
 chunking:
   strategy: "fixed_word"
   chunk_size: 10
   chunk_overlap: 0
+  allow_word_fallback: false
 embedding:
   provider: "sentence_transformers"
   model_name: "fake"
@@ -69,8 +73,6 @@ embedding:
 index:
   type: "faiss"
   metric: "cosine"
-  faiss_factory: "Flat"
-  persist_path: "unused"
 retrieval:
   retriever_type: "dense"
   top_k: 1
@@ -107,6 +109,12 @@ runtime:
     assert manifest["config_path"] == str(cfg_path.resolve())
     assert manifest["config_hash"]
     assert manifest["data_hashes"]["documents_sha256"]
+    assert manifest["resolved_config"]["experiment"]["experiment_id"] == "test_exp"
+    assert manifest["cache_artifact_paths"]["chunks"].endswith(".jsonl")
+    assert manifest["cache_artifact_paths"]["embeddings"].endswith(".npy")
+    assert manifest["cache_artifact_paths"]["index"].endswith(".faiss")
+    assert manifest["chunker_versions"]["chunker_implementation"]
+    assert manifest["chunk_units"]["word"] == 2
     assert manifest["output_row_counts"]["results.jsonl"] == 1
     assert manifest["start_timestamp_utc"]
     assert manifest["end_timestamp_utc"]

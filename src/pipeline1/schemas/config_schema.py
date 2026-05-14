@@ -1,21 +1,28 @@
 from typing import Literal, Optional
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator
 
 from src.pipeline1.config_loader import load_pipeline_config_payload
 
 
-class ExperimentConfig(BaseModel):
+class StrictConfigModel(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+
+class ExperimentConfig(StrictConfigModel):
     experiment_id: str
     random_seed: int = 42
     output_dir: str
 
 
-class DataConfig(BaseModel):
+class DataConfig(StrictConfigModel):
     documents_path: str
-    qa_test_path: str
+    questions_path: str = Field(validation_alias=AliasChoices("questions_path", "qa_test_path"))
     question_field: str = "question"
     question_id_field: str = "question_id"
+    document_text_field: str = "cleaned_context"
+    allow_document_text_fallback: bool = False
+    allow_unsafe_query_fields: bool = False
     use_ground_truth_contexts: bool = False
     use_gold_answers: bool = False
 
@@ -27,14 +34,15 @@ class DataConfig(BaseModel):
         return value
 
 
-class ChunkingConfig(BaseModel):
-    strategy: Literal["fixed_token", "fixed_word", "sentence"]
+class ChunkingConfig(StrictConfigModel):
+    strategy: Literal["fixed_token", "fixed_word", "sentence", "table_aware"]
     chunk_size: int = Field(gt=0)
     chunk_overlap: int = Field(ge=0)
     tokenizer_name: str = "cl100k_base"
+    allow_word_fallback: bool = False
 
 
-class EmbeddingConfig(BaseModel):
+class EmbeddingConfig(StrictConfigModel):
     provider: Literal["sentence_transformers"]
     model_name: str
     normalize_embeddings: bool = True
@@ -42,20 +50,18 @@ class EmbeddingConfig(BaseModel):
     device: str = "cpu"
 
 
-class IndexConfig(BaseModel):
+class IndexConfig(StrictConfigModel):
     type: Literal["faiss"]
     metric: Literal["cosine", "l2"] = "cosine"
-    faiss_factory: str = "Flat"
-    persist_path: str
 
 
-class RetrievalConfig(BaseModel):
+class RetrievalConfig(StrictConfigModel):
     retriever_type: Literal["dense"] = "dense"
     top_k: int = Field(gt=0)
     fetch_k: int = Field(gt=0)
 
 
-class RerankerConfig(BaseModel):
+class RerankerConfig(StrictConfigModel):
     enabled: bool = False
     model_name: Optional[str] = None
 
@@ -67,7 +73,7 @@ class RerankerConfig(BaseModel):
         return value
 
 
-class GenerationConfig(BaseModel):
+class GenerationConfig(StrictConfigModel):
     provider: Literal["ollama"]
     model_name: str
     base_url: str = "http://localhost:11434"
@@ -77,25 +83,24 @@ class GenerationConfig(BaseModel):
     system_prompt: str
 
 
-class PricingConfig(BaseModel):
+class PricingConfig(StrictConfigModel):
     input_per_1k_tokens_usd: float = 0.0
     output_per_1k_tokens_usd: float = 0.0
 
 
-class TelemetryConfig(BaseModel):
+class TelemetryConfig(StrictConfigModel):
     estimate_cost: bool = True
     pricing: PricingConfig = PricingConfig()
 
 
-class RuntimeConfig(BaseModel):
-    num_workers: int = 1
+class RuntimeConfig(StrictConfigModel):
     save_csv: bool = True
     log_level: str = "INFO"
     resume: bool = True
     overwrite: bool = False
 
 
-class PipelineConfig(BaseModel):
+class PipelineConfig(StrictConfigModel):
     experiment: ExperimentConfig
     data: DataConfig
     chunking: ChunkingConfig

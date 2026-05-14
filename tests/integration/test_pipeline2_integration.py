@@ -33,7 +33,11 @@ def test_pipeline2_writes_final_metric_outputs():
                     "experiment_id": "exp",
                     "generated_answer": "100",
                     "retrieved_original_context_ids": ["c2", "c1"],
+                    "retrieval_time_ms": 5,
+                    "generation_time_ms": 15,
                     "total_latency_ms": 20,
+                    "input_tokens": 6,
+                    "output_tokens": 2,
                     "total_tokens": 8,
                     "estimated_cost": 0.0,
                     "error": None,
@@ -64,16 +68,22 @@ answer_quality:
 
         per_question = (run_dir / "per_question.jsonl").read_text(encoding="utf-8").strip()
         row = json.loads(per_question)
-        assert row["hit_at_2"] == 1.0
-        assert row["recall_at_2"] == 1.0
-        assert row["precision_at_2"] == 0.5
-        assert row["mrr_at_2"] == 0.5
+        assert row["hit_at_1"] == 0.0
+        assert row["hit_at_3"] == 1.0
+        assert row["recall_at_3"] == 1.0
+        assert row["context_precision_at_3"] == 1 / 3
+        assert row["mrr_at_3"] == 0.5
+        assert row["retrieval_time_ms"] == 5
+        assert row["generation_time_ms"] == 15
+        assert row["input_tokens"] == 6
+        assert row["output_tokens"] == 2
         assert row["retrieved_original_context_ids"] == ["c2", "c1"]
         assert row["gold_context_ids"] == ["c1"]
         assert row["id_alignment_ok"] is True
         assert row["numeric_accuracy"] == 1.0
         summary = (run_dir / "summary_by_experiment.csv").read_text(encoding="utf-8")
-        assert "mean_hit_at_2" in summary
+        assert "mean_hit_at_3" in summary
+        assert "mean_context_precision_at_3" in summary
         assert "pipeline_success_rate" in summary
         manifest = json.loads((run_dir / "eval_manifest.json").read_text(encoding="utf-8"))
         assert manifest["config_path"] == str(cfg_path.resolve())

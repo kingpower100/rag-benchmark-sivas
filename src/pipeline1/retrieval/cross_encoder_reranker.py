@@ -13,5 +13,14 @@ class CrossEncoderReranker:
         if not items:
             return []
         scores = self.model.predict([(question, item.text) for item in items])
-        scored = [item.model_copy(update={"score": float(score)}) for item, score in zip(items, scores)]
+        scored = [
+            item.model_copy(
+                update={
+                    "score": float(score),
+                    "rerank_score": float(score),
+                    "ranking_score_type": "rerank_score",
+                }
+            )
+            for item, score in zip(items, scores)
+        ]
         return sorted(scored, key=lambda item: item.score, reverse=True)[:top_k]

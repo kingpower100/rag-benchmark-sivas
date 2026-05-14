@@ -25,5 +25,9 @@ class DenseRetriever(BaseRetriever):
                 original_context_id=ch.original_context_id or ch.document_id,
                 text=ch.text,
                 score=float(score),
+                dense_score=float(score),
+                rerank_score=None,
+                ranking_score_type="dense_score",
+                chunk_unit=ch.metadata.get("chunk_unit"),
             ))
         return items[:top_k]

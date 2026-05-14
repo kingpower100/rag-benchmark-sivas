@@ -1,6 +1,0 @@
-extends: "../base_eval.yaml"
-evaluation:
-  eval_run_id: "eval_exp_001_qwen25_7b"
-inputs:
-  rag_outputs:
-    - "data/runs/pipeline1/exp_001_fixed512_bge_qwen25_7b/results.jsonl"

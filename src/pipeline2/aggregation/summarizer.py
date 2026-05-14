@@ -21,21 +21,46 @@ def summarize_by_experiment(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
         }
         for col in metric_cols:
             summary[f"mean_{col}"] = _mean([row.get(col) for row in successful_rows if row.get(col) is not None])
-        for col in ("numeric_accuracy",):
+        for col in ("numeric_accuracy", "answer_coverage_rate"):
             summary[f"mean_{col}"] = _mean([row.get(col) for row in successful_rows if row.get(col) is not None])
-        for col in ("total_latency_ms", "total_tokens", "estimated_cost"):
+        for col in (
+            "duplicate_context_rate",
+            "retrieval_time_ms",
+            "generation_time_ms",
+            "total_latency_ms",
+            "input_tokens",
+            "output_tokens",
+            "total_tokens",
+            "estimated_cost",
+        ):
             summary[f"mean_{col}"] = _mean([row.get(col) for row in successful_rows if row.get(col) is not None])
         summaries.append(summary)
     return summaries
 
 
+def build_leaderboard(summary_rows: list[dict[str, Any]], sort_metric: str, sort_ascending: bool = False) -> list[dict[str, Any]]:
+    present = [row for row in summary_rows if row.get(sort_metric) is not None]
+    missing = [row for row in summary_rows if row.get(sort_metric) is None]
+    sorted_rows = sorted(
+        present,
+        key=lambda row: (float(row[sort_metric]), str(row.get("experiment_id", ""))),
+        reverse=not sort_ascending,
+    )
+    if not sort_ascending:
+        sorted_rows = sorted(
+            present,
+            key=lambda row: (-float(row[sort_metric]), str(row.get("experiment_id", ""))),
+        )
+    sorted_rows.extend(sorted(missing, key=lambda row: str(row.get("experiment_id", ""))))
+    return [{"rank": index, "sort_metric": sort_metric, **row} for index, row in enumerate(sorted_rows, start=1)]
+
+
 def _dynamic_metric_columns(rows: list[dict[str, Any]]) -> list[str]:
-    prefixes = ("hit_at_", "recall_at_", "precision_at_", "mrr_at_")
+    prefixes = ("hit_at_", "recall_at_", "mrr_at_", "context_precision_at_")
     cols = []
     for prefix in prefixes:
         names = sorted({key for row in rows for key in row if key.startswith(prefix)})
-        if names:
-            cols.append(names[0])
+        cols.extend(names)
     return cols
 
 

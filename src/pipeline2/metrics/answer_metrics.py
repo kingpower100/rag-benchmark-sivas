@@ -41,6 +41,7 @@ def compute_answer_metrics(generated_answer: str, ground_truth_answer: str) -> d
         "absolute_error": _decimal_to_float(match["absolute_error"]),
         "relative_error": _decimal_to_float(match["relative_error"]),
         "answer_match_status": match["answer_match_status"],
+        "answer_coverage_rate": 1.0 if generated.strip() else 0.0,
     }
 
 

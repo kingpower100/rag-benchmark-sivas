@@ -6,12 +6,12 @@ import warnings
 from pathlib import Path
 from typing import Any
 
-from src.pipeline2.aggregation.summarizer import summarize_by_experiment
+from src.pipeline2.aggregation.summarizer import build_leaderboard, summarize_by_experiment
 from src.pipeline2.io.jsonl import read_jsonl, write_jsonl
 from src.pipeline2.io.tabular import write_csv
 from src.pipeline2.metrics.answer_metrics import compute_answer_metrics, resolve_ground_truth_answer
 from src.pipeline2.metrics.efficiency_metrics import compute_efficiency_metrics
-from src.pipeline2.metrics.retrieval_metrics import compute_retrieval_metrics
+from src.pipeline2.metrics.retrieval_metrics import compute_retrieval_metrics_for_ks
 from src.pipeline2.schemas.eval_config_schema import EvalConfig
 from src.pipeline1.utils.hashing import file_sha256
 from tqdm.auto import tqdm
@@ -23,6 +23,13 @@ class EvaluationOrchestrator:
         cfg = EvalConfig.from_yaml(config_path)
         project_root = Path(__file__).resolve().parents[2]
         run_dir = project_root / cfg.evaluation.output_dir / cfg.evaluation.eval_run_id
+        if run_dir.exists() and not cfg.runtime.overwrite:
+            raise FileExistsError(f"Evaluation run already exists and overwrite=false: {run_dir}")
+        if run_dir.exists() and cfg.runtime.overwrite:
+            for name in ("per_question.jsonl", "per_question.csv", "summary_by_experiment.csv", "leaderboard.csv", "eval_manifest.json"):
+                path = run_dir / name
+                if path.exists():
+                    path.unlink()
         run_dir.mkdir(parents=True, exist_ok=True)
 
         print("[1/6] Loading Pipeline 1 outputs")
@@ -45,13 +52,17 @@ class EvaluationOrchestrator:
         per_question = self._evaluate_rows(rag_rows, qa_by_id, gold_by_id, cfg)
         print("[5/6] Aggregating summaries")
         summary = summarize_by_experiment(per_question)
-        k = cfg.retrieval.k
-        per_fields = _per_question_fields(k)
-        summary_fields = _summary_fields(k)
+        leaderboard = build_leaderboard(summary, cfg.leaderboard.sort_metric, cfg.leaderboard.sort_ascending)
+        ks = _metric_ks(cfg)
+        per_fields = _per_question_fields(ks)
+        summary_fields = _summary_fields(ks)
+        leaderboard_fields = ["rank", "sort_metric", *summary_fields]
         print("[6/6] Writing evaluation outputs")
         write_jsonl(run_dir / "per_question.jsonl", per_question)
-        write_csv(run_dir / "per_question.csv", per_question, per_fields)
-        write_csv(run_dir / "summary_by_experiment.csv", summary, summary_fields)
+        if cfg.runtime.save_csv:
+            write_csv(run_dir / "per_question.csv", per_question, per_fields)
+            write_csv(run_dir / "summary_by_experiment.csv", summary, summary_fields)
+            write_csv(run_dir / "leaderboard.csv", leaderboard, leaderboard_fields)
         (run_dir / "eval_manifest.json").write_text(
             json.dumps(
                 _eval_manifest(
@@ -64,6 +75,7 @@ class EvaluationOrchestrator:
                     qa_rows,
                     gold_rows,
                     per_question,
+                    leaderboard,
                     start_time,
                     time.time(),
                 ),
@@ -81,7 +93,19 @@ class EvaluationOrchestrator:
         gold_by_id: dict[str, list[str]],
         cfg: EvalConfig,
     ) -> list[dict[str, Any]]:
-        k = cfg.retrieval.k
+        ks = _metric_ks(cfg)
+        missing_gold_ids = [
+            str(row.get("question_id", ""))
+            for row in rag_rows
+            if not gold_by_id.get(str(row.get("question_id", "")))
+        ]
+        if missing_gold_ids:
+            sample = ", ".join(missing_gold_ids[:20])
+            suffix = "" if len(missing_gold_ids) <= 20 else f", ... ({len(missing_gold_ids)} total)"
+            raise ValueError(
+                "Pipeline 2 requires ground_truth_contexts.jsonl entries for every evaluated Pipeline 1 "
+                f"question_id. Missing {len(missing_gold_ids)} question(s): {sample}{suffix}"
+            )
         evaluated = []
         for row in tqdm(rag_rows, desc="Computing metrics", unit="question"):
             errors = []
@@ -116,8 +140,9 @@ class EvaluationOrchestrator:
                 "retrieved_original_context_ids": retrieved_ids,
                 "gold_context_ids": gold_ids,
                 "id_alignment_ok": id_alignment_ok,
-                **compute_retrieval_metrics(retrieved_ids, gold_ids, k),
+                **compute_retrieval_metrics_for_ks(retrieved_ids, gold_ids, ks),
                 "numeric_accuracy": answer_metrics["numeric_accuracy"],
+                "answer_coverage_rate": answer_metrics["answer_coverage_rate"],
                 "normalized_generated_answer": answer_metrics["normalized_generated_answer"],
                 "normalized_gold_answer": answer_metrics["normalized_gold_answer"],
                 "generated_number": answer_metrics["generated_number"],
@@ -156,7 +181,14 @@ def _gold_by_question(rows: list[dict[str, Any]]) -> dict[str, list[str]]:
     return output
 
 
-def _per_question_fields(k: int) -> list[str]:
+def _metric_ks(cfg: EvalConfig) -> list[int]:
+    return sorted({int(k) for k in (cfg.retrieval.ks or [cfg.retrieval.k]) if int(k) > 0})
+
+
+def _per_question_fields(ks: list[int]) -> list[str]:
+    metric_fields = []
+    for k in ks:
+        metric_fields.extend([f"hit_at_{k}", f"recall_at_{k}", f"mrr_at_{k}", f"context_precision_at_{k}"])
     return [
         "question_id",
         "experiment_id",
@@ -165,11 +197,10 @@ def _per_question_fields(k: int) -> list[str]:
         "retrieved_original_context_ids",
         "gold_context_ids",
         "id_alignment_ok",
-        f"hit_at_{k}",
-        f"recall_at_{k}",
-        f"precision_at_{k}",
-        f"mrr_at_{k}",
+        *metric_fields,
+        "duplicate_context_rate",
         "numeric_accuracy",
+        "answer_coverage_rate",
         "normalized_generated_answer",
         "normalized_gold_answer",
         "generated_number",
@@ -177,7 +208,11 @@ def _per_question_fields(k: int) -> list[str]:
         "absolute_error",
         "relative_error",
         "answer_match_status",
+        "retrieval_time_ms",
+        "generation_time_ms",
         "total_latency_ms",
+        "input_tokens",
+        "output_tokens",
         "total_tokens",
         "estimated_cost",
         "pipeline1_error",
@@ -185,18 +220,31 @@ def _per_question_fields(k: int) -> list[str]:
     ]
 
 
-def _summary_fields(k: int) -> list[str]:
+def _summary_fields(ks: list[int]) -> list[str]:
+    metric_fields = []
+    for k in ks:
+        metric_fields.extend(
+            [
+                f"mean_hit_at_{k}",
+                f"mean_recall_at_{k}",
+                f"mean_mrr_at_{k}",
+                f"mean_context_precision_at_{k}",
+            ]
+        )
     return [
         "experiment_id",
         "n_questions",
         "pipeline_success_rate",
         "eval_success_rate",
-        f"mean_hit_at_{k}",
-        f"mean_recall_at_{k}",
-        f"mean_precision_at_{k}",
-        f"mean_mrr_at_{k}",
+        *metric_fields,
+        "mean_duplicate_context_rate",
         "mean_numeric_accuracy",
+        "mean_answer_coverage_rate",
+        "mean_retrieval_time_ms",
+        "mean_generation_time_ms",
         "mean_total_latency_ms",
+        "mean_input_tokens",
+        "mean_output_tokens",
         "mean_total_tokens",
         "mean_estimated_cost",
     ]
@@ -212,12 +260,13 @@ def _eval_manifest(
     qa_rows: list[dict[str, Any]],
     gold_rows: list[dict[str, Any]],
     per_question: list[dict[str, Any]],
+    leaderboard: list[dict[str, Any]],
     start_time: float,
     end_time: float,
 ) -> dict[str, Any]:
     from datetime import datetime, timezone
 
-    k = cfg.retrieval.k
+    ks = _metric_ks(cfg)
     return {
         "config_path": str(Path(config_path).resolve()),
         "config_hash": file_sha256(config_path),
@@ -233,14 +282,22 @@ def _eval_manifest(
             "gold_context_rows": len(gold_rows),
             "evaluated_rows": len(per_question),
             "pipeline1_failed_rows": sum(1 for row in per_question if row.get("pipeline1_error")),
+            "leaderboard_rows": len(leaderboard),
+        },
+        "leaderboard": {
+            "sort_metric": cfg.leaderboard.sort_metric,
+            "sort_ascending": cfg.leaderboard.sort_ascending,
         },
         "metrics_used": [
-            f"hit_at_{k}",
-            f"recall_at_{k}",
-            f"precision_at_{k}",
-            f"mrr_at_{k}",
+            *[name for k in ks for name in (f"hit_at_{k}", f"recall_at_{k}", f"mrr_at_{k}", f"context_precision_at_{k}")],
+            "duplicate_context_rate",
             "numeric_accuracy",
+            "answer_coverage_rate",
+            "retrieval_time_ms",
+            "generation_time_ms",
             "total_latency_ms",
+            "input_tokens",
+            "output_tokens",
             "total_tokens",
             "estimated_cost",
             "pipeline_success_rate",

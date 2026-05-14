@@ -1,0 +1,33 @@
+from src.pipeline1.chunking.table_aware_chunker import TableAwareChunker
+from src.pipeline1.schemas.document import DocumentRecord
+
+
+def test_table_aware_chunker_keeps_markdown_table_intact():
+    text = """Amounts in millions.
+
+| Year | Revenue | Costs |
+| --- | ---: | ---: |
+| 2020 | 100 | 80 |
+| 2021 | 120 | 70 |
+
+Net income improved after cost reductions."""
+    doc = DocumentRecord(
+        document_id="doc1",
+        original_context_id="ctx1",
+        text=text,
+        metadata={"file_name": "report.md", "subset": "finance", "company_name": "ACME"},
+    )
+
+    chunks = TableAwareChunker(chunk_size=12, chunk_overlap=0).chunk_documents([doc])
+    table_chunks = [chunk for chunk in chunks if "| Year | Revenue | Costs |" in chunk.text]
+
+    assert len(table_chunks) == 1
+    table_chunk = table_chunks[0]
+    assert "Amounts in millions." in table_chunk.text
+    assert "| 2020 | 100 | 80 |" in table_chunk.text
+    assert "| 2021 | 120 | 70 |" in table_chunk.text
+    assert table_chunk.original_context_id == "ctx1"
+    assert table_chunk.metadata["chunk_strategy"] == "table_aware"
+    assert table_chunk.metadata["chunk_unit"] == "table_or_text_block"
+    assert table_chunk.metadata["contains_table"] is True
+    assert table_chunk.metadata["file_name"] == "report.md"

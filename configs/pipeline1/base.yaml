@@ -5,9 +5,12 @@ experiment:
 
 data:
   documents_path: "data/raw/documents.jsonl"
-  qa_test_path: "data/raw/questions_only.jsonl"
+  questions_path: "data/raw/questions_only.jsonl"
   question_id_field: "id"
   question_field: "question"
+  document_text_field: "cleaned_context"
+  allow_document_text_fallback: false
+  allow_unsafe_query_fields: false
   use_ground_truth_contexts: false
   use_gold_answers: false
 
@@ -16,6 +19,7 @@ chunking:
   chunk_size: 512
   chunk_overlap: 64
   tokenizer_name: "cl100k_base"
+  allow_word_fallback: false
 
 embedding:
   provider: "sentence_transformers"
@@ -27,8 +31,6 @@ embedding:
 index:
   type: "faiss"
   metric: "cosine"
-  faiss_factory: "Flat"
-  persist_path: "data/processed/indexes/faiss"
 
 retrieval:
   retriever_type: "dense"
@@ -68,7 +70,6 @@ telemetry:
     output_per_1k_tokens_usd: 0.0
 
 runtime:
-  num_workers: 1
   save_csv: true
   log_level: "INFO"
   resume: false

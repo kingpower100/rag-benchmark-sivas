@@ -5,6 +5,9 @@ from src.pipeline1.utils.ids import make_chunk_id
 from tqdm.auto import tqdm
 
 
+FIXED_WORD_CHUNKER_VERSION = "fixed_word_v1"
+
+
 class FixedWordChunker(BaseChunker):
     def __init__(self, chunk_size: int, chunk_overlap: int) -> None:
         self.chunk_size = chunk_size
@@ -28,7 +31,11 @@ class FixedWordChunker(BaseChunker):
                     text=text,
                     chunk_start=start,
                     chunk_end=end,
-                    metadata=dict(doc.metadata),
+                    metadata={
+                        **dict(doc.metadata),
+                        "chunk_unit": "word",
+                        "chunk_strategy": "fixed_word",
+                    },
                 ))
                 if end == len(words):
                     break

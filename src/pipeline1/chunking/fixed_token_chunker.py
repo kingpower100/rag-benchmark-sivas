@@ -5,12 +5,27 @@ from src.pipeline1.utils.ids import make_chunk_id
 from tqdm.auto import tqdm
 
 
+FIXED_TOKEN_CHUNKER_VERSION = "fixed_token_v2_no_silent_fallback"
+
+
 class FixedTokenChunker(BaseChunker):
-    def __init__(self, chunk_size: int, chunk_overlap: int, tokenizer_name: str = "cl100k_base") -> None:
+    def __init__(
+        self,
+        chunk_size: int,
+        chunk_overlap: int,
+        tokenizer_name: str = "cl100k_base",
+        allow_word_fallback: bool = False,
+    ) -> None:
         self.chunk_size = chunk_size
         self.chunk_overlap = chunk_overlap
         self.tokenizer_name = tokenizer_name
+        self.allow_word_fallback = allow_word_fallback
         self.encoding = self._load_encoding(tokenizer_name)
+        if self.encoding is None and not allow_word_fallback:
+            raise RuntimeError(
+                f"Unable to load tokenizer '{tokenizer_name}' for fixed_token chunking. "
+                "Install tiktoken or set chunking.allow_word_fallback=true to use explicit word fallback."
+            )
 
     def chunk_documents(self, docs: list[DocumentRecord], show_progress: bool = False) -> list[ChunkRecord]:
         chunks: list[ChunkRecord] = []
@@ -33,6 +48,7 @@ class FixedTokenChunker(BaseChunker):
                     metadata={
                         **dict(doc.metadata),
                         "chunk_unit": "token" if self.encoding is not None else "word_fallback",
+                        "chunk_strategy": "fixed_token",
                         "tokenizer_name": self.tokenizer_name,
                     },
                 ))

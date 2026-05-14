@@ -2,45 +2,54 @@ experiment:
   experiment_id: "exp_001_fixed512_bge_qwen25_7b_rerank"
   random_seed: 42
   output_dir: "data/runs/pipeline1"
+
 data:
   documents_path: "data/raw/documents.jsonl"
-  qa_test_path: "data/raw/questions_only.jsonl"
+  questions_path: "data/raw/questions_only.jsonl"
   question_id_field: "id"
   question_field: "question"
+  document_text_field: "cleaned_context"
+  allow_document_text_fallback: false
+  allow_unsafe_query_fields: false
   use_ground_truth_contexts: false
   use_gold_answers: false
+
 chunking:
   strategy: "fixed_token"
   chunk_size: 512
   chunk_overlap: 64
   tokenizer_name: "cl100k_base"
+  allow_word_fallback: false
+
 embedding:
   provider: "sentence_transformers"
   model_name: "BAAI/bge-small-en-v1.5"
   normalize_embeddings: true
-  batch_size: 8
+  batch_size: 64
   device: "cuda"
+
 index:
   type: "faiss"
   metric: "cosine"
-  faiss_factory: "Flat"
-  persist_path: "data/processed/indexes/faiss"
+
 retrieval:
   retriever_type: "dense"
-  top_k: 5
   fetch_k: 20
+  top_k: 5
+
 reranker:
   enabled: true
   model_name: "cross-encoder/ms-marco-MiniLM-L-6-v2"
+
 generation:
   provider: "ollama"
   model_name: "qwen2.5:7b"
   base_url: "http://localhost:11434"
   temperature: 0.0
-  max_tokens: 16
+  max_tokens: 32
   timeout_s: 180
   system_prompt: |
-    You are a financial QA system specialized in numeric extraction.
+    You are a financial question-answering system.
 
     Use ONLY the retrieved context to answer the question.
 
@@ -49,16 +58,17 @@ generation:
     - Do NOT explain your reasoning.
     - Do NOT output full sentences.
     - Do NOT use markdown.
-    - If the answer is numeric, return only the number.
+    - Preserve units if they are part of the answer, such as %, million, billion, $, or shares.
     - Preserve decimals and negative signs.
     - If the answer cannot be found in the context, return EXACTLY: UNKNOWN
+
 telemetry:
   estimate_cost: true
   pricing:
     input_per_1k_tokens_usd: 0.0
     output_per_1k_tokens_usd: 0.0
+
 runtime:
-  num_workers: 1
   save_csv: true
   log_level: "INFO"
   resume: false
