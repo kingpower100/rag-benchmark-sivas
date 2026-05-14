@@ -1,0 +1,18 @@
+extends: "../base_eval.yaml"
+
+evaluation:
+  eval_run_id: "eval_chunking_bge_qwen25_7b_rerank"
+
+inputs:
+  rag_outputs:
+    - "data/runs/pipeline1/exp_001_fixed512_bge_qwen25_7b_rerank/results.jsonl"
+    - "data/runs/pipeline1/exp_002_sentence_bge_qwen25_7b_rerank/results.jsonl"
+    - "data/runs/pipeline1/exp_003_table_aware_bge_qwen25_7b_rerank/results.jsonl"
+    - "data/runs/pipeline1/exp_004_table_aware256_bge_qwen25_7b_rerank/results.jsonl"
+
+retrieval:
+  ks: [1, 3, 5]
+
+leaderboard:
+  sort_metric: "mean_recall_at_5"
+  sort_ascending: false

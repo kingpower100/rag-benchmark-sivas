@@ -1,0 +1,9 @@
+extends: "exp_001_fixed512_bge_qwen25_7b_rerank.yaml"
+
+experiment:
+  experiment_id: "exp_002_sentence_bge_qwen25_7b_rerank"
+
+chunking:
+  strategy: "sentence"
+  chunk_size: 512
+  chunk_overlap: 64

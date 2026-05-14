@@ -20,13 +20,17 @@ pip install -e .
 
 ## Current Configs
 
-Primary Pipeline 1 experiment:
+Pipeline 1 experiments:
 
-- `configs/pipeline1/experiments/exp_001_fixed512_bge_qwen25_7b.yaml`
+- `configs/pipeline1/experiments/exp_001_fixed512_bge_qwen25_7b_rerank.yaml`
+- `configs/pipeline1/experiments/exp_002_sentence_bge_qwen25_7b_rerank.yaml`
+- `configs/pipeline1/experiments/exp_003_table_aware_bge_qwen25_7b_rerank.yaml`
+- `configs/pipeline1/experiments/exp_004_table_aware256_bge_qwen25_7b_rerank.yaml`
 
 Primary Pipeline 2 evaluation:
 
-- `configs/pipeline2/experiments/eval_exp_001_qwen25_7b.yaml`
+- `configs/pipeline2/experiments/eval_exp_001_fixed512_bge_qwen25_7b_rerank.yaml`
+- `configs/pipeline2/experiments/eval_chunking_bge_qwen25_7b_rerank.yaml`
 
 Useful local/server examples:
 
@@ -37,7 +41,7 @@ Useful local/server examples:
 ## Run Pipeline 1
 
 ```bash
-python -m src.pipeline1.main --config configs/pipeline1/experiments/exp_001_fixed512_bge_qwen25_7b.yaml
+python -m src.pipeline1.main --config configs/pipeline1/experiments/exp_001_fixed512_bge_qwen25_7b_rerank.yaml
 ```
 
 Outputs are written under:
@@ -65,7 +69,7 @@ export PIPELINE1_SKIP_OLLAMA_PREFLIGHT=1
 Run evaluation after Pipeline 1 has produced `results.jsonl`:
 
 ```bash
-python -m src.pipeline2.main --config configs/pipeline2/experiments/eval_exp_001_qwen25_7b.yaml
+python -m src.pipeline2.main --config configs/pipeline2/experiments/eval_exp_001_fixed512_bge_qwen25_7b_rerank.yaml
 ```
 
 Outputs are written under:
@@ -88,9 +92,9 @@ RAGAS support is preserved as optional code, but it is not part of the main auto
 
 ```bash
 python scripts/list_configs.py
-python scripts/run_config.py configs/pipeline1/experiments/exp_001_fixed512_bge_qwen25_7b.yaml
-python scripts/compare_runs.py data/eval/runs/pipeline2/eval_exp_001_qwen25_7b/summary_by_experiment.csv
-python scripts/benchmark_pipeline1.py --config configs/pipeline1/experiments/exp_001_fixed512_bge_qwen25_7b.yaml
+python scripts/run_config.py configs/pipeline1/experiments/exp_001_fixed512_bge_qwen25_7b_rerank.yaml
+python scripts/compare_runs.py data/eval/runs/pipeline2/eval_exp_001_fixed512_bge_qwen25_7b_rerank/summary_by_experiment.csv
+python scripts/benchmark_pipeline1.py --config configs/pipeline1/experiments/exp_001_fixed512_bge_qwen25_7b_rerank.yaml
 python scripts/test_ollama.py --base-url http://localhost:11434
 ```
 

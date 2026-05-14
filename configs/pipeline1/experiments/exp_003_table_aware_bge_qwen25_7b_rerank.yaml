@@ -1,0 +1,9 @@
+extends: "exp_001_fixed512_bge_qwen25_7b_rerank.yaml"
+
+experiment:
+  experiment_id: "exp_003_table_aware_bge_qwen25_7b_rerank"
+
+chunking:
+  strategy: "table_aware"
+  chunk_size: 512
+  chunk_overlap: 64

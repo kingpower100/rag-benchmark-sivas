@@ -1,5 +1,10 @@
+from src.pipeline1.chunking.fixed_word_chunker import FixedWordChunker
 from src.pipeline1.chunking.table_aware_chunker import TableAwareChunker
 from src.pipeline1.schemas.document import DocumentRecord
+
+
+def test_table_aware_chunker_does_not_subclass_fixed_word_chunker():
+    assert not issubclass(TableAwareChunker, FixedWordChunker)
 
 
 def test_table_aware_chunker_keeps_markdown_table_intact():
@@ -31,3 +36,27 @@ Net income improved after cost reductions."""
     assert table_chunk.metadata["chunk_unit"] == "table_or_text_block"
     assert table_chunk.metadata["contains_table"] is True
     assert table_chunk.metadata["file_name"] == "report.md"
+
+
+def test_table_aware_chunker_allows_oversized_tables_without_splitting_rows():
+    text = """Before table.
+
+| Metric | 2020 | 2021 | 2022 |
+| --- | ---: | ---: | ---: |
+| Revenue | 100 | 120 | 140 |
+| Cost of revenue | 60 | 70 | 85 |
+| Net income | 10 | 18 | 24 |
+
+After table."""
+    doc = DocumentRecord(document_id="doc2", original_context_id="ctx2", text=text)
+
+    chunks = TableAwareChunker(chunk_size=5, chunk_overlap=0).chunk_documents([doc])
+    table_chunks = [chunk for chunk in chunks if "| Metric | 2020 | 2021 | 2022 |" in chunk.text]
+
+    assert len(table_chunks) == 1
+    table_chunk = table_chunks[0]
+    assert "| Revenue | 100 | 120 | 140 |" in table_chunk.text
+    assert "| Cost of revenue | 60 | 70 | 85 |" in table_chunk.text
+    assert "| Net income | 10 | 18 | 24 |" in table_chunk.text
+    assert table_chunk.metadata["contains_table"] is True
+    assert table_chunk.metadata["oversized_table"] is True
