@@ -36,6 +36,15 @@ retrieval:
   retriever_type: "dense"
   top_k: 3
   fetch_k: 10
+  metadata_boosting:
+    enabled: false
+    company_weight: 0.3
+    year_weight: 0.15
+    symbol_weight: 0.2
+    file_name_weight: 0.0
+  metadata_filtering:
+    enabled: false
+    strict: false
 
 reranker:
   enabled: false
@@ -48,6 +57,7 @@ generation:
   temperature: 0.0
   max_tokens: 16
   timeout_s: 300
+  include_metadata_headers: false
   system_prompt: |
     You are a financial QA system specialized in numeric extraction.
 

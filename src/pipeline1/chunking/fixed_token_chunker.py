@@ -1,6 +1,7 @@
 from src.pipeline1.chunking.base import BaseChunker
 from src.pipeline1.schemas.chunk import ChunkRecord
 from src.pipeline1.schemas.document import DocumentRecord
+from src.pipeline1.metadata import canonical_chunk_metadata
 from src.pipeline1.utils.ids import make_chunk_id
 from tqdm.auto import tqdm
 
@@ -47,6 +48,7 @@ class FixedTokenChunker(BaseChunker):
                     chunk_end=end,
                     metadata={
                         **dict(doc.metadata),
+                        **canonical_chunk_metadata(doc.metadata, doc.original_context_id),
                         "chunk_unit": "token" if self.encoding is not None else "word_fallback",
                         "chunk_strategy": "fixed_token",
                         "tokenizer_name": self.tokenizer_name,

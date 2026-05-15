@@ -15,6 +15,7 @@ class OutputRecord(BaseModel):
     retrieved_context_ids: list[str] = Field(default_factory=list)
     retrieved_chunk_units: list[str | None] = Field(default_factory=list)
     retrieved_chunk_texts: list[str] = Field(default_factory=list)
+    retrieved_chunk_metadata: list[dict] = Field(default_factory=list)
     retrieved_context_texts: list[str]
     retrieval_scores: list[float]
     dense_scores: list[float] = Field(default_factory=list)
@@ -24,6 +25,7 @@ class OutputRecord(BaseModel):
     raw_retrieved_unique_count: int = 0
     raw_duplicate_rate: float | None = None
     retrieval_warnings: list[str] = Field(default_factory=list)
+    query_metadata: dict = Field(default_factory=dict)
     top_k: int
     chunking_strategy: str
     chunk_size: int
@@ -54,6 +56,8 @@ class OutputRecord(BaseModel):
             self.dense_scores = list(self.retrieval_scores)
         if not self.rerank_scores:
             self.rerank_scores = [None] * len(self.retrieved_chunk_ids)
+        if not self.retrieved_chunk_metadata:
+            self.retrieved_chunk_metadata = [{} for _ in self.retrieved_chunk_ids]
         if self.retrieved_unique_count == 0:
             self.retrieved_unique_count = len(set(self.retrieved_original_context_ids))
         if self.raw_retrieved_unique_count == 0 and self.raw_retrieved_original_context_ids:
@@ -68,6 +72,7 @@ class OutputRecord(BaseModel):
             == len(self.retrieved_context_ids)
             == len(self.retrieved_chunk_units)
             == len(self.retrieved_chunk_texts)
+            == len(self.retrieved_chunk_metadata)
             == len(self.retrieved_context_texts)
             == len(self.retrieval_scores)
             == len(self.dense_scores)

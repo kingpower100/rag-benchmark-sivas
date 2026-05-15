@@ -16,9 +16,9 @@ class CrossEncoderReranker:
         scored = [
             item.model_copy(
                 update={
-                    "score": float(score),
+                    "score": float(score) + item.metadata_boost,
                     "rerank_score": float(score),
-                    "ranking_score_type": "rerank_score",
+                    "ranking_score_type": "rerank_score_plus_metadata" if item.metadata_boost else "rerank_score",
                 }
             )
             for item, score in zip(items, scores)

@@ -1,4 +1,4 @@
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 
 class RetrievalItem(BaseModel):
@@ -10,3 +10,5 @@ class RetrievalItem(BaseModel):
     rerank_score: float | None = None
     ranking_score_type: str = "dense_score"
     chunk_unit: str | None = None
+    metadata: dict = Field(default_factory=dict)
+    metadata_boost: float = 0.0

@@ -11,7 +11,7 @@ from src.pipeline2.io.jsonl import read_jsonl, write_jsonl
 from src.pipeline2.io.tabular import write_csv
 from src.pipeline2.metrics.answer_metrics import compute_answer_metrics, resolve_ground_truth_answer
 from src.pipeline2.metrics.efficiency_metrics import compute_efficiency_metrics
-from src.pipeline2.metrics.retrieval_metrics import compute_retrieval_metrics_for_ks
+from src.pipeline2.metrics.retrieval_metrics import compute_metadata_match_metrics, compute_retrieval_metrics_for_ks
 from src.pipeline2.schemas.eval_config_schema import EvalConfig
 from src.pipeline1.utils.hashing import file_sha256
 from tqdm.auto import tqdm
@@ -133,6 +133,10 @@ class EvaluationOrchestrator:
             if raw_retrieved_ids is not None and not isinstance(raw_retrieved_ids, list):
                 raw_retrieved_ids = []
                 errors.append("raw_retrieved_original_context_ids must be a list")
+            retrieved_metadata = row.get("retrieved_chunk_metadata") or []
+            if not isinstance(retrieved_metadata, list):
+                retrieved_metadata = []
+                errors.append("retrieved_chunk_metadata must be a list")
             answer_metrics = compute_answer_metrics(
                 str(row.get("generated_answer", "")),
                 ground_truth,
@@ -151,6 +155,11 @@ class EvaluationOrchestrator:
                 "gold_context_ids": gold_ids,
                 "id_alignment_ok": id_alignment_ok,
                 **compute_retrieval_metrics_for_ks(retrieved_ids, gold_ids, ks, raw_retrieved_ids),
+                **compute_metadata_match_metrics(
+                    str(row.get("question", "")),
+                    retrieved_metadata,
+                    row.get("query_metadata") if isinstance(row.get("query_metadata"), dict) else None,
+                ),
                 "numeric_accuracy": answer_metrics["numeric_accuracy"],
                 "exact_match": answer_metrics["exact_match"],
                 "numeric_parse_success": answer_metrics["numeric_parse_success"],
@@ -216,6 +225,9 @@ def _per_question_fields(ks: list[int]) -> list[str]:
         *metric_fields,
         "duplicate_context_rate",
         "raw_duplicate_rate",
+        "metadata_match_rate",
+        "company_match_rate",
+        "year_match_rate",
         "numeric_accuracy",
         "exact_match",
         "numeric_parse_success",
@@ -262,6 +274,9 @@ def _summary_fields(ks: list[int]) -> list[str]:
         *metric_fields,
         "mean_duplicate_context_rate",
         "mean_raw_duplicate_rate",
+        "mean_metadata_match_rate",
+        "mean_company_match_rate",
+        "mean_year_match_rate",
         "mean_numeric_accuracy",
         "mean_exact_match",
         "mean_relative_error",
@@ -324,6 +339,9 @@ def _eval_manifest(
             *[f"ndcg_at_{k}" for k in ks],
             "duplicate_context_rate",
             "raw_duplicate_rate",
+            "metadata_match_rate",
+            "company_match_rate",
+            "year_match_rate",
             "numeric_accuracy",
             "exact_match",
             "relative_error",

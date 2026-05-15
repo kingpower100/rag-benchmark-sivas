@@ -1,6 +1,7 @@
 from src.pipeline1.chunking.base import BaseChunker
 from src.pipeline1.schemas.chunk import ChunkRecord
 from src.pipeline1.schemas.document import DocumentRecord
+from src.pipeline1.metadata import canonical_chunk_metadata
 from src.pipeline1.utils.ids import make_chunk_id
 from tqdm.auto import tqdm
 
@@ -33,6 +34,7 @@ class FixedWordChunker(BaseChunker):
                     chunk_end=end,
                     metadata={
                         **dict(doc.metadata),
+                        **canonical_chunk_metadata(doc.metadata, doc.original_context_id),
                         "chunk_unit": "word",
                         "chunk_strategy": "fixed_word",
                     },

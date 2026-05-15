@@ -5,6 +5,7 @@ import logging
 
 from src.pipeline1.schemas.document import DocumentRecord
 from src.pipeline1.schemas.query import QueryRecord
+from src.pipeline1.metadata import normalize_metadata
 
 
 class JsonlReader:
@@ -35,15 +36,16 @@ class JsonlReader:
                     text = row.get("context") or row.get("text")
                 if text is None or str(text).strip() == "":
                     raise ValueError(f"Document row {line_number} has no usable document text.")
+                metadata = {
+                    k: v
+                    for k, v in row.items()
+                    if k not in {"document_id", "id", "text", "context", text_field, "context_id", "original_context_id"}
+                }
                 docs.append(DocumentRecord(
                     document_id=str(doc_id),
                     original_context_id=str(context_id) if context_id is not None else None,
                     text=str(text),
-                    metadata={
-                        k: v
-                        for k, v in row.items()
-                        if k not in {"document_id", "id", "text", "context", text_field, "context_id", "original_context_id"}
-                    },
+                    metadata=normalize_metadata(metadata, str(context_id) if context_id is not None else None),
                 ))
         return docs
 

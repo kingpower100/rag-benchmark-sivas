@@ -55,10 +55,25 @@ class IndexConfig(StrictConfigModel):
     metric: Literal["cosine", "l2"] = "cosine"
 
 
+class MetadataBoostingConfig(StrictConfigModel):
+    enabled: bool = False
+    company_weight: float = 0.3
+    year_weight: float = 0.15
+    symbol_weight: float = 0.2
+    file_name_weight: float = 0.0
+
+
+class MetadataFilteringConfig(StrictConfigModel):
+    enabled: bool = False
+    strict: bool = False
+
+
 class RetrievalConfig(StrictConfigModel):
     retriever_type: Literal["dense"] = "dense"
     top_k: int = Field(gt=0)
     fetch_k: int = Field(gt=0)
+    metadata_boosting: MetadataBoostingConfig = Field(default_factory=MetadataBoostingConfig)
+    metadata_filtering: MetadataFilteringConfig = Field(default_factory=MetadataFilteringConfig)
 
 
 class RerankerConfig(StrictConfigModel):
@@ -81,6 +96,7 @@ class GenerationConfig(StrictConfigModel):
     max_tokens: int = Field(default=512, gt=0)
     timeout_s: int = Field(default=90, gt=0)
     system_prompt: str
+    include_metadata_headers: bool = False
 
 
 class PricingConfig(StrictConfigModel):

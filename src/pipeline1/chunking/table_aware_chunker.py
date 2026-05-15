@@ -7,6 +7,7 @@ from tqdm.auto import tqdm
 from src.pipeline1.chunking.base import BaseChunker
 from src.pipeline1.schemas.chunk import ChunkRecord
 from src.pipeline1.schemas.document import DocumentRecord
+from src.pipeline1.metadata import canonical_chunk_metadata
 from src.pipeline1.utils.ids import make_configured_chunk_id
 
 
@@ -62,6 +63,7 @@ class TableAwareChunker(BaseChunker):
                     chunk_end=group[-1].end_line,
                     metadata={
                         **dict(doc.metadata),
+                        **canonical_chunk_metadata(doc.metadata, doc.original_context_id),
                         "doc_id": doc.document_id,
                         "original_context_id": doc.original_context_id,
                         "source_file": doc.metadata.get("source_file") or doc.metadata.get("file_name"),

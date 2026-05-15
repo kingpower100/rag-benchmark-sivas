@@ -184,7 +184,13 @@ def run_pipeline(config_path: str) -> Path:
                 len(retrieved),
                 len(prompt_contexts),
             )
-            prompt = build_prompt(cfg.generation.system_prompt, query.question, prompt_contexts)
+            prompt = build_prompt(
+                cfg.generation.system_prompt,
+                query.question,
+                prompt_contexts,
+                include_metadata_headers=cfg.generation.include_metadata_headers,
+            )
+            query_metadata = retriever.extract_query_metadata(query.question) if hasattr(retriever, "extract_query_metadata") else None
             generation_start = time.perf_counter()
             error = None
             try:
@@ -222,6 +228,7 @@ def run_pipeline(config_path: str) -> Path:
                 retrieved_context_ids=[item.original_context_id for item in retrieved],
                 retrieved_chunk_units=[item.chunk_unit for item in retrieved],
                 retrieved_chunk_texts=[item.text for item in retrieved],
+                retrieved_chunk_metadata=[dict(item.metadata) for item in retrieved],
                 retrieved_context_texts=[item.text for item in retrieved],
                 retrieval_scores=[item.score for item in retrieved],
                 dense_scores=[item.dense_score for item in retrieved],
@@ -231,6 +238,14 @@ def run_pipeline(config_path: str) -> Path:
                 raw_retrieved_unique_count=len({item.original_context_id for item in raw_retrieved}),
                 raw_duplicate_rate=_duplicate_rate([item.original_context_id for item in raw_retrieved]),
                 retrieval_warnings=retrieval_warnings,
+                query_metadata={} if query_metadata is None else {
+                    "company_names": sorted(query_metadata.company_names),
+                    "company_symbols": sorted(query_metadata.company_symbols),
+                    "years": sorted(query_metadata.years),
+                    "report_periods": sorted(query_metadata.report_periods),
+                    "file_names": sorted(query_metadata.file_names),
+                    "source_datasets": sorted(query_metadata.source_datasets),
+                },
                 top_k=cfg.retrieval.top_k,
                 chunking_strategy=cfg.chunking.strategy,
                 chunk_size=cfg.chunking.chunk_size,

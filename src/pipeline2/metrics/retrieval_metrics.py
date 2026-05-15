@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+from src.pipeline1.retrieval.metadata import QueryMetadata, extract_query_metadata, metadata_matches
 
 
 DEFAULT_RETRIEVAL_KS = [1, 3, 5]
@@ -59,6 +60,41 @@ def duplicate_context_rate(retrieved_ids: list[str]) -> float:
     if not ids:
         return 0.0
     return (len(ids) - len(set(ids))) / len(ids)
+
+
+def compute_metadata_match_metrics(
+    question: str,
+    retrieved_metadata: list[dict],
+    query_metadata: dict | None = None,
+) -> dict[str, float | None]:
+    query = _query_metadata_from_payload(query_metadata) if query_metadata else extract_query_metadata(question, retrieved_metadata)
+    company_values = []
+    year_values = []
+    metadata_values = []
+    for metadata in retrieved_metadata:
+        matches = metadata_matches(metadata or {}, query)
+        if matches["company_match"] is not None:
+            company_values.append(float(bool(matches["company_match"])))
+        if matches["year_match"] is not None:
+            year_values.append(float(bool(matches["year_match"])))
+        if matches["metadata_match"] is not None:
+            metadata_values.append(float(bool(matches["metadata_match"])))
+    return {
+        "metadata_match_rate": None if not metadata_values else sum(metadata_values) / len(metadata_values),
+        "company_match_rate": None if not company_values else sum(company_values) / len(company_values),
+        "year_match_rate": None if not year_values else sum(year_values) / len(year_values),
+    }
+
+
+def _query_metadata_from_payload(payload: dict) -> QueryMetadata:
+    return QueryMetadata(
+        company_names=frozenset(payload.get("company_names") or []),
+        company_symbols=frozenset(payload.get("company_symbols") or []),
+        years=frozenset(int(value) for value in (payload.get("years") or [])),
+        report_periods=frozenset(payload.get("report_periods") or []),
+        file_names=frozenset(payload.get("file_names") or []),
+        source_datasets=frozenset(payload.get("source_datasets") or []),
+    )
 
 
 def _ndcg_at_k(ranked: list[str], gold_set: set[str], k: int) -> float:

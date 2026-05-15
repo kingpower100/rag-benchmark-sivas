@@ -44,6 +44,9 @@ def summarize_by_experiment(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
         for col in (
             "duplicate_context_rate",
             "raw_duplicate_rate",
+            "metadata_match_rate",
+            "company_match_rate",
+            "year_match_rate",
             "retrieval_time_ms",
             "generation_time_ms",
             "total_latency_ms",
