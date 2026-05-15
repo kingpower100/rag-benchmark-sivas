@@ -9,9 +9,17 @@ def test_summary_aggregates_final_metrics_and_success_rates():
             "recall_at_3": 0.5,
             "context_precision_at_3": 0.5,
             "mrr_at_3": 1.0,
+            "ndcg_at_3": 0.75,
             "duplicate_context_rate": 0.0,
+            "raw_duplicate_rate": 0.25,
             "numeric_accuracy": 1.0,
+            "exact_match": 1.0,
+            "relative_error": 0.1,
+            "numeric_parse_success": 1.0,
+            "non_empty_answer_rate": 1.0,
             "answer_coverage_rate": 1.0,
+            "abstention_rate": 0.0,
+            "answer_relevancy_score": 0.5,
             "retrieval_time_ms": 40.0,
             "generation_time_ms": 60.0,
             "total_latency_ms": 100.0,
@@ -28,9 +36,17 @@ def test_summary_aggregates_final_metrics_and_success_rates():
             "recall_at_3": 0.0,
             "context_precision_at_3": 0.0,
             "mrr_at_3": 0.0,
+            "ndcg_at_3": 0.0,
             "duplicate_context_rate": 0.0,
+            "raw_duplicate_rate": 0.0,
             "numeric_accuracy": 0.0,
+            "exact_match": 0.0,
+            "relative_error": 1.0,
+            "numeric_parse_success": 0.0,
+            "non_empty_answer_rate": 0.0,
             "answer_coverage_rate": 0.0,
+            "abstention_rate": 1.0,
+            "answer_relevancy_score": 0.0,
             "total_latency_ms": 0.0,
             "total_tokens": 0,
             "estimated_cost": 0.0,
@@ -48,9 +64,18 @@ def test_summary_aggregates_final_metrics_and_success_rates():
     assert summary["mean_recall_at_3"] == 0.5
     assert summary["mean_context_precision_at_3"] == 0.5
     assert summary["mean_mrr_at_3"] == 1.0
+    assert summary["mean_ndcg_at_3"] == 0.75
     assert summary["mean_duplicate_context_rate"] == 0.0
+    assert summary["mean_raw_duplicate_rate"] == 0.25
     assert summary["mean_numeric_accuracy"] == 1.0
+    assert summary["mean_exact_match"] == 1.0
+    assert summary["mean_relative_error"] == 0.1
+    assert summary["median_relative_error"] == 0.1
+    assert summary["numeric_parse_success_rate"] == 1.0
+    assert summary["mean_non_empty_answer_rate"] == 1.0
     assert summary["mean_answer_coverage_rate"] == 1.0
+    assert summary["mean_abstention_rate"] == 0.0
+    assert summary["mean_answer_relevancy"] == 0.5
     assert summary["mean_retrieval_time_ms"] == 40.0
     assert summary["mean_generation_time_ms"] == 60.0
     assert summary["mean_total_latency_ms"] == 100.0
@@ -84,3 +109,14 @@ def test_leaderboard_sorting_supports_ascending_latency():
     leaderboard = build_leaderboard(summary, "mean_total_latency_ms", sort_ascending=True)
 
     assert [row["experiment_id"] for row in leaderboard] == ["fast", "slow", "missing"]
+
+
+def test_leaderboard_supports_new_metric_columns_without_special_cases():
+    summary = [
+        {"experiment_id": "exp_a", "mean_ndcg_at_5": 0.4},
+        {"experiment_id": "exp_b", "mean_ndcg_at_5": 0.8},
+    ]
+
+    leaderboard = build_leaderboard(summary, "mean_ndcg_at_5", sort_ascending=False)
+
+    assert [row["experiment_id"] for row in leaderboard] == ["exp_b", "exp_a"]

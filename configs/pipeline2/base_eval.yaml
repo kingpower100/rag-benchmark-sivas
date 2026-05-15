@@ -10,6 +10,7 @@ retrieval:
   ks: [1, 3, 5]
 answer_quality:
   enable_numeric_accuracy: true
+  abstention_patterns: ["UNKNOWN", "NOT FOUND", "N/A", "CANNOT DETERMINE"]
 leaderboard:
   sort_metric: "mean_recall_at_5"
   sort_ascending: false

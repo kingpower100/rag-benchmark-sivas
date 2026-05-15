@@ -1,4 +1,4 @@
-from src.pipeline1.orchestrator import dedupe_retrieval_by_original_context_id, retrieve_top_k_unique_contexts
+from src.pipeline1.orchestrator import _duplicate_rate, dedupe_retrieval_by_original_context_id, retrieve_top_k_unique_contexts
 from src.pipeline1.retrieval.cross_encoder_reranker import CrossEncoderReranker
 from src.pipeline1.schemas.retrieval import RetrievalItem
 
@@ -61,3 +61,8 @@ def test_reranker_preserves_dense_score_and_adds_rerank_score():
     assert [item.dense_score for item in reranked] == [0.7, 0.8]
     assert [item.rerank_score for item in reranked] == [0.9, 0.1]
     assert all(item.ranking_score_type == "rerank_score" for item in reranked)
+
+
+def test_raw_duplicate_rate_helper_measures_pre_dedup_redundancy():
+    assert _duplicate_rate(["ctx1", "ctx1", "ctx2"]) == 1 / 3
+    assert _duplicate_rate([]) == 0.0

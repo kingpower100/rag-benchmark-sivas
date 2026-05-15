@@ -18,7 +18,9 @@ def test_numeric_accuracy_flag_is_respected():
             "question_id": "q1",
             "experiment_id": "exp",
             "generated_answer": "100",
+            "question": "What is revenue?",
             "retrieved_original_context_ids": ["c1"],
+            "raw_retrieved_original_context_ids": ["c1", "c1"],
             "retrieval_time_ms": 4,
             "generation_time_ms": 8,
             "total_latency_ms": 12,
@@ -40,7 +42,14 @@ def test_numeric_accuracy_flag_is_respected():
     assert evaluated[0]["hit_at_1"] == 1.0
     assert evaluated[0]["hit_at_3"] == 1.0
     assert evaluated[0]["context_precision_at_3"] == 1 / 3
+    assert evaluated[0]["ndcg_at_3"] == 1.0
+    assert evaluated[0]["raw_duplicate_rate"] == 0.5
+    assert evaluated[0]["non_empty_answer_rate"] == 1.0
     assert evaluated[0]["answer_coverage_rate"] == 1.0
+    assert evaluated[0]["exact_match"] == 1.0
+    assert evaluated[0]["numeric_parse_success"] == 1.0
+    assert evaluated[0]["abstention_rate"] == 0.0
+    assert evaluated[0]["answer_relevancy_score"] == 0.0
     assert evaluated[0]["retrieval_time_ms"] == 4
     assert evaluated[0]["generation_time_ms"] == 8
     assert evaluated[0]["input_tokens"] == 2
@@ -62,6 +71,7 @@ def test_missing_retrieved_original_context_ids_does_not_fallback_to_other_ids()
             "question_id": "q1",
             "experiment_id": "exp",
             "generated_answer": "100",
+            "question": "Q?",
             "retrieved_context_ids": ["c1"],
             "retrieved_chunk_ids": ["chunk1"],
             "total_latency_ms": 12,
@@ -83,6 +93,7 @@ def test_missing_retrieved_original_context_ids_does_not_fallback_to_other_ids()
     assert evaluated[0]["recall_at_1"] == 0.0
     assert evaluated[0]["context_precision_at_1"] == 0.0
     assert evaluated[0]["mrr_at_1"] == 0.0
+    assert evaluated[0]["ndcg_at_1"] == 0.0
     assert evaluated[0]["id_alignment_ok"] is False
     assert "missing retrieved_original_context_ids" in evaluated[0]["evaluation_errors"][0]
 

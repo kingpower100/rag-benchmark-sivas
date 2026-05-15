@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from statistics import mean
+from statistics import mean, median
 from typing import Any
 
 
@@ -21,10 +21,29 @@ def summarize_by_experiment(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
         }
         for col in metric_cols:
             summary[f"mean_{col}"] = _mean([row.get(col) for row in successful_rows if row.get(col) is not None])
-        for col in ("numeric_accuracy", "answer_coverage_rate"):
+        for col in (
+            "numeric_accuracy",
+            "exact_match",
+            "non_empty_answer_rate",
+            "answer_coverage_rate",
+            "abstention_rate",
+        ):
             summary[f"mean_{col}"] = _mean([row.get(col) for row in successful_rows if row.get(col) is not None])
+        summary["mean_relative_error"] = _mean(
+            [row.get("relative_error") for row in successful_rows if row.get("relative_error") is not None]
+        )
+        summary["median_relative_error"] = _median(
+            [row.get("relative_error") for row in successful_rows if row.get("relative_error") is not None]
+        )
+        summary["numeric_parse_success_rate"] = _mean(
+            [row.get("numeric_parse_success") for row in successful_rows if row.get("numeric_parse_success") is not None]
+        )
+        summary["mean_answer_relevancy"] = _mean(
+            [row.get("answer_relevancy_score") for row in successful_rows if row.get("answer_relevancy_score") is not None]
+        )
         for col in (
             "duplicate_context_rate",
+            "raw_duplicate_rate",
             "retrieval_time_ms",
             "generation_time_ms",
             "total_latency_ms",
@@ -56,7 +75,7 @@ def build_leaderboard(summary_rows: list[dict[str, Any]], sort_metric: str, sort
 
 
 def _dynamic_metric_columns(rows: list[dict[str, Any]]) -> list[str]:
-    prefixes = ("hit_at_", "recall_at_", "mrr_at_", "context_precision_at_")
+    prefixes = ("hit_at_", "recall_at_", "mrr_at_", "context_precision_at_", "ndcg_at_")
     cols = []
     for prefix in prefixes:
         names = sorted({key for row in rows for key in row if key.startswith(prefix)})
@@ -69,3 +88,10 @@ def _mean(values: list[Any]) -> float | None:
     if not numeric:
         return None
     return mean(numeric)
+
+
+def _median(values: list[Any]) -> float | None:
+    numeric = [float(value) for value in values if value is not None]
+    if not numeric:
+        return None
+    return median(numeric)

@@ -129,7 +129,16 @@ class EvaluationOrchestrator:
             if not gold_ids:
                 id_alignment_ok = False
             ground_truth = resolve_ground_truth_answer(row, qa_by_id)
-            answer_metrics = compute_answer_metrics(str(row.get("generated_answer", "")), ground_truth)
+            raw_retrieved_ids = row.get("raw_retrieved_original_context_ids")
+            if raw_retrieved_ids is not None and not isinstance(raw_retrieved_ids, list):
+                raw_retrieved_ids = []
+                errors.append("raw_retrieved_original_context_ids must be a list")
+            answer_metrics = compute_answer_metrics(
+                str(row.get("generated_answer", "")),
+                ground_truth,
+                question=str(row.get("question", "")),
+                abstention_patterns=cfg.answer_quality.abstention_patterns,
+            )
             if not cfg.answer_quality.enable_numeric_accuracy:
                 answer_metrics["numeric_accuracy"] = None
             output = {
@@ -138,11 +147,17 @@ class EvaluationOrchestrator:
                 "generated_answer": row.get("generated_answer", ""),
                 "ground_truth_answer": ground_truth,
                 "retrieved_original_context_ids": retrieved_ids,
+                "raw_retrieved_original_context_ids": raw_retrieved_ids,
                 "gold_context_ids": gold_ids,
                 "id_alignment_ok": id_alignment_ok,
-                **compute_retrieval_metrics_for_ks(retrieved_ids, gold_ids, ks),
+                **compute_retrieval_metrics_for_ks(retrieved_ids, gold_ids, ks, raw_retrieved_ids),
                 "numeric_accuracy": answer_metrics["numeric_accuracy"],
+                "exact_match": answer_metrics["exact_match"],
+                "numeric_parse_success": answer_metrics["numeric_parse_success"],
+                "non_empty_answer_rate": answer_metrics["non_empty_answer_rate"],
                 "answer_coverage_rate": answer_metrics["answer_coverage_rate"],
+                "abstention_rate": answer_metrics["abstention_rate"],
+                "answer_relevancy_score": answer_metrics["answer_relevancy_score"],
                 "normalized_generated_answer": answer_metrics["normalized_generated_answer"],
                 "normalized_gold_answer": answer_metrics["normalized_gold_answer"],
                 "generated_number": answer_metrics["generated_number"],
@@ -188,19 +203,26 @@ def _metric_ks(cfg: EvalConfig) -> list[int]:
 def _per_question_fields(ks: list[int]) -> list[str]:
     metric_fields = []
     for k in ks:
-        metric_fields.extend([f"hit_at_{k}", f"recall_at_{k}", f"mrr_at_{k}", f"context_precision_at_{k}"])
+        metric_fields.extend([f"hit_at_{k}", f"recall_at_{k}", f"mrr_at_{k}", f"context_precision_at_{k}", f"ndcg_at_{k}"])
     return [
         "question_id",
         "experiment_id",
         "generated_answer",
         "ground_truth_answer",
         "retrieved_original_context_ids",
+        "raw_retrieved_original_context_ids",
         "gold_context_ids",
         "id_alignment_ok",
         *metric_fields,
         "duplicate_context_rate",
+        "raw_duplicate_rate",
         "numeric_accuracy",
+        "exact_match",
+        "numeric_parse_success",
+        "non_empty_answer_rate",
         "answer_coverage_rate",
+        "abstention_rate",
+        "answer_relevancy_score",
         "normalized_generated_answer",
         "normalized_gold_answer",
         "generated_number",
@@ -229,6 +251,7 @@ def _summary_fields(ks: list[int]) -> list[str]:
                 f"mean_recall_at_{k}",
                 f"mean_mrr_at_{k}",
                 f"mean_context_precision_at_{k}",
+                f"mean_ndcg_at_{k}",
             ]
         )
     return [
@@ -238,8 +261,16 @@ def _summary_fields(ks: list[int]) -> list[str]:
         "eval_success_rate",
         *metric_fields,
         "mean_duplicate_context_rate",
+        "mean_raw_duplicate_rate",
         "mean_numeric_accuracy",
+        "mean_exact_match",
+        "mean_relative_error",
+        "median_relative_error",
+        "numeric_parse_success_rate",
+        "mean_non_empty_answer_rate",
         "mean_answer_coverage_rate",
+        "mean_abstention_rate",
+        "mean_answer_relevancy",
         "mean_retrieval_time_ms",
         "mean_generation_time_ms",
         "mean_total_latency_ms",
@@ -290,9 +321,17 @@ def _eval_manifest(
         },
         "metrics_used": [
             *[name for k in ks for name in (f"hit_at_{k}", f"recall_at_{k}", f"mrr_at_{k}", f"context_precision_at_{k}")],
+            *[f"ndcg_at_{k}" for k in ks],
             "duplicate_context_rate",
+            "raw_duplicate_rate",
             "numeric_accuracy",
+            "exact_match",
+            "relative_error",
+            "numeric_parse_success",
+            "non_empty_answer_rate",
             "answer_coverage_rate",
+            "abstention_rate",
+            "answer_relevancy_score",
             "retrieval_time_ms",
             "generation_time_ms",
             "total_latency_ms",

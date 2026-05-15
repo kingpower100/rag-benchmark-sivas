@@ -1,4 +1,6 @@
-from src.pipeline2.metrics.answer_metrics import compute_answer_metrics
+import pytest
+
+from src.pipeline2.metrics.answer_metrics import answer_relevancy_score, compute_answer_metrics, is_abstention
 
 
 def test_numeric_accuracy_matches_numbers_with_commas_and_currency():
@@ -40,3 +42,44 @@ def test_numeric_debug_fields_explain_mismatch():
     assert metrics["gold_number"] == 1000000.0
     assert metrics["absolute_error"] == 1000000.0
     assert metrics["answer_match_status"] == "mismatch"
+
+
+def test_exact_match_normalizes_numeric_formatting_and_yes_no_variants():
+    assert compute_answer_metrics("$1,250.00", "1250")["exact_match"] == 1.0
+    assert compute_answer_metrics("yes", "1")["exact_match"] == 1.0
+
+
+def test_relative_error_and_numeric_parse_success_are_reported():
+    metrics = compute_answer_metrics("90", "100")
+
+    assert metrics["relative_error"] == pytest.approx(0.1)
+    assert metrics["numeric_parse_success"] == 1.0
+
+
+def test_numeric_parse_success_distinguishes_parse_failures():
+    metrics = compute_answer_metrics("unknown", "100")
+
+    assert metrics["numeric_accuracy"] == 0.0
+    assert metrics["numeric_parse_success"] == 0.0
+
+
+def test_non_empty_answer_rate_keeps_backward_compatible_alias():
+    metrics = compute_answer_metrics("UNKNOWN", "100")
+
+    assert metrics["non_empty_answer_rate"] == 1.0
+    assert metrics["answer_coverage_rate"] == 1.0
+
+
+def test_abstention_detection_handles_configured_variants():
+    assert is_abstention("")
+    assert is_abstention("UNKNOWN")
+    assert is_abstention("cannot determine")
+    assert is_abstention("not provided", ["not provided"])
+    assert not is_abstention("1250")
+
+
+def test_answer_relevancy_score_is_deterministic_overlap_baseline():
+    score = answer_relevancy_score("What was total revenue in 2020?", "total revenue")
+
+    assert score == 1.0
+    assert answer_relevancy_score("What was total revenue in 2020?", "1250") == 0.0

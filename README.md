@@ -81,12 +81,12 @@ Outputs are written under:
 
 Pipeline 2 automatic metrics:
 
-- retrieval: `hit_at_k`, `recall_at_k`, `precision_at_k`, `mrr_at_k`
-- answer quality: `numeric_accuracy`
+- retrieval: `hit_at_k`, `recall_at_k`, `context_precision_at_k`, `mrr_at_k`, `ndcg_at_k`, `raw_duplicate_rate`
+- answer quality: `numeric_accuracy`, `exact_match`, `relative_error`, `numeric_parse_success`, `non_empty_answer_rate`, `abstention_rate`, `answer_relevancy_score`
 - efficiency: `total_latency_ms`, `total_tokens`, `estimated_cost`
 - reliability: `pipeline_success_rate`, `eval_success_rate`
 
-RAGAS support is preserved as optional code, but it is not part of the main automatic benchmark metric set.
+`answer_relevancy_score` is a deterministic lexical-overlap baseline between question and answer content words. It is useful as a cheap diagnostic only; it is not a semantic correctness metric. RAGAS support is preserved as optional code, but it is not part of the main automatic benchmark metric set.
 
 ## Helper Commands
 

@@ -169,10 +169,10 @@ def run_pipeline(config_path: str) -> Path:
                 len([item.score for item in retrieved]),
                 retrieval_time_ms,
             )
-            retrieval_rows.append((query, retrieved, retrieval_time_ms, reranker_used, retrieval_warnings))
+            retrieval_rows.append((query, raw_retrieved, retrieved, retrieval_time_ms, reranker_used, retrieval_warnings))
 
         print("[9/10] Generating answers")
-        for index, (query, retrieved, retrieval_time_ms, reranker_used, retrieval_warnings) in enumerate(
+        for index, (query, raw_retrieved, retrieved, retrieval_time_ms, reranker_used, retrieval_warnings) in enumerate(
             tqdm(retrieval_rows, desc="Generating answers", unit="question"), start=1
         ):
             prompt_contexts = dedupe_prompt_contexts(retrieved)
@@ -218,6 +218,7 @@ def run_pipeline(config_path: str) -> Path:
                 generated_answer=answer,
                 retrieved_chunk_ids=[item.chunk_id for item in retrieved],
                 retrieved_original_context_ids=[item.original_context_id for item in retrieved],
+                raw_retrieved_original_context_ids=[item.original_context_id for item in raw_retrieved],
                 retrieved_context_ids=[item.original_context_id for item in retrieved],
                 retrieved_chunk_units=[item.chunk_unit for item in retrieved],
                 retrieved_chunk_texts=[item.text for item in retrieved],
@@ -227,6 +228,8 @@ def run_pipeline(config_path: str) -> Path:
                 rerank_scores=[item.rerank_score for item in retrieved],
                 ranking_score_type="rerank_score" if reranker_used else "dense_score",
                 retrieved_unique_count=len({item.original_context_id for item in retrieved}),
+                raw_retrieved_unique_count=len({item.original_context_id for item in raw_retrieved}),
+                raw_duplicate_rate=_duplicate_rate([item.original_context_id for item in raw_retrieved]),
                 retrieval_warnings=retrieval_warnings,
                 top_k=cfg.retrieval.top_k,
                 chunking_strategy=cfg.chunking.strategy,
@@ -311,6 +314,12 @@ def dedupe_retrieval_by_original_context_id(items: list, top_k: int) -> list:
         if len(unique) >= top_k:
             break
     return unique
+
+
+def _duplicate_rate(ids: list[str]) -> float:
+    if not ids:
+        return 0.0
+    return (len(ids) - len(set(ids))) / len(ids)
 
 
 def retrieve_top_k_unique_contexts(

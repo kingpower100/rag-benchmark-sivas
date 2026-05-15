@@ -29,6 +29,9 @@ class RetrievalEvalConfig(StrictEvalConfigModel):
 
 class AnswerQualityConfig(StrictEvalConfigModel):
     enable_numeric_accuracy: bool = True
+    abstention_patterns: list[str] = Field(
+        default_factory=lambda: ["UNKNOWN", "NOT FOUND", "N/A", "CANNOT DETERMINE"]
+    )
 
 
 class RuntimeConfig(StrictEvalConfigModel):
