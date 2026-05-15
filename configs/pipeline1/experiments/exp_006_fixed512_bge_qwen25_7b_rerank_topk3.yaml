@@ -1,0 +1,7 @@
+extends: "exp_001_fixed512_bge_qwen25_7b_rerank.yaml"
+
+experiment:
+  experiment_id: "exp_006_fixed512_bge_qwen25_7b_rerank_topk3"
+
+retrieval:
+  top_k: 3

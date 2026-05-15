@@ -1,0 +1,7 @@
+extends: "exp_001_fixed512_bge_qwen25_7b_rerank.yaml"
+
+experiment:
+  experiment_id: "exp_007_fixed512_multilingual_e5_large_instruct_qwen25_7b_rerank"
+
+embedding:
+  model_name: "intfloat/multilingual-e5-large-instruct"

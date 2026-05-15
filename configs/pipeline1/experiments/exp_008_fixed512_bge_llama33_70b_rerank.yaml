@@ -1,0 +1,7 @@
+extends: "exp_001_fixed512_bge_qwen25_7b_rerank.yaml"
+
+experiment:
+  experiment_id: "exp_008_fixed512_bge_llama33_70b_rerank"
+
+generation:
+  model_name: "llama3.3:70b"

@@ -1,0 +1,15 @@
+extends: "../base_eval.yaml"
+
+evaluation:
+  eval_run_id: "eval_exp_006_fixed512_bge_qwen25_7b_rerank_topk3"
+
+inputs:
+  rag_outputs:
+    - "data/runs/pipeline1/exp_006_fixed512_bge_qwen25_7b_rerank_topk3/results.jsonl"
+
+retrieval:
+  ks: [1, 3, 5]
+
+leaderboard:
+  sort_metric: "mean_recall_at_5"
+  sort_ascending: false
