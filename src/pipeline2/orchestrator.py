@@ -239,11 +239,7 @@ def _index_by_id(rows: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
     if empty_answer_ids:
         sample = ", ".join(empty_answer_ids[:20])
         suffix = "" if len(empty_answer_ids) <= 20 else f", ... ({len(empty_answer_ids)} total)"
-        warnings.warn(
-            f"QA rows have empty answer fields for {len(empty_answer_ids)} ID(s): {sample}{suffix}",
-            RuntimeWarning,
-            stacklevel=2,
-        )
+        raise ValueError(f"QA rows have empty answer fields for {len(empty_answer_ids)} ID(s): {sample}{suffix}")
 
     print(
         "QA validation: "

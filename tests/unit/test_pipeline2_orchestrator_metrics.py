@@ -278,11 +278,9 @@ def test_qa_index_missing_ids_fail():
         _index_by_id([{"question": "Q?", "answer": "1"}])
 
 
-def test_qa_index_warns_on_empty_answer():
-    with pytest.warns(RuntimeWarning, match="empty answer fields"):
-        qa_by_id = _index_by_id([{"uid": "q1", "answer": ""}])
-
-    assert "q1" in qa_by_id
+def test_qa_index_empty_answer_fails():
+    with pytest.raises(ValueError, match="empty answer fields"):
+        _index_by_id([{"uid": "q1", "answer": ""}])
 
 
 def test_missing_pipeline1_question_ids_in_qa_fail():
