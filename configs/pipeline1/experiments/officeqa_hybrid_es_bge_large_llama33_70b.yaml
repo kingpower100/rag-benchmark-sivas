@@ -50,7 +50,7 @@ retrieval:
     enabled: true
     backend: "elasticsearch"
     index_name: "officeqa_chunks"
-    host: "http://localhost:9200"
+    host: "http://localhost:9201"
     rebuild_index: true
     allow_fallback: false
     k1: 1.5
