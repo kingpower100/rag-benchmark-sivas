@@ -128,11 +128,13 @@ class EvaluationOrchestrator:
             gold_ids = gold_by_id.get(qid, [])
             if not gold_ids:
                 id_alignment_ok = False
+            retrieval_eval_ids = _resolve_retrieval_eval_ids(row, retrieved_ids, gold_ids)
             ground_truth = resolve_ground_truth_answer(row, qa_by_id)
             raw_retrieved_ids = row.get("raw_retrieved_original_context_ids")
             if raw_retrieved_ids is not None and not isinstance(raw_retrieved_ids, list):
                 raw_retrieved_ids = []
                 errors.append("raw_retrieved_original_context_ids must be a list")
+            raw_retrieval_eval_ids = _resolve_raw_retrieval_eval_ids(row, raw_retrieved_ids, gold_ids)
             retrieved_metadata = row.get("retrieved_chunk_metadata") or []
             if not isinstance(retrieved_metadata, list):
                 retrieved_metadata = []
@@ -152,9 +154,11 @@ class EvaluationOrchestrator:
                 "ground_truth_answer": ground_truth,
                 "retrieved_original_context_ids": retrieved_ids,
                 "raw_retrieved_original_context_ids": raw_retrieved_ids,
+                "retrieval_eval_ids": retrieval_eval_ids,
+                "raw_retrieval_eval_ids": raw_retrieval_eval_ids,
                 "gold_context_ids": gold_ids,
                 "id_alignment_ok": id_alignment_ok,
-                **compute_retrieval_metrics_for_ks(retrieved_ids, gold_ids, ks, raw_retrieved_ids),
+                **compute_retrieval_metrics_for_ks(retrieval_eval_ids, gold_ids, ks, raw_retrieval_eval_ids),
                 **compute_metadata_match_metrics(
                     str(row.get("question", "")),
                     retrieved_metadata,
@@ -205,6 +209,53 @@ def _gold_by_question(rows: list[dict[str, Any]]) -> dict[str, list[str]]:
     return output
 
 
+def _resolve_retrieval_eval_ids(row: dict[str, Any], retrieved_ids: list[str], gold_ids: list[str]) -> list[str]:
+    candidates = [
+        retrieved_ids,
+        _list_field(row, "retrieved_file_names"),
+        _list_field(row, "retrieved_document_ids"),
+    ]
+    return _best_id_projection(candidates, gold_ids)
+
+
+def _resolve_raw_retrieval_eval_ids(
+    row: dict[str, Any],
+    raw_retrieved_ids: list[str] | None,
+    gold_ids: list[str],
+) -> list[str] | None:
+    if raw_retrieved_ids is None:
+        return None
+    candidates = [
+        raw_retrieved_ids,
+        _list_field(row, "raw_retrieved_file_names"),
+        _list_field(row, "raw_retrieved_document_ids"),
+    ]
+    return _best_id_projection(candidates, gold_ids)
+
+
+def _best_id_projection(candidates: list[list[str]], gold_ids: list[str]) -> list[str]:
+    gold_set = {str(item) for item in gold_ids if item is not None}
+    usable = [candidate for candidate in candidates if candidate]
+    if not usable:
+        return []
+    if not gold_set:
+        return usable[0]
+    return max(
+        usable,
+        key=lambda candidate: (
+            len({str(item) for item in candidate if item is not None} & gold_set),
+            -usable.index(candidate),
+        ),
+    )
+
+
+def _list_field(row: dict[str, Any], field: str) -> list[str]:
+    value = row.get(field)
+    if not isinstance(value, list):
+        return []
+    return [str(item) for item in value if item is not None and str(item).strip()]
+
+
 def _metric_ks(cfg: EvalConfig) -> list[int]:
     return sorted({int(k) for k in (cfg.retrieval.ks or [cfg.retrieval.k]) if int(k) > 0})
 
@@ -220,6 +271,8 @@ def _per_question_fields(ks: list[int]) -> list[str]:
         "ground_truth_answer",
         "retrieved_original_context_ids",
         "raw_retrieved_original_context_ids",
+        "retrieval_eval_ids",
+        "raw_retrieval_eval_ids",
         "gold_context_ids",
         "id_alignment_ok",
         *metric_fields,

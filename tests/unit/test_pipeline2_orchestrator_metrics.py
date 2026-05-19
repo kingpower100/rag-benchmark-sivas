@@ -98,6 +98,49 @@ def test_missing_retrieved_original_context_ids_does_not_fallback_to_other_ids()
     assert "missing retrieved_original_context_ids" in evaluated[0]["evaluation_errors"][0]
 
 
+def test_retrieval_metrics_can_use_file_names_for_officeqa_gold_ids():
+    cfg = EvalConfig.model_validate(
+        {
+            "evaluation": {"eval_run_id": "eval"},
+            "inputs": {"rag_outputs": []},
+            "retrieval": {"k": 2, "ks": [1, 2]},
+            "answer_quality": {"enable_numeric_accuracy": True},
+        }
+    )
+    rows = [
+        {
+            "question_id": "q1",
+            "experiment_id": "exp",
+            "generated_answer": "100",
+            "question": "Q?",
+            "retrieved_original_context_ids": ["chunk_a", "chunk_b"],
+            "raw_retrieved_original_context_ids": ["chunk_a", "chunk_b"],
+            "retrieved_file_names": ["treasury_bulletin_1944_01.txt", "treasury_bulletin_1944_01.txt"],
+            "raw_retrieved_file_names": ["treasury_bulletin_1944_01.txt", "treasury_bulletin_1944_01.txt"],
+            "retrieved_document_ids": ["treasury_bulletin_1944_01.txt", "treasury_bulletin_1944_01.txt"],
+            "raw_retrieved_document_ids": ["treasury_bulletin_1944_01.txt", "treasury_bulletin_1944_01.txt"],
+            "total_latency_ms": 12,
+            "total_tokens": 3,
+            "estimated_cost": 0.0,
+        }
+    ]
+
+    evaluated = EvaluationOrchestrator()._evaluate_rows(
+        rows,
+        {"q1": {"id": "q1", "answer": "100"}},
+        {"q1": ["treasury_bulletin_1944_01.txt"]},
+        cfg,
+    )
+
+    assert evaluated[0]["retrieval_eval_ids"] == [
+        "treasury_bulletin_1944_01.txt",
+        "treasury_bulletin_1944_01.txt",
+    ]
+    assert evaluated[0]["hit_at_1"] == 1.0
+    assert evaluated[0]["recall_at_1"] == 1.0
+    assert evaluated[0]["raw_duplicate_rate"] == 0.5
+
+
 def test_missing_gold_contexts_fail_evaluation():
     cfg = EvalConfig.model_validate(
         {

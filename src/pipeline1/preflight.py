@@ -14,11 +14,11 @@ def run_preflight_checks(cfg, base_dir: Path | None = None) -> list[str]:
     errors: list[str] = []
     docs_path = _resolve_path(base_dir, cfg.data.documents_path)
     questions_path = _resolve_path(base_dir, cfg.data.questions_path)
-    for name, path in [("documents_path", docs_path), ("questions_path", questions_path)]:
-        if not path.exists() or not path.is_file():
-            errors.append(f"{name} is missing or not a file: {path}")
-        elif path.stat().st_size == 0:
-            errors.append(f"{name} is empty: {path}")
+    errors.extend(_validate_documents_input(cfg, docs_path))
+    if not questions_path.exists() or not questions_path.is_file():
+        errors.append(f"questions_path is missing or not a file: {questions_path}")
+    elif questions_path.stat().st_size == 0:
+        errors.append(f"questions_path is empty: {questions_path}")
     if cfg.reranker.enabled and cfg.retrieval.fetch_k <= cfg.retrieval.top_k:
         errors.append(
             f"retrieval.fetch_k ({cfg.retrieval.fetch_k}) must be > retrieval.top_k ({cfg.retrieval.top_k}) "
@@ -56,6 +56,29 @@ def run_preflight_checks(cfg, base_dir: Path | None = None) -> list[str]:
                 errors.append(f"Ollama model '{cfg.generation.model_name}' not found at {base_url}/api/tags. Available: {available}")
         except requests.RequestException as ex:
             errors.append(f"Unable to reach Ollama at {base_url}/api/tags: {ex}")
+    return errors
+
+
+def _validate_documents_input(cfg, docs_path: Path) -> list[str]:
+    errors: list[str] = []
+    source_type = cfg.data.documents_source_type
+    if source_type == "jsonl":
+        if not docs_path.exists() or not docs_path.is_file():
+            errors.append(f"documents_path is missing or not a file: {docs_path}")
+        elif docs_path.stat().st_size == 0:
+            errors.append(f"documents_path is empty: {docs_path}")
+        return errors
+    if source_type == "txt_folder":
+        if not docs_path.exists() or not docs_path.is_dir():
+            errors.append(f"documents_path is missing or not a folder for txt_folder source_type: {docs_path}")
+            return errors
+        files = [path for path in docs_path.glob(cfg.data.documents_file_glob) if path.is_file()]
+        if not files:
+            errors.append(
+                f"documents_path has no files matching documents_file_glob={cfg.data.documents_file_glob!r}: {docs_path}"
+            )
+        return errors
+    errors.append(f"Unsupported documents_source_type: {source_type}")
     return errors
 
 

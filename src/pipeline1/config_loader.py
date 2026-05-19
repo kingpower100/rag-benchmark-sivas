@@ -9,6 +9,7 @@ import yaml
 def load_pipeline_config_payload(config_path: str, validate_unique_experiment_id: bool = True) -> dict[str, Any]:
     config_file = Path(config_path).resolve()
     payload = _load_with_extends(config_file)
+    payload = _normalize_documents_config(payload)
     if validate_unique_experiment_id:
         _validate_experiment_id_matches_config_name(config_file, payload)
         _validate_unique_experiment_id(config_file, payload)
@@ -37,6 +38,26 @@ def _deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any
         else:
             merged[key] = value
     return merged
+
+
+def _normalize_documents_config(payload: dict[str, Any]) -> dict[str, Any]:
+    documents = payload.pop("documents", None)
+    if documents is None:
+        return payload
+    if not isinstance(documents, dict):
+        raise ValueError("documents config must be a YAML mapping.")
+    data = dict(payload.get("data") or {})
+    field_map = {
+        "path": "documents_path",
+        "source_type": "documents_source_type",
+        "file_glob": "documents_file_glob",
+        "text_field": "document_text_field",
+    }
+    for source_key, target_key in field_map.items():
+        if source_key in documents:
+            data[target_key] = documents[source_key]
+    payload["data"] = data
+    return payload
 
 
 def _validate_unique_experiment_id(config_file: Path, payload: dict[str, Any]) -> None:

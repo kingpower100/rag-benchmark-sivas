@@ -57,18 +57,17 @@ def run_pipeline(config_path: str) -> Path:
     docs_path = project_root / cfg.data.documents_path
     questions_path = project_root / cfg.data.questions_path
     print("[3/10] Loading documents")
-    docs = JsonlReader.read_documents(
-        str(docs_path),
-        require_context_id=True,
-        text_field=cfg.data.document_text_field,
-        allow_text_fallback=cfg.data.allow_document_text_fallback,
-    )
+    docs, document_input_info = _load_documents(cfg, docs_path)
+    logger.info("document_input=%s", document_input_info)
 
     cache_dir = project_root / "data" / "processed"
     chunker_versions = _chunker_versions(cfg)
+    documents_fingerprint = _documents_fingerprint(cfg, docs_path)
     chunks_key = stable_hash_dict(
         {
-            "documents_sha256": file_sha256(docs_path),
+            "documents_fingerprint": documents_fingerprint,
+            "documents_source_type": cfg.data.documents_source_type,
+            "documents_file_glob": cfg.data.documents_file_glob,
             "document_text_field": cfg.data.document_text_field,
             "allow_document_text_fallback": cfg.data.allow_document_text_fallback,
             "chunking": cfg.chunking.model_dump(),
@@ -225,7 +224,16 @@ def run_pipeline(config_path: str) -> Path:
                 retrieved_chunk_ids=[item.chunk_id for item in retrieved],
                 retrieved_original_context_ids=[item.original_context_id for item in retrieved],
                 raw_retrieved_original_context_ids=[item.original_context_id for item in raw_retrieved],
-                retrieved_context_ids=[item.original_context_id for item in retrieved],
+                retrieved_context_ids=[item.chunk_id for item in retrieved],
+                retrieved_document_ids=[item.metadata.get("doc_id") or item.metadata.get("document_id") or item.original_context_id for item in retrieved],
+                raw_retrieved_document_ids=[
+                    item.metadata.get("doc_id") or item.metadata.get("document_id") or item.original_context_id
+                    for item in raw_retrieved
+                ],
+                retrieved_file_names=[item.metadata.get("file_name") or item.metadata.get("source_file") for item in retrieved],
+                raw_retrieved_file_names=[
+                    item.metadata.get("file_name") or item.metadata.get("source_file") for item in raw_retrieved
+                ],
                 retrieved_chunk_units=[item.chunk_unit for item in retrieved],
                 retrieved_chunk_texts=[item.text for item in retrieved],
                 retrieved_chunk_metadata=[dict(item.metadata) for item in retrieved],
@@ -234,9 +242,9 @@ def run_pipeline(config_path: str) -> Path:
                 dense_scores=[item.dense_score for item in retrieved],
                 rerank_scores=[item.rerank_score for item in retrieved],
                 ranking_score_type="rerank_score" if reranker_used else "dense_score",
-                retrieved_unique_count=len({item.original_context_id for item in retrieved}),
-                raw_retrieved_unique_count=len({item.original_context_id for item in raw_retrieved}),
-                raw_duplicate_rate=_duplicate_rate([item.original_context_id for item in raw_retrieved]),
+                retrieved_unique_count=len({item.chunk_id for item in retrieved}),
+                raw_retrieved_unique_count=len({item.chunk_id for item in raw_retrieved}),
+                raw_duplicate_rate=_duplicate_rate([item.chunk_id for item in raw_retrieved]),
                 retrieval_warnings=retrieval_warnings,
                 query_metadata={} if query_metadata is None else {
                     "company_names": sorted(query_metadata.company_names),
@@ -293,10 +301,15 @@ def run_pipeline(config_path: str) -> Path:
             "resolved_config": resolved_config,
             "data_hashes": {
                 "documents_path": str(docs_path),
-                "documents_sha256": file_sha256(docs_path),
+                "documents_sha256": documents_fingerprint if cfg.data.documents_source_type == "jsonl" else None,
+                "documents_source_type": cfg.data.documents_source_type,
+                "documents_file_glob": cfg.data.documents_file_glob,
+                "documents_fingerprint": documents_fingerprint,
+                "txt_files_loaded": document_input_info["txt_files_loaded"],
                 "questions_path": str(questions_path),
                 "questions_sha256": file_sha256(questions_path),
             },
+            "document_input": document_input_info,
             "cache_keys": {"chunks": chunks_key, "embeddings": embeddings_key, "index": index_key},
             "cache_artifact_paths": {
                 "chunks": str(chunks_path),
@@ -317,11 +330,34 @@ def run_pipeline(config_path: str) -> Path:
     return run_dir
 
 
-def dedupe_retrieval_by_original_context_id(items: list, top_k: int) -> list:
+def _load_documents(cfg: PipelineConfig, docs_path: Path) -> tuple[list, dict]:
+    if cfg.data.documents_source_type == "txt_folder":
+        docs = JsonlReader.read_txt_folder(str(docs_path), cfg.data.documents_file_glob)
+        return docs, {
+            "source_type": "txt_folder",
+            "folder_path": str(docs_path),
+            "file_glob": cfg.data.documents_file_glob,
+            "txt_files_loaded": len(docs),
+        }
+    docs = JsonlReader.read_documents(
+        str(docs_path),
+        require_context_id=True,
+        text_field=cfg.data.document_text_field,
+        allow_text_fallback=cfg.data.allow_document_text_fallback,
+    )
+    return docs, {
+        "source_type": "jsonl",
+        "path": str(docs_path),
+        "file_glob": None,
+        "txt_files_loaded": None,
+    }
+
+
+def dedupe_retrieval_by_chunk_id(items: list, top_k: int) -> list:
     seen: set[str] = set()
     unique = []
     for item in items:
-        key = str(item.original_context_id)
+        key = str(item.chunk_id)
         if key in seen:
             continue
         seen.add(key)
@@ -329,6 +365,10 @@ def dedupe_retrieval_by_original_context_id(items: list, top_k: int) -> list:
         if len(unique) >= top_k:
             break
     return unique
+
+
+def dedupe_retrieval_by_original_context_id(items: list, top_k: int) -> list:
+    return dedupe_retrieval_by_chunk_id(items, top_k)
 
 
 def _duplicate_rate(ids: list[str]) -> float:
@@ -354,14 +394,14 @@ def retrieve_top_k_unique_contexts(
         raw_retrieved = (
             reranker.rerank(question, dense_candidates, candidate_k) if reranker is not None else dense_candidates
         )
-        retrieved = dedupe_retrieval_by_original_context_id(raw_retrieved, top_k)
+        retrieved = dedupe_retrieval_by_chunk_id(raw_retrieved, top_k)
         if len(retrieved) >= top_k or candidate_k >= max_candidates:
             break
         candidate_k = min(max_candidates, max(candidate_k + 1, candidate_k * 2))
     warnings = []
     if len(retrieved) < top_k:
         warnings.append(
-            f"Only {len(retrieved)} unique original contexts were available after deduplication; requested top_k={top_k}."
+            f"Only {len(retrieved)} unique chunks were available after deduplication; requested top_k={top_k}."
         )
     return raw_retrieved, retrieved, warnings, reranker_used
 
@@ -387,7 +427,34 @@ def _log_run_info(
     logger.info("reranker=%s", reranker_state)
     if cfg.reranker.enabled and cfg.reranker.model_name:
         logger.info("reranker_model=%s", cfg.reranker.model_name)
+    logger.info("documents_source_type=%s", cfg.data.documents_source_type)
+    logger.info("documents_file_glob=%s", cfg.data.documents_file_glob)
     logger.info("question_input_path=%s", questions_path)
+
+
+def _documents_fingerprint(cfg: PipelineConfig, docs_path: Path) -> str:
+    if cfg.data.documents_source_type == "jsonl":
+        return file_sha256(docs_path)
+    files = _txt_folder_files(docs_path, cfg.data.documents_file_glob)
+    return stable_hash_dict(
+        {
+            "source_type": "txt_folder",
+            "folder_path": str(docs_path),
+            "file_glob": cfg.data.documents_file_glob,
+            "files": [
+                {
+                    "name": path.name,
+                    "size": path.stat().st_size,
+                    "sha256": file_sha256(path),
+                }
+                for path in files
+            ],
+        }
+    )
+
+
+def _txt_folder_files(docs_path: Path, file_glob: str) -> list[Path]:
+    return sorted(path for path in docs_path.glob(file_glob) if path.is_file())
 
 
 def _project_root() -> Path:

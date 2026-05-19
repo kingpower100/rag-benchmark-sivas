@@ -17,6 +17,8 @@ class ExperimentConfig(StrictConfigModel):
 
 class DataConfig(StrictConfigModel):
     documents_path: str
+    documents_source_type: Literal["jsonl", "txt_folder"] = "jsonl"
+    documents_file_glob: str = "*.txt"
     questions_path: str = Field(validation_alias=AliasChoices("questions_path", "qa_test_path"))
     question_field: str = "question"
     question_id_field: str = "question_id"

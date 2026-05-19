@@ -37,6 +37,22 @@ def test_document_text_field_missing_fails_without_explicit_fallback(tmp_path):
         JsonlReader.read_documents(str(path), require_context_id=True, text_field="cleaned_context")
 
 
+def test_txt_folder_reader_creates_officeqa_document_records(tmp_path):
+    folder = tmp_path / "transformed"
+    folder.mkdir()
+    (folder / "treasury_bulletin_1944_01.txt").write_text("OfficeQA text", encoding="utf-8")
+    (folder / "ignored.md").write_text("ignore", encoding="utf-8")
+
+    docs = JsonlReader.read_txt_folder(str(folder), "*.txt")
+
+    assert len(docs) == 1
+    assert docs[0].document_id == "treasury_bulletin_1944_01.txt"
+    assert docs[0].original_context_id == "treasury_bulletin_1944_01.txt"
+    assert docs[0].text == "OfficeQA text"
+    assert docs[0].metadata["file_name"] == "treasury_bulletin_1944_01.txt"
+    assert docs[0].metadata["source_dataset"] == "officeqa"
+
+
 def test_pipeline1_rejects_answer_bearing_query_file(tmp_path, monkeypatch):
     (tmp_path / "documents.jsonl").write_text('{"context_id":"c1","cleaned_context":"text"}\n', encoding="utf-8")
     (tmp_path / "questions.jsonl").write_text(
@@ -48,6 +64,22 @@ def test_pipeline1_rejects_answer_bearing_query_file(tmp_path, monkeypatch):
     errors = run_preflight_checks(_cfg(False, top_k=1, fetch_k=1), tmp_path)
 
     assert any("questions_only.jsonl-style" in error for error in errors)
+
+
+def test_preflight_accepts_txt_folder_documents(tmp_path, monkeypatch):
+    folder = tmp_path / "transformed"
+    folder.mkdir()
+    (folder / "treasury_bulletin_1944_01.txt").write_text("OfficeQA text", encoding="utf-8")
+    (tmp_path / "questions.jsonl").write_text('{"question_id":"q1","question":"Q?"}\n', encoding="utf-8")
+    cfg = _cfg(False, top_k=1, fetch_k=1)
+    cfg.data.documents_path = "transformed"
+    cfg.data.documents_source_type = "txt_folder"
+    cfg.data.documents_file_glob = "*.txt"
+    monkeypatch.setenv("PIPELINE1_SKIP_OLLAMA_PREFLIGHT", "1")
+
+    errors = run_preflight_checks(cfg, tmp_path)
+
+    assert errors == []
 
 
 def test_fixed_token_fallback_fails_unless_explicitly_allowed(monkeypatch):
@@ -115,6 +147,38 @@ experiment:
 
     with pytest.raises(ValueError, match="must match config filename stem"):
         load_pipeline_config_payload(str(config_path))
+
+
+def test_documents_config_block_normalizes_to_data_fields(tmp_path):
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        """
+experiment: {experiment_id: x, output_dir: out}
+documents:
+  path: data/raw/transformed
+  source_type: txt_folder
+  text_field: cleaned_context
+  file_glob: "*.txt"
+data:
+  questions_path: data/raw/questions_only.jsonl
+chunking: {strategy: fixed_word, chunk_size: 10, chunk_overlap: 0}
+embedding: {provider: sentence_transformers, model_name: fake}
+index: {type: faiss}
+retrieval: {top_k: 1, fetch_k: 1}
+reranker: {enabled: false}
+generation: {provider: ollama, model_name: fake, system_prompt: s}
+telemetry: {}
+runtime: {}
+""",
+        encoding="utf-8",
+    )
+
+    cfg = PipelineConfig.from_yaml(str(config_path))
+
+    assert cfg.data.documents_path == "data/raw/transformed"
+    assert cfg.data.documents_source_type == "txt_folder"
+    assert cfg.data.document_text_field == "cleaned_context"
+    assert cfg.data.documents_file_glob == "*.txt"
 
 
 def test_sentence_chunker_version_changes_chunk_cache_key(monkeypatch):

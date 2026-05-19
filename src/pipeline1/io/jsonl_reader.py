@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+from pathlib import Path
 
 from src.pipeline1.schemas.document import DocumentRecord
 from src.pipeline1.schemas.query import QueryRecord
@@ -47,6 +48,35 @@ class JsonlReader:
                     text=str(text),
                     metadata=normalize_metadata(metadata, str(context_id) if context_id is not None else None),
                 ))
+        return docs
+
+    @staticmethod
+    def read_txt_folder(path: str, file_glob: str = "*.txt") -> list[DocumentRecord]:
+        docs: list[DocumentRecord] = []
+        root = Path(path)
+        for file_path in sorted(root.glob(file_glob)):
+            if not file_path.is_file():
+                continue
+            text = file_path.read_text(encoding="utf-8")
+            if not text.strip():
+                continue
+            file_name = file_path.name
+            metadata = normalize_metadata(
+                {
+                    "file_name": file_name,
+                    "source_dataset": "officeqa",
+                    "original_context_id": file_name,
+                },
+                file_name,
+            )
+            docs.append(
+                DocumentRecord(
+                    document_id=file_name,
+                    original_context_id=file_name,
+                    text=text,
+                    metadata=metadata,
+                )
+            )
         return docs
 
     @staticmethod

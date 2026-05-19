@@ -13,6 +13,10 @@ class OutputRecord(BaseModel):
     retrieved_original_context_ids: list[str]
     raw_retrieved_original_context_ids: list[str] = Field(default_factory=list)
     retrieved_context_ids: list[str] = Field(default_factory=list)
+    retrieved_document_ids: list[str | None] = Field(default_factory=list)
+    raw_retrieved_document_ids: list[str | None] = Field(default_factory=list)
+    retrieved_file_names: list[str | None] = Field(default_factory=list)
+    raw_retrieved_file_names: list[str | None] = Field(default_factory=list)
     retrieved_chunk_units: list[str | None] = Field(default_factory=list)
     retrieved_chunk_texts: list[str] = Field(default_factory=list)
     retrieved_chunk_metadata: list[dict] = Field(default_factory=list)
@@ -58,8 +62,17 @@ class OutputRecord(BaseModel):
             self.rerank_scores = [None] * len(self.retrieved_chunk_ids)
         if not self.retrieved_chunk_metadata:
             self.retrieved_chunk_metadata = [{} for _ in self.retrieved_chunk_ids]
+        if not self.retrieved_context_ids:
+            self.retrieved_context_ids = list(self.retrieved_chunk_ids)
+        if not self.retrieved_document_ids:
+            self.retrieved_document_ids = list(self.retrieved_original_context_ids)
+        if not self.retrieved_file_names:
+            self.retrieved_file_names = [
+                metadata.get("file_name") or metadata.get("source_file")
+                for metadata in self.retrieved_chunk_metadata
+            ]
         if self.retrieved_unique_count == 0:
-            self.retrieved_unique_count = len(set(self.retrieved_original_context_ids))
+            self.retrieved_unique_count = len(set(self.retrieved_chunk_ids))
         if self.raw_retrieved_unique_count == 0 and self.raw_retrieved_original_context_ids:
             self.raw_retrieved_unique_count = len(set(self.raw_retrieved_original_context_ids))
         if self.raw_duplicate_rate is None and self.raw_retrieved_original_context_ids:
@@ -70,6 +83,8 @@ class OutputRecord(BaseModel):
             len(self.retrieved_chunk_ids)
             == len(self.retrieved_original_context_ids)
             == len(self.retrieved_context_ids)
+            == len(self.retrieved_document_ids)
+            == len(self.retrieved_file_names)
             == len(self.retrieved_chunk_units)
             == len(self.retrieved_chunk_texts)
             == len(self.retrieved_chunk_metadata)

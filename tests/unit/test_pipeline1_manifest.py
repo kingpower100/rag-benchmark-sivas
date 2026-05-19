@@ -118,3 +118,77 @@ runtime:
     assert manifest["output_row_counts"]["results.jsonl"] == 1
     assert manifest["start_timestamp_utc"]
     assert manifest["end_timestamp_utc"]
+
+
+def test_pipeline1_manifest_records_txt_folder_input(tmp_path, monkeypatch):
+    project_root = tmp_path
+    data_dir = project_root / "data" / "raw"
+    transformed_dir = data_dir / "transformed"
+    transformed_dir.mkdir(parents=True)
+    (transformed_dir / "treasury_bulletin_1944_01.txt").write_text("alpha", encoding="utf-8")
+    (transformed_dir / "treasury_bulletin_1944_02.txt").write_text("beta", encoding="utf-8")
+    (data_dir / "questions_only.jsonl").write_text('{"id":"q1","question":"Q?"}\n', encoding="utf-8")
+    cfg_path = project_root / "config.yaml"
+    cfg_path.write_text(
+        """
+experiment:
+  experiment_id: "test_txt_exp"
+  random_seed: 42
+  output_dir: "runs"
+documents:
+  path: "data/raw/transformed"
+  source_type: "txt_folder"
+  text_field: "cleaned_context"
+  file_glob: "*.txt"
+data:
+  questions_path: "data/raw/questions_only.jsonl"
+  question_id_field: "id"
+  question_field: "question"
+chunking:
+  strategy: "fixed_word"
+  chunk_size: 10
+  chunk_overlap: 0
+embedding:
+  provider: "sentence_transformers"
+  model_name: "fake"
+  normalize_embeddings: true
+  batch_size: 2
+  device: "cpu"
+index:
+  type: "faiss"
+  metric: "cosine"
+retrieval:
+  retriever_type: "dense"
+  top_k: 1
+  fetch_k: 2
+reranker:
+  enabled: false
+generation:
+  provider: "ollama"
+  model_name: "fake"
+  system_prompt: "Use context."
+telemetry:
+  estimate_cost: false
+runtime:
+  save_csv: true
+  log_level: "INFO"
+  resume: false
+  overwrite: true
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("PIPELINE1_SKIP_OLLAMA_PREFLIGHT", "1")
+    monkeypatch.setattr("src.pipeline1.orchestrator._project_root", lambda: project_root)
+    monkeypatch.setattr("src.pipeline1.orchestrator.build_embedder", lambda config: _FakeEmbedder())
+    monkeypatch.setattr("src.pipeline1.orchestrator.build_index", lambda config: _FakeIndex())
+    monkeypatch.setattr("src.pipeline1.orchestrator.build_generator", lambda config: _FakeGenerator())
+
+    run_dir = run_pipeline(str(cfg_path))
+
+    manifest = json.loads((run_dir / "run_manifest.json").read_text(encoding="utf-8"))
+    assert manifest["data_hashes"]["documents_sha256"] is None
+    assert manifest["data_hashes"]["documents_source_type"] == "txt_folder"
+    assert manifest["data_hashes"]["txt_files_loaded"] == 2
+    assert manifest["document_input"]["folder_path"] == str(transformed_dir)
+    assert manifest["document_input"]["txt_files_loaded"] == 2
+    assert manifest["run_stats"]["n_documents"] == 2
