@@ -124,17 +124,17 @@ class ElasticsearchBM25Retriever(BaseRetriever):
                 operations.append({
                     "index": {
                     "_index": self.index_name,
-                    "_id": chunk.chunk_id,
+                        "_id": chunk.chunk_id,
                 }
                 })
 
                 operations.append({
-                "context_id": chunk.context_id,
-                "chunk_id": chunk.chunk_id,
-                "cleaned_context": chunk.text,
-                "file_name": chunk.metadata.get("file_name"),
-                "document_id": chunk.document_id,
-                "metadata": chunk.metadata,
+                    "context_id": chunk.metadata.get("context_id") or chunk.metadata.get("original_context_id"),
+                    "chunk_id": chunk.chunk_id,
+                    "cleaned_context": chunk.text,
+                    "file_name": chunk.metadata.get("file_name"),
+                    "document_id": getattr(chunk, "document_id", None) or chunk.metadata.get("document_id"),
+                    "metadata": chunk.metadata,
                 })
 
             self.client.bulk(operations=operations, refresh=False)
