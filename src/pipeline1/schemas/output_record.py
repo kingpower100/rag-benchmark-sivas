@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field, model_validator
 class OutputRecord(BaseModel):
     experiment_id: str
     question_id: str
+    uid: str | None = None
     question: str
     generated_answer: str
     retrieved_chunk_ids: list[str]
@@ -18,8 +19,10 @@ class OutputRecord(BaseModel):
     retrieved_context_ids: list[str] = Field(default_factory=list)
     retrieved_document_ids: list[str | None] = Field(default_factory=list)
     raw_retrieved_document_ids: list[str | None] = Field(default_factory=list)
+    retrieved_files: list[str | None] = Field(default_factory=list)
     retrieved_file_names: list[str | None] = Field(default_factory=list)
     raw_retrieved_file_names: list[str | None] = Field(default_factory=list)
+    citations: list[dict] = Field(default_factory=list)
     retrieved_chunk_units: list[str | None] = Field(default_factory=list)
     retrieved_chunk_texts: list[str] = Field(default_factory=list)
     retrieved_chunk_metadata: list[dict] = Field(default_factory=list)
@@ -47,9 +50,11 @@ class OutputRecord(BaseModel):
     retrieval_time_ms: float
     generation_time_ms: float
     total_latency_ms: float
+    latency_ms: float | None = None
     input_tokens: int
     output_tokens: int
     total_tokens: int
+    token_usage: dict = Field(default_factory=dict)
     estimated_cost: float = 0.0
     timestamp_utc: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     pipeline_version: str = "0.1.0"
@@ -58,6 +63,8 @@ class OutputRecord(BaseModel):
 
     @model_validator(mode="after")
     def validate_retrieval_arrays(self) -> "OutputRecord":
+        if self.uid is None:
+            self.uid = self.question_id
         if not self.retrieved_chunk_texts:
             self.retrieved_chunk_texts = list(self.retrieved_context_texts)
         if not self.retrieved_chunk_units:
@@ -85,6 +92,37 @@ class OutputRecord(BaseModel):
                 metadata.get("file_name") or metadata.get("source_file")
                 for metadata in self.retrieved_chunk_metadata
             ]
+        if not self.retrieved_files:
+            self.retrieved_files = list(self.retrieved_file_names)
+        if not self.citations:
+            self.citations = [
+                {
+                    "source_file": metadata.get("source_file") or metadata.get("file_name") or file_name,
+                    "source_id": metadata.get("source_id"),
+                    "chunk_id": chunk_id,
+                    "rank": rank,
+                    "score": score,
+                    "year": metadata.get("year") or metadata.get("report_year"),
+                    "month": metadata.get("month"),
+                }
+                for rank, (chunk_id, file_name, metadata, score) in enumerate(
+                    zip(
+                        self.retrieved_chunk_ids,
+                        self.retrieved_file_names,
+                        self.retrieved_chunk_metadata,
+                        self.retrieval_scores,
+                    ),
+                    start=1,
+                )
+            ]
+        if self.latency_ms is None:
+            self.latency_ms = self.total_latency_ms
+        if not self.token_usage:
+            self.token_usage = {
+                "input_tokens": self.input_tokens,
+                "output_tokens": self.output_tokens,
+                "total_tokens": self.total_tokens,
+            }
         if self.retrieved_unique_count == 0:
             self.retrieved_unique_count = len(set(self.retrieved_chunk_ids))
         if self.raw_retrieved_unique_count == 0 and self.raw_retrieved_original_context_ids:
@@ -98,6 +136,7 @@ class OutputRecord(BaseModel):
             == len(self.retrieved_original_context_ids)
             == len(self.retrieved_context_ids)
             == len(self.retrieved_document_ids)
+            == len(self.retrieved_files)
             == len(self.retrieved_file_names)
             == len(self.retrieved_chunk_units)
             == len(self.retrieved_chunk_texts)

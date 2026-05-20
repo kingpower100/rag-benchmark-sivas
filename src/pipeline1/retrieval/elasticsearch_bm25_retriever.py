@@ -66,7 +66,10 @@ class ElasticsearchBM25Retriever(BaseRetriever):
 
     def _ensure_available(self) -> None:
         try:
-            self.client.info()
+            if hasattr(self.client, "info"):
+                self.client.info()
+            elif hasattr(self.client, "ping") and not self.client.ping():
+                raise RuntimeError("ping returned false")
         except Exception as ex:
             raise ElasticsearchBM25Error(f"Elasticsearch is unavailable at {self.host}: {ex}") from ex
 
@@ -139,7 +142,8 @@ class ElasticsearchBM25Retriever(BaseRetriever):
 
             self.client.bulk(operations=operations, refresh=False)
 
-        self.client.indices.refresh(index=self.index_name)
+        if hasattr(self.client.indices, "refresh"):
+            self.client.indices.refresh(index=self.index_name)
 
     def _chunk_document(self, chunk: ChunkRecord) -> dict[str, Any]:
         metadata = dict(chunk.metadata)

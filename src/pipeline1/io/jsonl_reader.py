@@ -6,7 +6,7 @@ from pathlib import Path
 
 from src.pipeline1.schemas.document import DocumentRecord
 from src.pipeline1.schemas.query import QueryRecord
-from src.pipeline1.metadata import normalize_metadata
+from src.pipeline1.metadata import normalize_metadata, parse_treasury_filename
 
 
 class JsonlReader:
@@ -61,14 +61,7 @@ class JsonlReader:
             if not text.strip():
                 continue
             file_name = file_path.name
-            metadata = normalize_metadata(
-                {
-                    "file_name": file_name,
-                    "source_dataset": "officeqa",
-                    "original_context_id": file_name,
-                },
-                file_name,
-            )
+            metadata = normalize_metadata({**parse_treasury_filename(file_name), "original_context_id": file_name}, file_name)
             docs.append(
                 DocumentRecord(
                     document_id=file_name,

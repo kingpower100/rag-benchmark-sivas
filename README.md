@@ -22,26 +22,16 @@ pip install -e .
 
 Pipeline 1 experiments:
 
-- `configs/pipeline1/experiments/exp_001_fixed512_bge_qwen25_7b_rerank.yaml`
-- `configs/pipeline1/experiments/exp_002_sentence_bge_qwen25_7b_rerank.yaml`
-- `configs/pipeline1/experiments/exp_003_table_aware_bge_qwen25_7b_rerank.yaml`
-- `configs/pipeline1/experiments/exp_004_table_aware256_bge_qwen25_7b_rerank.yaml`
+- `configs/pipeline1/experiments/officeqa_treasury_hybrid_rrf_bge_small_qwen25_7b.yaml`
 
 Primary Pipeline 2 evaluation:
 
-- `configs/pipeline2/experiments/eval_exp_001_fixed512_bge_qwen25_7b_rerank.yaml`
-- `configs/pipeline2/experiments/eval_chunking_bge_qwen25_7b_rerank.yaml`
-
-Useful local/server examples:
-
-- `configs/pipeline1/examples/local_ollama.yaml`
-- `configs/pipeline1/examples/remote_linux_ollama.yaml`
-- `infra/docker/docker_host_ollama.yaml`
+- `configs/pipeline2/experiments/eval_officeqa_treasury_hybrid_rrf_bge_small_qwen25_7b.yaml`
 
 ## Run Pipeline 1
 
 ```bash
-python -m src.pipeline1.main --config configs/pipeline1/experiments/exp_001_fixed512_bge_qwen25_7b_rerank.yaml
+python -m src.pipeline1.main --config configs/pipeline1/experiments/officeqa_treasury_hybrid_rrf_bge_small_qwen25_7b.yaml
 ```
 
 Outputs are written under:
@@ -69,7 +59,7 @@ export PIPELINE1_SKIP_OLLAMA_PREFLIGHT=1
 Run evaluation after Pipeline 1 has produced `results.jsonl`:
 
 ```bash
-python -m src.pipeline2.main --config configs/pipeline2/experiments/eval_exp_001_fixed512_bge_qwen25_7b_rerank.yaml
+python -m src.pipeline2.main --config configs/pipeline2/experiments/eval_officeqa_treasury_hybrid_rrf_bge_small_qwen25_7b.yaml
 ```
 
 Outputs are written under:
@@ -82,19 +72,21 @@ Outputs are written under:
 Pipeline 2 automatic metrics:
 
 - retrieval: `hit_at_k`, `recall_at_k`, `context_precision_at_k`, `mrr_at_k`, `ndcg_at_k`, `raw_duplicate_rate`
-- answer quality: `numeric_accuracy`, `exact_match`, `relative_error`, `numeric_parse_success`, `non_empty_answer_rate`, `abstention_rate`, `answer_relevancy_score`
+- answer quality: `literal_exact_match`, `canonical_exact_match`, `strict_numeric_accuracy`, `tolerant_numeric_accuracy`, `relative_error`, `numeric_parse_success`, `non_empty_answer_rate`, `abstention_rate`, `answer_relevancy_score`
 - efficiency: `total_latency_ms`, `total_tokens`, `estimated_cost`
-- reliability: `pipeline_success_rate`, `eval_success_rate`
+- reliability: `pipeline_success_rate`, `eval_success_rate`, `generation_failure_rate`, `run_valid`
 
-`answer_relevancy_score` is a deterministic lexical-overlap baseline between question and answer content words. It is useful as a cheap diagnostic only; it is not a semantic correctness metric. RAGAS support is preserved as optional code, but it is not part of the main automatic benchmark metric set.
+Retrieval evaluation is source-file-level for the OfficeQA/Treasury configs and uses the explicit `evaluation.retrieval_eval_field` setting; it does not choose the retrieved ID field by checking gold overlap. `literal_exact_match` only trims, lowercases, and collapses whitespace. `canonical_exact_match` may canonicalize numeric/yes-no forms. `strict_numeric_accuracy` requires exact numeric equality after scale normalization, while `tolerant_numeric_accuracy` keeps the tolerance-based diagnostic. `numeric_accuracy` is kept as a backward-compatible alias for strict numeric correctness.
+
+Citation correctness is structural only: citations are checked as retrieved source metadata, not as verified support for each answer sentence. `hallucination_rate` is emitted as null unless a detector is explicitly implemented. `answer_relevancy_score` is a deterministic lexical-overlap baseline between question and answer content words. It is useful as a cheap diagnostic only; it is not a semantic correctness metric. RAGAS support is preserved as optional code, but it is not part of the main automatic benchmark metric set.
 
 ## Helper Commands
 
 ```bash
 python scripts/list_configs.py
-python scripts/run_config.py configs/pipeline1/experiments/exp_001_fixed512_bge_qwen25_7b_rerank.yaml
-python scripts/compare_runs.py data/eval/runs/pipeline2/eval_exp_001_fixed512_bge_qwen25_7b_rerank/summary_by_experiment.csv
-python scripts/benchmark_pipeline1.py --config configs/pipeline1/experiments/exp_001_fixed512_bge_qwen25_7b_rerank.yaml
+python scripts/run_config.py configs/pipeline1/experiments/officeqa_treasury_hybrid_rrf_bge_small_qwen25_7b.yaml
+python scripts/compare_runs.py data/eval/runs/pipeline2/eval_officeqa_treasury_hybrid_rrf_bge_small_qwen25_7b/summary_by_experiment.csv
+python scripts/benchmark_pipeline1.py --config configs/pipeline1/experiments/officeqa_treasury_hybrid_rrf_bge_small_qwen25_7b.yaml
 python scripts/test_ollama.py --base-url http://localhost:11434
 ```
 

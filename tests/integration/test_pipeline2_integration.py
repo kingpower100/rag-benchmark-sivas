@@ -53,6 +53,7 @@ def test_pipeline2_writes_final_metric_outputs():
 evaluation:
   eval_run_id: test_eval
   output_dir: "{out_dir.as_posix()}"
+  retrieval_eval_field: "retrieved_original_context_ids"
 inputs:
   rag_outputs:
     - "{rag_path.as_posix()}"
@@ -278,6 +279,7 @@ def test_pipeline2_summary_counts_pipeline1_failures_in_denominator():
 evaluation:
   eval_run_id: test_fair_eval
   output_dir: "{out_dir.as_posix()}"
+  retrieval_eval_field: "retrieved_original_context_ids"
 inputs:
   rag_outputs:
     - "{rag_path.as_posix()}"

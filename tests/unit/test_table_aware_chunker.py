@@ -20,7 +20,15 @@ Net income improved after cost reductions."""
         document_id="doc1",
         original_context_id="ctx1",
         text=text,
-        metadata={"file_name": "report.md", "subset": "finance", "company_name": "ACME"},
+        metadata={
+            "file_name": "treasury_bulletin_1941_01.txt",
+            "source_file": "treasury_bulletin_1941_01.txt",
+            "source_id": "treasury_bulletin_1941_01",
+            "year": 1941,
+            "month": "01",
+            "subset": "finance",
+            "company_name": "ACME",
+        },
     )
 
     chunks = TableAwareChunker(chunk_size=12, chunk_overlap=0).chunk_documents([doc])
@@ -35,7 +43,12 @@ Net income improved after cost reductions."""
     assert table_chunk.metadata["chunk_strategy"] == "table_aware"
     assert table_chunk.metadata["chunk_unit"] == "table_or_text_block"
     assert table_chunk.metadata["contains_table"] is True
-    assert table_chunk.metadata["file_name"] == "report.md"
+    assert table_chunk.metadata["file_name"] == "treasury_bulletin_1941_01.txt"
+    assert table_chunk.metadata["source_file"] == "treasury_bulletin_1941_01.txt"
+    assert table_chunk.metadata["source_id"] == "treasury_bulletin_1941_01"
+    assert table_chunk.metadata["year"] == 1941
+    assert table_chunk.metadata["month"] == "01"
+    assert table_chunk.metadata["chunk_id"] == table_chunk.chunk_id
 
 
 def test_table_aware_chunker_allows_oversized_tables_without_splitting_rows():

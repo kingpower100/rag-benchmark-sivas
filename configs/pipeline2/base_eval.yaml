@@ -1,6 +1,10 @@
 evaluation:
   eval_run_id: "eval_base"
   output_dir: "data/eval/runs/pipeline2"
+  retrieval_only: false
+  retrieval_eval_field: "retrieved_file_names"
+  max_generation_failure_rate: 0.05
+  strict_failure_threshold: false
 inputs:
   rag_outputs: []
   qa_path: "data/raw/qa_test.jsonl"
@@ -14,6 +18,8 @@ answer_quality:
 leaderboard:
   sort_metric: "mean_recall_at_5"
   sort_ascending: false
+debug:
+  enable_officeqa_smoke_check: false
 runtime:
   overwrite: true
   save_csv: true

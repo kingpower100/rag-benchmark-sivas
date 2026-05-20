@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -14,6 +14,15 @@ class StrictEvalConfigModel(BaseModel):
 class EvaluationConfig(StrictEvalConfigModel):
     eval_run_id: str
     output_dir: str = "data/eval/runs/pipeline2"
+    retrieval_only: bool = False
+    retrieval_eval_field: Literal[
+        "retrieved_file_names",
+        "retrieved_files",
+        "retrieved_document_ids",
+        "retrieved_original_context_ids",
+    ] = "retrieved_file_names"
+    max_generation_failure_rate: float = Field(default=0.05, ge=0.0, le=1.0)
+    strict_failure_threshold: bool = False
 
 
 class InputsConfig(StrictEvalConfigModel):
@@ -44,12 +53,17 @@ class LeaderboardConfig(StrictEvalConfigModel):
     sort_ascending: bool = False
 
 
+class DebugConfig(StrictEvalConfigModel):
+    enable_officeqa_smoke_check: bool = False
+
+
 class EvalConfig(StrictEvalConfigModel):
     evaluation: EvaluationConfig
     inputs: InputsConfig
     retrieval: RetrievalEvalConfig = RetrievalEvalConfig()
     answer_quality: AnswerQualityConfig = AnswerQualityConfig()
     leaderboard: LeaderboardConfig = LeaderboardConfig()
+    debug: DebugConfig = DebugConfig()
     runtime: RuntimeConfig = RuntimeConfig()
 
     @classmethod

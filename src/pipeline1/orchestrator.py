@@ -20,6 +20,7 @@ from src.pipeline1.indexing.factory import build_index
 from src.pipeline1.io.jsonl_reader import JsonlReader
 from src.pipeline1.io.manifest_writer import write_manifest
 from src.pipeline1.io.result_writer import ResultWriter
+from src.pipeline1.metadata import TREASURY_METADATA_SCHEMA_VERSION
 from src.pipeline1.preflight import run_preflight_checks
 from src.pipeline1.retrieval.cross_encoder_reranker import CrossEncoderReranker
 from src.pipeline1.retrieval.factory import build_retriever
@@ -70,6 +71,7 @@ def run_pipeline(config_path: str) -> Path:
             "documents_file_glob": cfg.data.documents_file_glob,
             "document_text_field": cfg.data.document_text_field,
             "allow_document_text_fallback": cfg.data.allow_document_text_fallback,
+            "metadata_schema_version": TREASURY_METADATA_SCHEMA_VERSION,
             "chunking": cfg.chunking.model_dump(),
             "chunker_versions": chunker_versions,
         }
@@ -245,6 +247,7 @@ def run_pipeline(config_path: str) -> Path:
             record = OutputRecord(
                 experiment_id=cfg.experiment.experiment_id,
                 question_id=query.question_id,
+                uid=query.question_id,
                 question=query.question,
                 generated_answer=answer,
                 retrieved_chunk_ids=[item.chunk_id for item in retrieved],
@@ -260,9 +263,11 @@ def run_pipeline(config_path: str) -> Path:
                     for item in raw_retrieved
                 ],
                 retrieved_file_names=[item.metadata.get("file_name") or item.metadata.get("source_file") for item in retrieved],
+                retrieved_files=[item.metadata.get("source_file") or item.metadata.get("file_name") for item in retrieved],
                 raw_retrieved_file_names=[
                     item.metadata.get("file_name") or item.metadata.get("source_file") for item in raw_retrieved
                 ],
+                citations=_build_citations(retrieved),
                 retrieved_chunk_units=[item.chunk_unit for item in retrieved],
                 retrieved_chunk_texts=[item.text for item in retrieved],
                 retrieved_chunk_metadata=[dict(item.metadata) for item in retrieved],
@@ -299,9 +304,11 @@ def run_pipeline(config_path: str) -> Path:
                 retrieval_time_ms=retrieval_time_ms,
                 generation_time_ms=generation_time_ms,
                 total_latency_ms=retrieval_time_ms + generation_time_ms,
+                latency_ms=retrieval_time_ms + generation_time_ms,
                 input_tokens=input_tokens,
                 output_tokens=output_tokens,
                 total_tokens=total_tokens,
+                token_usage={"input_tokens": input_tokens, "output_tokens": output_tokens, "total_tokens": total_tokens},
                 estimated_cost=cost,
                 prompt_template_version=PROMPT_TEMPLATE_VERSION,
                 error=error,
@@ -352,6 +359,7 @@ def run_pipeline(config_path: str) -> Path:
                 "index": str(index_path),
             },
             "chunker_versions": chunker_versions,
+            "metadata_schema_version": TREASURY_METADATA_SCHEMA_VERSION,
             "chunk_units": _chunk_unit_counts(chunks),
             "output_row_counts": output_counts,
             "run_stats": {"n_documents": len(docs), "n_queries": len(queries), "attempted": attempted, "written": written},
@@ -372,6 +380,7 @@ def _load_documents(cfg: PipelineConfig, docs_path: Path) -> tuple[list, dict]:
             "folder_path": str(docs_path),
             "file_glob": cfg.data.documents_file_glob,
             "txt_files_loaded": len(docs),
+            "metadata_schema_version": TREASURY_METADATA_SCHEMA_VERSION,
         }
     docs = JsonlReader.read_documents(
         str(docs_path),
@@ -384,7 +393,26 @@ def _load_documents(cfg: PipelineConfig, docs_path: Path) -> tuple[list, dict]:
         "path": str(docs_path),
         "file_glob": None,
         "txt_files_loaded": None,
+        "metadata_schema_version": TREASURY_METADATA_SCHEMA_VERSION,
     }
+
+
+def _build_citations(items: list) -> list[dict]:
+    citations = []
+    for rank, item in enumerate(items, start=1):
+        metadata = item.metadata or {}
+        citations.append(
+            {
+                "source_file": metadata.get("source_file") or metadata.get("file_name"),
+                "source_id": metadata.get("source_id"),
+                "chunk_id": item.chunk_id,
+                "rank": rank,
+                "score": item.score,
+                "year": metadata.get("year") or metadata.get("report_year"),
+                "month": metadata.get("month"),
+            }
+        )
+    return citations
 
 
 def dedupe_retrieval_by_chunk_id(items: list, top_k: int) -> list:

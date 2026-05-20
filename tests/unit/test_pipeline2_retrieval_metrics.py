@@ -1,6 +1,6 @@
 import pytest
 
-from src.pipeline2.metrics.retrieval_metrics import compute_retrieval_metrics
+from src.pipeline2.metrics.retrieval_metrics import compute_retrieval_metrics, normalize_source_id
 
 
 def test_single_gold_hit_recall_precision_and_mrr_case_a():
@@ -121,3 +121,13 @@ def test_raw_duplicate_rate_uses_pre_dedup_candidates():
 
     assert metrics["duplicate_context_rate"] == 0.0
     assert metrics["raw_duplicate_rate"] == 1 / 3
+
+
+def test_source_id_normalization_matches_txt_and_non_txt_forms():
+    assert normalize_source_id("treasury_bulletin_1941_01.txt") == "treasury_bulletin_1941_01"
+    assert normalize_source_id("treasury_bulletin_1941_01") == "treasury_bulletin_1941_01"
+
+    metrics = compute_retrieval_metrics(["treasury_bulletin_1941_01"], ["treasury_bulletin_1941_01.txt"], k=1)
+
+    assert metrics["hit_at_1"] == 1.0
+    assert metrics["recall_at_1"] == 1.0

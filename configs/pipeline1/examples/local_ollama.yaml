@@ -1,9 +1,0 @@
-extends: "../experiments/exp_001_fixed512_bge_qwen25_7b.yaml"
-experiment:
-  experiment_id: "example_local_ollama"
-embedding:
-  device: "cpu"
-reranker:
-  enabled: false
-generation:
-  base_url: "http://localhost:11434"

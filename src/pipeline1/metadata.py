@@ -4,6 +4,9 @@ import re
 from typing import Any
 
 
+TREASURY_METADATA_SCHEMA_VERSION = "treasury_v1"
+_TREASURY_FILENAME_RE = re.compile(r"^(treasury_bulletin_(?P<year>\d{4})_(?P<month>\d{2}))\.txt$", re.IGNORECASE)
+
 CANONICAL_METADATA_FIELDS = (
     "company_name",
     "company_symbol",
@@ -16,6 +19,36 @@ CANONICAL_METADATA_FIELDS = (
     "source_dataset",
     "original_context_id",
 )
+
+
+def parse_treasury_filename(filename: str) -> dict[str, Any]:
+    """Extract stable Treasury Bulletin metadata from a source filename."""
+    name = str(filename)
+    stem = name.rsplit(".", 1)[0] if "." in name else name
+    metadata: dict[str, Any] = {
+        "source_file": name,
+        "file_name": name,
+        "source_id": stem,
+        "year": None,
+        "month": None,
+        "report_year": None,
+        "source_dataset": "officeqa",
+        "metadata_schema_version": TREASURY_METADATA_SCHEMA_VERSION,
+    }
+    match = _TREASURY_FILENAME_RE.fullmatch(name)
+    if not match:
+        return metadata
+    year = int(match.group("year"))
+    month = match.group("month")
+    metadata.update(
+        {
+            "source_id": match.group(1),
+            "year": year,
+            "month": month,
+            "report_year": year,
+        }
+    )
+    return metadata
 
 
 def normalize_text(value: Any) -> str | None:

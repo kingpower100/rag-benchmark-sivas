@@ -86,12 +86,17 @@ def compute_answer_metrics(
     non_empty = 1.0 if generated.strip() else 0.0
     abstained = 1.0 if is_abstention(generated, abstention_patterns) else 0.0
     parse_success = 1.0 if _best_value(generated) is not None else 0.0
-    exact_match = 1.0 if _normalized_exact_text(generated) == _normalized_exact_text(truth) and truth.strip() else 0.0
+    literal_exact_match = 1.0 if _literal_exact_text(generated) == _literal_exact_text(truth) and truth.strip() else 0.0
+    canonical_exact_match = 1.0 if _normalized_exact_text(generated) == _normalized_exact_text(truth) and truth.strip() else 0.0
     return {
         "numeric_accuracy": match["numeric_accuracy"],
+        "strict_numeric_accuracy": match["strict_numeric_accuracy"],
+        "tolerant_numeric_accuracy": match["tolerant_numeric_accuracy"],
         "number_match": match["numeric_accuracy"],
-        "exact_match": exact_match,
-        "exact_match_debug": exact_match,
+        "exact_match": literal_exact_match,
+        "literal_exact_match": literal_exact_match,
+        "canonical_exact_match": canonical_exact_match,
+        "exact_match_debug": canonical_exact_match,
         "normalized_generated_answer": match["normalized_generated_answer"],
         "normalized_gold_answer": match["normalized_gold_answer"],
         "generated_number": _decimal_to_float(match["generated_number"]),
@@ -174,6 +179,8 @@ def _compare_answers(generated_answer: str, ground_truth_answer: str) -> dict[st
     if truth_value is None:
         return {
             "numeric_accuracy": None,
+            "strict_numeric_accuracy": None,
+            "tolerant_numeric_accuracy": None,
             "normalized_generated_answer": normalized_generated,
             "normalized_gold_answer": normalized_truth,
             "generated_number": generated_value,
@@ -185,6 +192,8 @@ def _compare_answers(generated_answer: str, ground_truth_answer: str) -> dict[st
     if generated_value is None:
         return {
             "numeric_accuracy": 0.0,
+            "strict_numeric_accuracy": 0.0,
+            "tolerant_numeric_accuracy": 0.0,
             "normalized_generated_answer": normalized_generated,
             "normalized_gold_answer": normalized_truth,
             "generated_number": None,
@@ -195,16 +204,19 @@ def _compare_answers(generated_answer: str, ground_truth_answer: str) -> dict[st
         }
     absolute_error = abs(generated_value - truth_value)
     relative_error = absolute_error / abs(truth_value) if truth_value != 0 else None
-    matched = _close(generated_value, truth_value)
+    strict_matched = generated_value == truth_value
+    tolerant_matched = _close(generated_value, truth_value)
     return {
-        "numeric_accuracy": 1.0 if matched else 0.0,
+        "numeric_accuracy": 1.0 if strict_matched else 0.0,
+        "strict_numeric_accuracy": 1.0 if strict_matched else 0.0,
+        "tolerant_numeric_accuracy": 1.0 if tolerant_matched else 0.0,
         "normalized_generated_answer": normalized_generated,
         "normalized_gold_answer": normalized_truth,
         "generated_number": generated_value,
         "gold_number": truth_value,
         "absolute_error": absolute_error,
         "relative_error": relative_error,
-        "answer_match_status": "match" if matched else "mismatch",
+        "answer_match_status": "match" if strict_matched else "mismatch",
     }
 
 
@@ -220,6 +232,10 @@ def _best_value(text: str) -> Decimal | None:
 
 def _normalized_text(text: str) -> str:
     return " ".join((text or "").strip().lower().split())
+
+
+def _literal_exact_text(text: str) -> str:
+    return _normalized_text(text)
 
 
 def _normalized_exact_text(text: str) -> str:

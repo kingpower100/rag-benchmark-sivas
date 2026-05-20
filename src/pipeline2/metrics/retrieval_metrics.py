@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import math
+from pathlib import Path
 from src.pipeline1.retrieval.metadata import QueryMetadata, extract_query_metadata, metadata_matches
 
 
@@ -32,8 +33,8 @@ def compute_retrieval_metrics_for_ks(
 
 
 def _metrics_at_k(retrieved_ids: list[str], gold_ids: list[str], k: int) -> dict[str, float | None]:
-    ranked = _dedupe_preserving_order(str(item) for item in retrieved_ids if item is not None)[:k]
-    gold_set = {str(item) for item in gold_ids if item is not None}
+    ranked = _dedupe_preserving_order(normalize_source_id(str(item)) for item in retrieved_ids if item is not None)[:k]
+    gold_set = {normalize_source_id(str(item)) for item in gold_ids if item is not None}
     overlap_set = set(ranked) & gold_set
     overlap = len(overlap_set)
 
@@ -56,7 +57,7 @@ def _metrics_at_k(retrieved_ids: list[str], gold_ids: list[str], k: int) -> dict
 
 
 def duplicate_context_rate(retrieved_ids: list[str]) -> float:
-    ids = [str(item) for item in retrieved_ids if item is not None]
+    ids = [normalize_source_id(str(item)) for item in retrieved_ids if item is not None]
     if not ids:
         return 0.0
     return (len(ids) - len(set(ids))) / len(ids)
@@ -115,3 +116,13 @@ def _dedupe_preserving_order(items) -> list[str]:
         seen.add(item)
         output.append(item)
     return output
+
+
+def normalize_source_id(value: str) -> str:
+    text = " ".join(str(value or "").strip().split())
+    if not text:
+        return ""
+    name = Path(text.replace("\\", "/")).name
+    if name.lower().endswith(".txt"):
+        name = name[:-4]
+    return name.casefold()

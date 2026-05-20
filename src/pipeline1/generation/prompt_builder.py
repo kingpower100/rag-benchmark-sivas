@@ -32,8 +32,14 @@ def _format_context(item, include_metadata_headers: bool) -> str:
         return item.text
     metadata = getattr(item, "metadata", {}) or {}
     pieces = []
-    for label, key in (("Company", "company_name"), ("Symbol", "company_symbol"), ("Year", "report_year"), ("Page", "page_number")):
-        value = metadata.get(key)
+    for label, value in (
+        ("Company", metadata.get("company_name")),
+        ("Symbol", metadata.get("company_symbol")),
+        ("Year", metadata.get("year") or metadata.get("report_year")),
+        ("Month", metadata.get("month")),
+        ("Source file", metadata.get("source_file")),
+        ("Page", metadata.get("page_number")),
+    ):
         if value is not None and str(value).strip():
             pieces.append(f"{label}: {value}")
     if not pieces:

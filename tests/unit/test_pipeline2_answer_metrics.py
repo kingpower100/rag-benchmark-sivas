@@ -7,6 +7,8 @@ def test_numeric_accuracy_matches_numbers_with_commas_and_currency():
     metrics = compute_answer_metrics("Revenue was $1,250.00.", "1250")
 
     assert metrics["numeric_accuracy"] == 1.0
+    assert metrics["strict_numeric_accuracy"] == 1.0
+    assert metrics["tolerant_numeric_accuracy"] == 1.0
 
 
 def test_numeric_accuracy_is_none_without_numeric_ground_truth():
@@ -19,6 +21,7 @@ def test_numeric_accuracy_detects_mismatch():
     metrics = compute_answer_metrics("42", "41")
 
     assert metrics["numeric_accuracy"] == 0.0
+    assert metrics["strict_numeric_accuracy"] == 0.0
 
 
 def test_yes_no_normalization_matches_one_zero():
@@ -38,15 +41,44 @@ def test_numeric_debug_fields_explain_mismatch():
     metrics = compute_answer_metrics("2 million", "1000000")
 
     assert metrics["numeric_accuracy"] == 0.0
+    assert metrics["strict_numeric_accuracy"] == 0.0
+    assert metrics["tolerant_numeric_accuracy"] == 0.0
     assert metrics["generated_number"] == 2000000.0
     assert metrics["gold_number"] == 1000000.0
     assert metrics["absolute_error"] == 1000000.0
     assert metrics["answer_match_status"] == "mismatch"
 
 
-def test_exact_match_normalizes_numeric_formatting_and_yes_no_variants():
-    assert compute_answer_metrics("$1,250.00", "1250")["exact_match"] == 1.0
-    assert compute_answer_metrics("yes", "1")["exact_match"] == 1.0
+def test_canonical_exact_match_normalizes_numeric_formatting_and_yes_no_variants():
+    metrics = compute_answer_metrics("$1,250.00", "1250")
+
+    assert metrics["literal_exact_match"] == 0.0
+    assert metrics["exact_match"] == 0.0
+    assert metrics["canonical_exact_match"] == 1.0
+    assert compute_answer_metrics("yes", "1")["canonical_exact_match"] == 1.0
+
+
+def test_strict_and_tolerant_numeric_metrics_are_separate():
+    exact = compute_answer_metrics("2602", "2602")
+    tolerant_only = compute_answer_metrics("2603", "2602")
+    scaled = compute_answer_metrics("2.602 billion", "2602 million")
+    empty = compute_answer_metrics("", "2602")
+
+    assert exact["strict_numeric_accuracy"] == 1.0
+    assert exact["tolerant_numeric_accuracy"] == 1.0
+    assert tolerant_only["strict_numeric_accuracy"] == 0.0
+    assert tolerant_only["tolerant_numeric_accuracy"] == 1.0
+    assert tolerant_only["numeric_accuracy"] == 0.0
+    assert scaled["strict_numeric_accuracy"] == 1.0
+    assert empty["strict_numeric_accuracy"] == 0.0
+    assert empty["tolerant_numeric_accuracy"] == 0.0
+
+
+def test_literal_exact_match_uses_minimal_text_normalization_only():
+    assert compute_answer_metrics("2602", "2602")["literal_exact_match"] == 1.0
+    assert compute_answer_metrics(" 2602 ", "2602")["literal_exact_match"] == 1.0
+    assert compute_answer_metrics("2.602 billion", "2602 million")["literal_exact_match"] == 0.0
+    assert compute_answer_metrics("Revenue was 2602", "2602")["literal_exact_match"] == 0.0
 
 
 def test_relative_error_and_numeric_parse_success_are_reported():

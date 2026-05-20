@@ -1,12 +1,16 @@
 extends: "../base_eval.yaml"
 
 evaluation:
-  eval_run_id: "eval_officeqa_hybrid_rrf_bge_large_llama33_70b"
+  eval_run_id: "eval_officeqa_treasury_hybrid_rrf_bge_small_qwen25_7b"
   output_dir: "data/eval/runs/pipeline2"
+  retrieval_only: false
+  retrieval_eval_field: "retrieved_file_names"
+  max_generation_failure_rate: 0.05
+  strict_failure_threshold: false
 
 inputs:
   rag_outputs:
-    - "data/runs/pipeline1/officeqa_hybrid_rrf_bge_large_llama33_70b/results.jsonl"
+    - "data/runs/pipeline1/officeqa_treasury_hybrid_rrf_bge_small_qwen25_7b/results.jsonl"
   qa_path: "data/raw/qa_test.jsonl"
   gold_contexts_path: "data/raw/ground_truth_contexts.jsonl"
 
@@ -22,6 +26,9 @@ leaderboard:
   sort_metric: "mean_numeric_accuracy"
   sort_ascending: false
 
+debug:
+  enable_officeqa_smoke_check: false
+
 runtime:
-  overwrite: true
+  overwrite: false
   save_csv: true

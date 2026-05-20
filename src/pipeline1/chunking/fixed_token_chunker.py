@@ -39,8 +39,9 @@ class FixedTokenChunker(BaseChunker):
                 text = self._decode_units(units[start:end]).strip()
                 if not text:
                     continue
+                chunk_id = make_chunk_id(doc.document_id, start, end, text)
                 chunks.append(ChunkRecord(
-                    chunk_id=make_chunk_id(doc.document_id, start, end, text),
+                    chunk_id=chunk_id,
                     document_id=doc.document_id,
                     original_context_id=doc.original_context_id,
                     text=text,
@@ -49,6 +50,13 @@ class FixedTokenChunker(BaseChunker):
                     metadata={
                         **dict(doc.metadata),
                         **canonical_chunk_metadata(doc.metadata, doc.original_context_id),
+                        "doc_id": doc.document_id,
+                        "original_context_id": doc.original_context_id,
+                        "source_file": doc.metadata.get("source_file") or doc.metadata.get("file_name"),
+                        "source_id": doc.metadata.get("source_id"),
+                        "year": doc.metadata.get("year"),
+                        "month": doc.metadata.get("month"),
+                        "chunk_id": chunk_id,
                         "chunk_unit": "token" if self.encoding is not None else "word_fallback",
                         "chunk_strategy": "fixed_token",
                         "tokenizer_name": self.tokenizer_name,

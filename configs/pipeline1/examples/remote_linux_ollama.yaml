@@ -1,5 +1,0 @@
-extends: "../experiments/exp_001_fixed512_bge_qwen25_7b.yaml"
-experiment:
-  experiment_id: "example_remote_linux_ollama"
-generation:
-  base_url: "http://127.0.0.1:11434"

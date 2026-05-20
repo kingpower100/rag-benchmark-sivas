@@ -3,6 +3,7 @@ import pytest
 from src.pipeline1.chunking.fixed_token_chunker import FixedTokenChunker
 from src.pipeline1.config_loader import load_pipeline_config_payload
 from src.pipeline1.io.jsonl_reader import JsonlReader
+from src.pipeline1.metadata import parse_treasury_filename
 from src.pipeline1.orchestrator import _chunker_versions
 from src.pipeline1.preflight import run_preflight_checks
 from src.pipeline1.schemas.config_schema import PipelineConfig
@@ -50,7 +51,34 @@ def test_txt_folder_reader_creates_officeqa_document_records(tmp_path):
     assert docs[0].original_context_id == "treasury_bulletin_1944_01.txt"
     assert docs[0].text == "OfficeQA text"
     assert docs[0].metadata["file_name"] == "treasury_bulletin_1944_01.txt"
+    assert docs[0].metadata["source_file"] == "treasury_bulletin_1944_01.txt"
+    assert docs[0].metadata["source_id"] == "treasury_bulletin_1944_01"
+    assert docs[0].metadata["year"] == 1944
+    assert docs[0].metadata["month"] == "01"
+    assert docs[0].metadata["report_year"] == 1944
     assert docs[0].metadata["source_dataset"] == "officeqa"
+
+
+def test_parse_treasury_filename_extracts_metadata():
+    metadata = parse_treasury_filename("treasury_bulletin_1941_01.txt")
+
+    assert metadata["source_file"] == "treasury_bulletin_1941_01.txt"
+    assert metadata["file_name"] == "treasury_bulletin_1941_01.txt"
+    assert metadata["source_id"] == "treasury_bulletin_1941_01"
+    assert metadata["year"] == 1941
+    assert metadata["month"] == "01"
+    assert metadata["report_year"] == 1941
+    assert metadata["source_dataset"] == "officeqa"
+
+
+def test_parse_treasury_filename_falls_back_for_unknown_name():
+    metadata = parse_treasury_filename("other_report.txt")
+
+    assert metadata["source_file"] == "other_report.txt"
+    assert metadata["file_name"] == "other_report.txt"
+    assert metadata["source_id"] == "other_report"
+    assert metadata["year"] is None
+    assert metadata["month"] is None
 
 
 def test_pipeline1_rejects_answer_bearing_query_file(tmp_path, monkeypatch):

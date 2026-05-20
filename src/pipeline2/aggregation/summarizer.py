@@ -15,14 +15,18 @@ def summarize_by_experiment(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
         summary = {
             "experiment_id": experiment_id,
             "n_questions": len(group),
-            "pipeline_success_rate": _mean([1.0 if not row.get("pipeline1_error") else 0.0 for row in group]),
+            "pipeline_success_rate": _mean([1.0 if not row.get("generation_failed", bool(row.get("pipeline1_error"))) else 0.0 for row in group]),
             "eval_success_rate": _mean([1.0 if not row.get("evaluation_errors") else 0.0 for row in group]),
         }
         for col in metric_cols:
             summary[f"mean_{col}"] = _mean([row.get(col) for row in group if row.get(col) is not None])
         for col in (
             "numeric_accuracy",
+            "strict_numeric_accuracy",
+            "tolerant_numeric_accuracy",
             "exact_match",
+            "literal_exact_match",
+            "canonical_exact_match",
             "non_empty_answer_rate",
             "answer_coverage_rate",
             "abstention_rate",
