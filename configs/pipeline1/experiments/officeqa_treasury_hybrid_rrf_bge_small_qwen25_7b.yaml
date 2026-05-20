@@ -22,8 +22,8 @@ data:
 
 chunking:
   strategy: "table_aware"
-  chunk_size: 900
-  chunk_overlap: 150
+  chunk_size: 512
+  chunk_overlap: 200
   tokenizer_name: "cl100k_base"
   allow_word_fallback: false
 
