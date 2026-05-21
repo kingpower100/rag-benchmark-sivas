@@ -33,19 +33,21 @@ def compute_retrieval_metrics_for_ks(
 
 
 def _metrics_at_k(retrieved_ids: list[str], gold_ids: list[str], k: int) -> dict[str, float | None]:
-    ranked = _dedupe_preserving_order(normalize_source_id(str(item)) for item in retrieved_ids if item is not None)[:k]
+    ranked = [normalize_source_id(str(item)) for item in retrieved_ids if item is not None][:k]
+    deduped_ranked = _dedupe_preserving_order(ranked)
     gold_set = {normalize_source_id(str(item)) for item in gold_ids if item is not None}
-    overlap_set = set(ranked) & gold_set
-    overlap = len(overlap_set)
+    overlap = sum(1 for item in ranked if item in gold_set)
+    unique_overlap = len(set(ranked) & gold_set)
 
-    hit = 1.0 if overlap > 0 else 0.0
-    recall = None if not gold_set else overlap / len(gold_set)
+    hit = 1.0 if unique_overlap > 0 else 0.0
+    recall = None if not gold_set else unique_overlap / len(gold_set)
     context_precision = overlap / k
     reciprocal_rank = 0.0
     for idx, item in enumerate(ranked, start=1):
         if item in gold_set:
             reciprocal_rank = 1.0 / idx
             break
+    deduped_overlap = len(set(deduped_ranked) & gold_set)
 
     return {
         f"hit_at_{k}": hit,
@@ -53,6 +55,12 @@ def _metrics_at_k(retrieved_ids: list[str], gold_ids: list[str], k: int) -> dict
         f"mrr_at_{k}": reciprocal_rank,
         f"context_precision_at_{k}": context_precision,
         f"ndcg_at_{k}": _ndcg_at_k(ranked, gold_set, k),
+        f"duplicate_count_at_{k}": len(ranked) - len(set(ranked)),
+        f"duplicate_rate_at_{k}": duplicate_context_rate(ranked),
+        f"deduped_hit_at_{k}": 1.0 if deduped_overlap > 0 else 0.0,
+        f"deduped_recall_at_{k}": None if not gold_set else deduped_overlap / len(gold_set),
+        f"deduped_mrr_at_{k}": _reciprocal_rank(deduped_ranked, gold_set),
+        f"deduped_ndcg_at_{k}": _ndcg_at_k(deduped_ranked, gold_set, k),
     }
 
 
@@ -105,6 +113,13 @@ def _ndcg_at_k(ranked: list[str], gold_set: set[str], k: int) -> float:
     ideal_hits = min(len(gold_set), k)
     idcg = sum(1.0 / math.log2(rank + 1) for rank in range(1, ideal_hits + 1))
     return dcg / idcg if idcg else 0.0
+
+
+def _reciprocal_rank(ranked: list[str], gold_set: set[str]) -> float:
+    for idx, item in enumerate(ranked, start=1):
+        if item in gold_set:
+            return 1.0 / idx
+    return 0.0
 
 
 def _dedupe_preserving_order(items) -> list[str]:

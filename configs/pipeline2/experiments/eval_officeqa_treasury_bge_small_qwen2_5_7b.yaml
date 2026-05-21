@@ -1,7 +1,7 @@
 extends: "../base_eval.yaml"
 
 evaluation:
-  eval_run_id: "eval_officeqa_treasury_hybrid_rrf_bge_small_qwen25_7b"
+  eval_run_id: "eval_officeqa_treasury_bge_small_qwen2_5_7b"
   output_dir: "data/eval/runs/pipeline2"
   retrieval_only: false
   retrieval_eval_field: "retrieved_file_names"
@@ -10,7 +10,7 @@ evaluation:
 
 inputs:
   rag_outputs:
-    - "data/runs/pipeline1/officeqa_treasury_hybrid_rrf_bge_small_qwen25_7b/results.jsonl"
+    - "data/runs/pipeline1/officeqa_treasury_bge_small_qwen2_5_7b/results.jsonl"
   qa_path: "data/raw/qa_test.jsonl"
   gold_contexts_path: "data/raw/ground_truth_contexts.jsonl"
 

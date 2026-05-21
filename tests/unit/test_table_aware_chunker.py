@@ -7,6 +7,28 @@ def test_table_aware_chunker_does_not_subclass_fixed_word_chunker():
     assert not issubclass(TableAwareChunker, FixedWordChunker)
 
 
+def test_table_aware_overlap_uses_word_budget_not_block_count():
+    doc = DocumentRecord(
+        document_id="doc",
+        original_context_id="doc",
+        text="\n\n".join(
+            [
+                "one two three four",
+                "five six seven eight",
+                "nine ten eleven twelve",
+                "thirteen fourteen fifteen sixteen",
+            ]
+        ),
+    )
+
+    chunks = TableAwareChunker(chunk_size=8, chunk_overlap=4).chunk_documents([doc])
+
+    assert len(chunks) == 3
+    assert chunks[0].text == "one two three four\n\nfive six seven eight"
+    assert chunks[1].text == "five six seven eight\n\nnine ten eleven twelve"
+    assert chunks[2].text == "nine ten eleven twelve\n\nthirteen fourteen fifteen sixteen"
+
+
 def test_table_aware_chunker_keeps_markdown_table_intact():
     text = """Amounts in millions.
 
@@ -73,3 +95,35 @@ After table."""
     assert "| Net income | 10 | 18 | 24 |" in table_chunk.text
     assert table_chunk.metadata["contains_table"] is True
     assert table_chunk.metadata["oversized_table"] is True
+
+
+def test_table_aware_chunker_splits_huge_table_and_preserves_metadata():
+    rows = ["| Col | Value |", "| --- | --- |"]
+    rows.extend(f"| row{i} | {'x ' * 20} |" for i in range(30))
+    doc = DocumentRecord(
+        document_id="doc3",
+        original_context_id="ctx3",
+        text="\n".join(rows),
+        metadata={"file_name": "source.txt", "source_file": "source.txt"},
+    )
+
+    chunks = TableAwareChunker(
+        chunk_size=20,
+        chunk_overlap=0,
+        max_chunk_chars=300,
+        max_chunk_tokens=80,
+        oversized_chunk_policy="split",
+    ).chunk_documents([doc])
+
+    assert len(chunks) > 1
+    assert all(len(chunk.text) <= 300 for chunk in chunks)
+    assert all(len(chunk.text.split()) <= 80 for chunk in chunks)
+    assert all(chunk.metadata["file_name"] == "source.txt" for chunk in chunks)
+    assert all(chunk.metadata["source_file"] == "source.txt" for chunk in chunks)
+    assert any(chunk.metadata["oversized_split"] is True for chunk in chunks)
+
+
+def test_table_aware_chunker_version_marks_oversized_guard():
+    from src.pipeline1.chunking.table_aware_chunker import TABLE_AWARE_CHUNKER_VERSION
+
+    assert TABLE_AWARE_CHUNKER_VERSION == "table_aware_v3_oversized_guard"

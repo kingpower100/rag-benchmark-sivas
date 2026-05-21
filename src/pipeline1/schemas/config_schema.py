@@ -19,6 +19,7 @@ class DataConfig(StrictConfigModel):
     documents_path: str
     documents_source_type: Literal["jsonl", "txt_folder"] = "jsonl"
     documents_file_glob: str = "*.txt"
+    documents_recursive: bool = True
     questions_path: str = Field(validation_alias=AliasChoices("questions_path", "qa_test_path"))
     question_field: str = "question"
     question_id_field: str = "question_id"
@@ -42,6 +43,10 @@ class ChunkingConfig(StrictConfigModel):
     chunk_overlap: int = Field(ge=0)
     tokenizer_name: str = "cl100k_base"
     allow_word_fallback: bool = False
+    max_chunk_chars: int = Field(default=8000, gt=0)
+    max_chunk_tokens: int = Field(default=1800, gt=0)
+    oversized_chunk_policy: Literal["split", "warn", "raise"] = "split"
+    oversized_chunk_warning: bool = True
 
 
 class EmbeddingConfig(StrictConfigModel):
@@ -121,6 +126,13 @@ class GenerationConfig(StrictConfigModel):
     timeout_s: int = Field(default=90, gt=0)
     system_prompt: str
     include_metadata_headers: bool = False
+    max_prompt_tokens: int = Field(default=8192, gt=0)
+    max_context_tokens: int = Field(default=6000, gt=0)
+    max_chunk_tokens: int = Field(default=1800, gt=0)
+    max_context_chars: int = Field(default=24000, gt=0)
+    max_chunk_chars: int = Field(default=8000, gt=0)
+    context_truncation_strategy: Literal["ranked_budget"] = "ranked_budget"
+    log_prompt_stats: bool = True
 
 
 class PricingConfig(StrictConfigModel):
@@ -138,6 +150,7 @@ class RuntimeConfig(StrictConfigModel):
     log_level: str = "INFO"
     resume: bool = True
     overwrite: bool = False
+    cache_mismatch_policy: Literal["raise", "rebuild"] = "raise"
 
 
 class PipelineConfig(StrictConfigModel):

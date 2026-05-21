@@ -51,6 +51,7 @@ def _normalize_documents_config(payload: dict[str, Any]) -> dict[str, Any]:
         "path": "documents_path",
         "source_type": "documents_source_type",
         "file_glob": "documents_file_glob",
+        "recursive": "documents_recursive",
         "text_field": "document_text_field",
     }
     for source_key, target_key in field_map.items():

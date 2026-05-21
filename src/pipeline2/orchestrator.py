@@ -483,7 +483,19 @@ def _metric_ks(cfg: EvalConfig) -> list[int]:
 def _per_question_fields(ks: list[int]) -> list[str]:
     metric_fields = []
     for k in ks:
-        metric_fields.extend([f"hit_at_{k}", f"recall_at_{k}", f"mrr_at_{k}", f"context_precision_at_{k}", f"ndcg_at_{k}"])
+        metric_fields.extend([
+            f"hit_at_{k}",
+            f"recall_at_{k}",
+            f"mrr_at_{k}",
+            f"context_precision_at_{k}",
+            f"ndcg_at_{k}",
+            f"duplicate_count_at_{k}",
+            f"duplicate_rate_at_{k}",
+            f"deduped_hit_at_{k}",
+            f"deduped_recall_at_{k}",
+            f"deduped_mrr_at_{k}",
+            f"deduped_ndcg_at_{k}",
+        ])
     return [
         "uid",
         "question_id",
@@ -550,7 +562,19 @@ def summarize_by_difficulty(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
                 key
                 for row in group
                 for key in row
-                if key.startswith(("hit_at_", "recall_at_", "mrr_at_", "context_precision_at_", "ndcg_at_"))
+                if key.startswith((
+                    "hit_at_",
+                    "recall_at_",
+                    "mrr_at_",
+                    "context_precision_at_",
+                    "ndcg_at_",
+                    "duplicate_count_at_",
+                    "duplicate_rate_at_",
+                    "deduped_hit_at_",
+                    "deduped_recall_at_",
+                    "deduped_mrr_at_",
+                    "deduped_ndcg_at_",
+                ))
             }
         )
         for col in metric_cols:

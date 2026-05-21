@@ -27,3 +27,11 @@ class FaissIndex(BaseVectorIndex):
     def search(self, query_embedding: np.ndarray, top_k: int):
         scores, indices = self.index.search(np.array([query_embedding], dtype="float32"), top_k)
         return scores[0], indices[0]
+
+    @property
+    def ntotal(self) -> int:
+        return int(self.index.ntotal) if self.index is not None else 0
+
+    @property
+    def dim(self) -> int | None:
+        return int(self.index.d) if self.index is not None else None

@@ -65,6 +65,22 @@ def test_txt_folder_reader_creates_officeqa_document_records(tmp_path):
     assert docs[0].metadata["source_dataset"] == "officeqa"
 
 
+def test_txt_folder_reader_recurses_and_preserves_relative_paths(tmp_path):
+    folder = tmp_path / "transformed"
+    nested = folder / "nested"
+    nested.mkdir(parents=True)
+    (nested / "treasury_bulletin_1944_02.txt").write_text("Nested OfficeQA text", encoding="utf-8")
+
+    docs = JsonlReader.read_txt_folder(str(folder), "*.txt", recursive=True)
+
+    assert len(docs) == 1
+    assert docs[0].document_id == "nested/treasury_bulletin_1944_02.txt"
+    assert docs[0].original_context_id == "nested/treasury_bulletin_1944_02.txt"
+    assert docs[0].metadata["file_name"] == "treasury_bulletin_1944_02.txt"
+    assert docs[0].metadata["source_file"] == "nested/treasury_bulletin_1944_02.txt"
+    assert docs[0].metadata["source_path"] == "nested/treasury_bulletin_1944_02.txt"
+
+
 def test_parse_treasury_filename_extracts_metadata():
     metadata = parse_treasury_filename("treasury_bulletin_1941_01.txt")
 
@@ -288,6 +304,7 @@ documents:
   source_type: txt_folder
   text_field: cleaned_context
   file_glob: "*.txt"
+  recursive: true
 data:
   questions_path: data/raw/questions_only.jsonl
 chunking: {strategy: fixed_word, chunk_size: 10, chunk_overlap: 0}
@@ -308,6 +325,7 @@ runtime: {}
     assert cfg.data.documents_source_type == "txt_folder"
     assert cfg.data.document_text_field == "cleaned_context"
     assert cfg.data.documents_file_glob == "*.txt"
+    assert cfg.data.documents_recursive is True
 
 
 def test_sentence_chunker_version_changes_chunk_cache_key(monkeypatch):

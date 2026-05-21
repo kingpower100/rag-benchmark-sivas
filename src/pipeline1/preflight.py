@@ -4,6 +4,8 @@ from pathlib import Path
 
 import requests
 
+from src.pipeline1.io.jsonl_reader import list_txt_files
+
 
 def _resolve_path(base_dir: Path | None, raw_path: str) -> Path:
     path = Path(raw_path)
@@ -85,7 +87,7 @@ def _validate_documents_input(cfg, docs_path: Path) -> list[str]:
         if not docs_path.exists() or not docs_path.is_dir():
             errors.append(f"documents_path is missing or not a folder for txt_folder source_type: {docs_path}")
             return errors
-        files = [path for path in docs_path.glob(cfg.data.documents_file_glob) if path.is_file()]
+        files = list_txt_files(docs_path, cfg.data.documents_file_glob, cfg.data.documents_recursive)
         if not files:
             errors.append(
                 f"documents_path has no files matching documents_file_glob={cfg.data.documents_file_glob!r}: {docs_path}"

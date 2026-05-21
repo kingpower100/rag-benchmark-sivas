@@ -51,21 +51,31 @@ class JsonlReader:
         return docs
 
     @staticmethod
-    def read_txt_folder(path: str, file_glob: str = "*.txt") -> list[DocumentRecord]:
+    def read_txt_folder(path: str, file_glob: str = "*.txt", recursive: bool = True) -> list[DocumentRecord]:
         docs: list[DocumentRecord] = []
         root = Path(path)
-        for file_path in sorted(root.glob(file_glob)):
-            if not file_path.is_file():
-                continue
-            text = file_path.read_text(encoding="utf-8")
+        for file_path in list_txt_files(root, file_glob, recursive):
+            try:
+                text = file_path.read_text(encoding="utf-8")
+            except UnicodeDecodeError as ex:
+                raise ValueError(f"Unable to read text file as UTF-8: {file_path}") from ex
             if not text.strip():
                 continue
             file_name = file_path.name
-            metadata = normalize_metadata({**parse_treasury_filename(file_name), "original_context_id": file_name}, file_name)
+            relative_path = file_path.relative_to(root).as_posix()
+            metadata = normalize_metadata(
+                {
+                    **parse_treasury_filename(file_name),
+                    "source_file": relative_path,
+                    "source_path": relative_path,
+                    "original_context_id": relative_path,
+                },
+                relative_path,
+            )
             docs.append(
                 DocumentRecord(
-                    document_id=file_name,
-                    original_context_id=file_name,
+                    document_id=relative_path,
+                    original_context_id=relative_path,
                     text=text,
                     metadata=metadata,
                 )
@@ -113,3 +123,13 @@ class JsonlReader:
                 except Exception as ex:
                     if logger:
                         logger.warning("Skipping malformed query row: %s", ex)
+
+
+def list_txt_files(root: Path, file_glob: str = "*.txt", recursive: bool = True) -> list[Path]:
+    if not root.exists():
+        return []
+    if recursive and "**" not in file_glob and "/" not in file_glob and "\\" not in file_glob:
+        iterator = root.rglob(file_glob)
+    else:
+        iterator = root.glob(file_glob)
+    return sorted(path for path in iterator if path.is_file())

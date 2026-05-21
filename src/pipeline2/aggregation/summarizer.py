@@ -81,7 +81,19 @@ def build_leaderboard(summary_rows: list[dict[str, Any]], sort_metric: str, sort
 
 
 def _dynamic_metric_columns(rows: list[dict[str, Any]]) -> list[str]:
-    prefixes = ("hit_at_", "recall_at_", "mrr_at_", "context_precision_at_", "ndcg_at_")
+    prefixes = (
+        "hit_at_",
+        "recall_at_",
+        "mrr_at_",
+        "context_precision_at_",
+        "ndcg_at_",
+        "duplicate_count_at_",
+        "duplicate_rate_at_",
+        "deduped_hit_at_",
+        "deduped_recall_at_",
+        "deduped_mrr_at_",
+        "deduped_ndcg_at_",
+    )
     cols = []
     for prefix in prefixes:
         names = sorted({key for row in rows for key in row if key.startswith(prefix)})

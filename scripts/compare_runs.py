@@ -10,7 +10,7 @@ def main() -> None:
     parser.add_argument(
         "summary",
         nargs="*",
-        default=["data/eval/runs/pipeline2/eval_officeqa_treasury_hybrid_rrf_bge_small_qwen25_7b/summary_by_experiment.csv"],
+        default=["data/eval/runs/pipeline2/eval_officeqa_treasury_bge_small_qwen2_5_7b/summary_by_experiment.csv"],
     )
     args = parser.parse_args()
     for raw in args.summary:

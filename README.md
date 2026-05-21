@@ -22,16 +22,16 @@ pip install -e .
 
 Pipeline 1 experiments:
 
-- `configs/pipeline1/experiments/officeqa_treasury_hybrid_rrf_bge_small_qwen25_7b.yaml`
+- `configs/pipeline1/experiments/officeqa_treasury_bge_small_qwen2_5_7b.yaml`
 
 Primary Pipeline 2 evaluation:
 
-- `configs/pipeline2/experiments/eval_officeqa_treasury_hybrid_rrf_bge_small_qwen25_7b.yaml`
+- `configs/pipeline2/experiments/eval_officeqa_treasury_bge_small_qwen2_5_7b.yaml`
 
 ## Run Pipeline 1
 
 ```bash
-python -m src.pipeline1.main --config configs/pipeline1/experiments/officeqa_treasury_hybrid_rrf_bge_small_qwen25_7b.yaml
+python -m src.pipeline1.main --config configs/pipeline1/experiments/officeqa_treasury_bge_small_qwen2_5_7b.yaml
 ```
 
 Outputs are written under:
@@ -59,7 +59,7 @@ export PIPELINE1_SKIP_OLLAMA_PREFLIGHT=1
 Run evaluation after Pipeline 1 has produced `results.jsonl`:
 
 ```bash
-python -m src.pipeline2.main --config configs/pipeline2/experiments/eval_officeqa_treasury_hybrid_rrf_bge_small_qwen25_7b.yaml
+python -m src.pipeline2.main --config configs/pipeline2/experiments/eval_officeqa_treasury_bge_small_qwen2_5_7b.yaml
 ```
 
 Outputs are written under:
@@ -84,9 +84,9 @@ Citation correctness is structural only: citations are checked as retrieved sour
 
 ```bash
 python scripts/list_configs.py
-python scripts/run_config.py configs/pipeline1/experiments/officeqa_treasury_hybrid_rrf_bge_small_qwen25_7b.yaml
-python scripts/compare_runs.py data/eval/runs/pipeline2/eval_officeqa_treasury_hybrid_rrf_bge_small_qwen25_7b/summary_by_experiment.csv
-python scripts/benchmark_pipeline1.py --config configs/pipeline1/experiments/officeqa_treasury_hybrid_rrf_bge_small_qwen25_7b.yaml
+python scripts/run_config.py configs/pipeline1/experiments/officeqa_treasury_bge_small_qwen2_5_7b.yaml
+python scripts/compare_runs.py data/eval/runs/pipeline2/eval_officeqa_treasury_bge_small_qwen2_5_7b/summary_by_experiment.csv
+python scripts/benchmark_pipeline1.py --config configs/pipeline1/experiments/officeqa_treasury_bge_small_qwen2_5_7b.yaml
 python scripts/test_ollama.py --base-url http://localhost:11434
 ```
 

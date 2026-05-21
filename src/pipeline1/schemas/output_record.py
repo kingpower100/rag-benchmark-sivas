@@ -59,6 +59,17 @@ class OutputRecord(BaseModel):
     timestamp_utc: str = Field(default_factory=lambda: datetime.now(timezone.utc).isoformat())
     pipeline_version: str = "0.1.0"
     prompt_template_version: str = "v1"
+    prompt_stats: dict = Field(default_factory=dict)
+    prompt_chars: int | None = None
+    prompt_tokens: int | None = None
+    context_chars_before: int | None = None
+    context_chars_after: int | None = None
+    context_tokens_before: int | None = None
+    context_tokens_after: int | None = None
+    chunks_before: int | None = None
+    chunks_after: int | None = None
+    chunks_truncated: int | None = None
+    chunks_dropped: int | None = None
     error: Optional[str] = None
 
     @model_validator(mode="after")
@@ -123,6 +134,21 @@ class OutputRecord(BaseModel):
                 "output_tokens": self.output_tokens,
                 "total_tokens": self.total_tokens,
             }
+        if self.prompt_stats:
+            for key in (
+                "prompt_chars",
+                "prompt_tokens",
+                "context_chars_before",
+                "context_chars_after",
+                "context_tokens_before",
+                "context_tokens_after",
+                "chunks_before",
+                "chunks_after",
+                "chunks_truncated",
+                "chunks_dropped",
+            ):
+                if getattr(self, key) is None and key in self.prompt_stats:
+                    setattr(self, key, self.prompt_stats[key])
         if self.retrieved_unique_count == 0:
             self.retrieved_unique_count = len(set(self.retrieved_chunk_ids))
         if self.raw_retrieved_unique_count == 0 and self.raw_retrieved_original_context_ids:

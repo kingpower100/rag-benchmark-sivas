@@ -15,9 +15,9 @@ from src.pipeline1.embedding.cache import EmbeddingCache
 from src.pipeline1.embedding.factory import build_embedder
 from src.pipeline1.generation.cost_estimator import estimate_cost
 from src.pipeline1.generation.factory import build_generator
-from src.pipeline1.generation.prompt_builder import PROMPT_TEMPLATE_VERSION, build_prompt, dedupe_prompt_contexts
+from src.pipeline1.generation.prompt_builder import PROMPT_TEMPLATE_VERSION, PromptBudget, build_prompt_with_stats, dedupe_prompt_contexts
 from src.pipeline1.indexing.factory import build_index
-from src.pipeline1.io.jsonl_reader import JsonlReader
+from src.pipeline1.io.jsonl_reader import JsonlReader, list_txt_files
 from src.pipeline1.io.manifest_writer import write_manifest
 from src.pipeline1.io.result_writer import ResultWriter
 from src.pipeline1.metadata import TREASURY_METADATA_SCHEMA_VERSION
@@ -42,13 +42,7 @@ def run_pipeline(config_path: str) -> Path:
     run_dir = project_root / cfg.experiment.output_dir / cfg.experiment.experiment_id
     _print_cuda_startup_state(cfg)
 
-    if run_dir.exists() and cfg.runtime.overwrite:
-        for name in ("results.jsonl", "results.csv", "run_manifest.json", "logs.txt", "pipeline1.log"):
-            path = run_dir / name
-            if path.exists():
-                path.unlink()
-    elif run_dir.exists() and not cfg.runtime.resume and (run_dir / "results.jsonl").exists():
-        raise FileExistsError(f"Run already exists and resume=false: {run_dir}")
+    _prepare_run_dir(run_dir, cfg.runtime.resume, cfg.runtime.overwrite)
     run_dir.mkdir(parents=True, exist_ok=True)
     logger = build_logger(run_dir / "logs.txt", cfg.runtime.log_level)
 
@@ -70,6 +64,7 @@ def run_pipeline(config_path: str) -> Path:
             "documents_fingerprint": documents_fingerprint,
             "documents_source_type": cfg.data.documents_source_type,
             "documents_file_glob": cfg.data.documents_file_glob,
+            "documents_recursive": cfg.data.documents_recursive,
             "document_text_field": cfg.data.document_text_field,
             "allow_document_text_fallback": cfg.data.allow_document_text_fallback,
             "metadata_schema_version": TREASURY_METADATA_SCHEMA_VERSION,
@@ -85,6 +80,18 @@ def run_pipeline(config_path: str) -> Path:
         _save_chunks(chunks_path, chunks)
     else:
         logger.info("Loaded cached chunks: %s", chunks_path)
+    chunk_diagnostics = _chunk_diagnostics(chunks, cfg)
+    if chunk_diagnostics["empty_chunks"]:
+        raise RuntimeError(f"Chunk validation failed: empty_chunks={chunk_diagnostics['empty_chunks']}")
+    if chunk_diagnostics["over_max_chunk_chars"] or chunk_diagnostics["over_max_chunk_tokens"]:
+        message = (
+            "Chunk validation found oversized chunks: "
+            f"over_max_chunk_chars={chunk_diagnostics['over_max_chunk_chars']} "
+            f"over_max_chunk_tokens={chunk_diagnostics['over_max_chunk_tokens']}"
+        )
+        if cfg.chunking.oversized_chunk_policy == "raise":
+            raise RuntimeError(message)
+        logger.warning(message)
 
     embedder = build_embedder(cfg.embedding)
     _print_embedding_runtime_state(cfg, embedder)
@@ -96,11 +103,24 @@ def run_pipeline(config_path: str) -> Path:
     )
     embeddings_path = cache_dir / "embeddings" / f"{embeddings_key}.npy"
     print("[5/10] Generating embeddings")
+    cache_validation = {"embeddings": "not_loaded", "index": "not_loaded"}
     embeddings = EmbeddingCache.load(embeddings_path)
     if embeddings is None:
         embeddings = embedder.encode_texts([chunk.text for chunk in chunks], show_progress=True)
         EmbeddingCache.save(embeddings_path, embeddings, {"chunks_key": chunks_key, "embedding": cfg.embedding.model_dump()})
+        cache_validation["embeddings"] = "built"
     else:
+        try:
+            _validate_embedding_cache(embeddings, len(chunks), embeddings_path, chunks_key, cfg.embedding.model_dump())
+            cache_validation["embeddings"] = "validated"
+        except RuntimeError:
+            if cfg.runtime.cache_mismatch_policy != "rebuild":
+                raise
+            embeddings_path.unlink(missing_ok=True)
+            embeddings_path.with_suffix(embeddings_path.suffix + ".meta.json").unlink(missing_ok=True)
+            embeddings = embedder.encode_texts([chunk.text for chunk in chunks], show_progress=True)
+            EmbeddingCache.save(embeddings_path, embeddings, {"chunks_key": chunks_key, "embedding": cfg.embedding.model_dump()})
+            cache_validation["embeddings"] = "rebuilt_after_mismatch"
         logger.info("Loaded cached embeddings: %s", embeddings_path)
 
     index_key = stable_hash_dict(
@@ -109,15 +129,36 @@ def run_pipeline(config_path: str) -> Path:
             "index": cfg.index.model_dump(),
         }
     )
+    compatibility_payload = _run_compatibility_payload(
+        config_path,
+        cfg,
+        documents_fingerprint,
+        chunks_key,
+        embeddings_key,
+        index_key,
+    )
+    if run_dir.exists() and cfg.runtime.resume and not cfg.runtime.overwrite and (run_dir / "results.jsonl").exists():
+        _validate_resume_compatible(run_dir, compatibility_payload)
     index_path = cache_dir / "indexes" / f"{index_key}.faiss"
     index = build_index(cfg.index)
     print("[6/10] Building/loading FAISS index")
     if index_path.exists():
         index.load(str(index_path))
+        try:
+            _validate_index_cache(index, len(chunks), embeddings, index_path)
+            cache_validation["index"] = "validated"
+        except RuntimeError:
+            if cfg.runtime.cache_mismatch_policy != "rebuild":
+                raise
+            index_path.unlink(missing_ok=True)
+            index.build(embeddings)
+            index.save(str(index_path))
+            cache_validation["index"] = "rebuilt_after_mismatch"
         logger.info("Loaded FAISS index: %s", index_path)
     else:
         index.build(embeddings)
         index.save(str(index_path))
+        cache_validation["index"] = "built"
         logger.info("Built FAISS index: %s", index_path)
 
     print("[7/10] Loading questions")
@@ -218,12 +259,23 @@ def run_pipeline(config_path: str) -> Path:
                 len(retrieved),
                 len(prompt_contexts),
             )
-            prompt = build_prompt(
+            prompt, prompt_stats = build_prompt_with_stats(
                 cfg.generation.system_prompt,
                 query.question,
                 prompt_contexts,
                 include_metadata_headers=cfg.generation.include_metadata_headers,
+                budget=PromptBudget(
+                    max_prompt_tokens=cfg.generation.max_prompt_tokens,
+                    max_context_tokens=cfg.generation.max_context_tokens,
+                    max_chunk_tokens=cfg.generation.max_chunk_tokens,
+                    max_context_chars=cfg.generation.max_context_chars,
+                    max_chunk_chars=cfg.generation.max_chunk_chars,
+                    tokenizer_name=cfg.chunking.tokenizer_name,
+                    context_truncation_strategy=cfg.generation.context_truncation_strategy,
+                ),
             )
+            if cfg.generation.log_prompt_stats:
+                logger.info("prompt_stats question_id=%s stats=%s", query.question_id, prompt_stats)
             query_metadata = retriever.extract_query_metadata(query.question) if hasattr(retriever, "extract_query_metadata") else None
             generation_start = time.perf_counter()
             error = None
@@ -318,6 +370,17 @@ def run_pipeline(config_path: str) -> Path:
                 token_usage={"input_tokens": input_tokens, "output_tokens": output_tokens, "total_tokens": total_tokens},
                 estimated_cost=cost,
                 prompt_template_version=PROMPT_TEMPLATE_VERSION,
+                prompt_stats=prompt_stats,
+                prompt_chars=prompt_stats.get("prompt_chars"),
+                prompt_tokens=prompt_stats.get("prompt_tokens"),
+                context_chars_before=prompt_stats.get("context_chars_before"),
+                context_chars_after=prompt_stats.get("context_chars_after"),
+                context_tokens_before=prompt_stats.get("context_tokens_before"),
+                context_tokens_after=prompt_stats.get("context_tokens_after"),
+                chunks_before=prompt_stats.get("chunks_before"),
+                chunks_after=prompt_stats.get("chunks_after"),
+                chunks_truncated=prompt_stats.get("chunks_truncated"),
+                chunks_dropped=prompt_stats.get("chunks_dropped"),
                 error=error,
             )
             writer.write(record)
@@ -359,6 +422,8 @@ def run_pipeline(config_path: str) -> Path:
             },
             "document_input": document_input_info,
             "cache_keys": {"chunks": chunks_key, "embeddings": embeddings_key, "index": index_key},
+            "resume_compatibility": compatibility_payload,
+            "cache_validation": cache_validation,
             "cache_artifact_paths": {
                 "chunks": str(chunks_path),
                 "embeddings": str(embeddings_path),
@@ -368,6 +433,7 @@ def run_pipeline(config_path: str) -> Path:
             "chunker_versions": chunker_versions,
             "metadata_schema_version": TREASURY_METADATA_SCHEMA_VERSION,
             "chunk_units": _chunk_unit_counts(chunks),
+            "chunk_diagnostics": chunk_diagnostics,
             "output_row_counts": output_counts,
             "run_stats": {"n_documents": len(docs), "n_queries": len(queries), "attempted": attempted, "written": written},
             "pipeline_version": "0.1.0",
@@ -381,11 +447,12 @@ def run_pipeline(config_path: str) -> Path:
 
 def _load_documents(cfg: PipelineConfig, docs_path: Path) -> tuple[list, dict]:
     if cfg.data.documents_source_type == "txt_folder":
-        docs = JsonlReader.read_txt_folder(str(docs_path), cfg.data.documents_file_glob)
+        docs = JsonlReader.read_txt_folder(str(docs_path), cfg.data.documents_file_glob, cfg.data.documents_recursive)
         return docs, {
             "source_type": "txt_folder",
             "folder_path": str(docs_path),
             "file_glob": cfg.data.documents_file_glob,
+            "recursive": cfg.data.documents_recursive,
             "txt_files_loaded": len(docs),
             "metadata_schema_version": TREASURY_METADATA_SCHEMA_VERSION,
         }
@@ -501,6 +568,7 @@ def _log_run_info(
         logger.info("reranker_model=%s", cfg.reranker.model_name)
     logger.info("documents_source_type=%s", cfg.data.documents_source_type)
     logger.info("documents_file_glob=%s", cfg.data.documents_file_glob)
+    logger.info("documents_recursive=%s", cfg.data.documents_recursive)
     logger.info("question_input_path=%s", questions_path)
 
 
@@ -558,15 +626,16 @@ def _print_reranker_runtime_state(cfg: PipelineConfig, reranker) -> None:
 def _documents_fingerprint(cfg: PipelineConfig, docs_path: Path) -> str:
     if cfg.data.documents_source_type == "jsonl":
         return file_sha256(docs_path)
-    files = _txt_folder_files(docs_path, cfg.data.documents_file_glob)
+    files = _txt_folder_files(docs_path, cfg.data.documents_file_glob, cfg.data.documents_recursive)
     return stable_hash_dict(
         {
             "source_type": "txt_folder",
             "folder_path": str(docs_path),
             "file_glob": cfg.data.documents_file_glob,
+            "recursive": cfg.data.documents_recursive,
             "files": [
                 {
-                    "name": path.name,
+                    "path": path.relative_to(docs_path).as_posix(),
                     "size": path.stat().st_size,
                     "sha256": file_sha256(path),
                 }
@@ -576,8 +645,8 @@ def _documents_fingerprint(cfg: PipelineConfig, docs_path: Path) -> str:
     )
 
 
-def _txt_folder_files(docs_path: Path, file_glob: str) -> list[Path]:
-    return sorted(path for path in docs_path.glob(file_glob) if path.is_file())
+def _txt_folder_files(docs_path: Path, file_glob: str, recursive: bool = True) -> list[Path]:
+    return list_txt_files(docs_path, file_glob, recursive)
 
 
 def _project_root() -> Path:
@@ -598,7 +667,14 @@ def _build_chunker(cfg: PipelineConfig):
         print("Using sentence-aware chunking with regex sentence boundaries and full-sentence overlap.")
         return SentenceChunker(cfg.chunking.chunk_size, cfg.chunking.chunk_overlap)
     print("Using table-aware chunking that keeps markdown tables intact when possible.")
-    return TableAwareChunker(cfg.chunking.chunk_size, cfg.chunking.chunk_overlap)
+    return TableAwareChunker(
+        cfg.chunking.chunk_size,
+        cfg.chunking.chunk_overlap,
+        cfg.chunking.max_chunk_chars,
+        cfg.chunking.max_chunk_tokens,
+        cfg.chunking.oversized_chunk_policy,
+        cfg.chunking.oversized_chunk_warning,
+    )
 
 
 def _chunker_versions(cfg: PipelineConfig) -> dict[str, str]:
@@ -621,6 +697,91 @@ def _chunk_unit_counts(chunks: list[ChunkRecord]) -> dict[str, int]:
         unit = str(chunk.metadata.get("chunk_unit") or "unknown")
         counts[unit] = counts.get(unit, 0) + 1
     return counts
+
+
+def _chunk_diagnostics(chunks: list[ChunkRecord], cfg: PipelineConfig) -> dict[str, int]:
+    return {
+        "total_chunks": len(chunks),
+        "empty_chunks": sum(1 for chunk in chunks if not chunk.text.strip()),
+        "over_max_chunk_chars": sum(1 for chunk in chunks if len(chunk.text) > cfg.chunking.max_chunk_chars),
+        "over_max_chunk_tokens": sum(1 for chunk in chunks if len(chunk.text.split()) > cfg.chunking.max_chunk_tokens),
+        "max_chunk_chars_observed": max((len(chunk.text) for chunk in chunks), default=0),
+        "max_chunk_tokens_observed": max((len(chunk.text.split()) for chunk in chunks), default=0),
+    }
+
+
+def _run_compatibility_payload(
+    config_path: str,
+    cfg: PipelineConfig,
+    documents_fingerprint: str,
+    chunks_key: str,
+    embeddings_key: str,
+    index_key: str,
+) -> dict:
+    return {
+        "experiment_id": cfg.experiment.experiment_id,
+        "config_hash": file_sha256(config_path),
+        "documents_fingerprint": documents_fingerprint,
+        "cache_keys": {"chunks": chunks_key, "embeddings": embeddings_key, "index": index_key},
+        "generation": cfg.generation.model_dump(),
+        "prompt_template_version": PROMPT_TEMPLATE_VERSION,
+    }
+
+
+def _prepare_run_dir(run_dir: Path, resume: bool, overwrite: bool) -> None:
+    if run_dir.exists() and overwrite:
+        for name in ("results.jsonl", "results.csv", "run_manifest.json", "logs.txt", "pipeline1.log"):
+            path = run_dir / name
+            if path.exists():
+                path.unlink()
+        return
+    if run_dir.exists() and not resume:
+        raise FileExistsError(f"Run already exists and resume=false: {run_dir}")
+
+
+def _validate_resume_compatible(run_dir: Path, current: dict) -> None:
+    manifest_path = run_dir / "run_manifest.json"
+    if not manifest_path.exists():
+        raise RuntimeError(f"Cannot resume existing run without run_manifest.json: {manifest_path}")
+    manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    previous = manifest.get("resume_compatibility") or {
+        "experiment_id": manifest.get("resolved_config", {}).get("experiment", {}).get("experiment_id"),
+        "config_hash": manifest.get("config_hash"),
+        "documents_fingerprint": manifest.get("data_hashes", {}).get("documents_fingerprint"),
+        "cache_keys": manifest.get("cache_keys"),
+        "generation": manifest.get("resolved_config", {}).get("generation"),
+        "prompt_template_version": manifest.get("config", {}).get("prompt_template_version"),
+    }
+    mismatches = []
+    for key in ("experiment_id", "config_hash", "documents_fingerprint", "cache_keys", "generation", "prompt_template_version"):
+        if previous.get(key) != current.get(key):
+            mismatches.append(key)
+    if mismatches:
+        raise RuntimeError(
+            "Cannot resume incompatible Pipeline 1 run. Mismatched fields: "
+            + ", ".join(mismatches)
+            + f". Use runtime.overwrite=true or a new experiment_id. run_dir={run_dir}"
+        )
+
+
+def _validate_embedding_cache(embeddings, chunk_count: int, path: Path, chunks_key: str, embedding_config: dict) -> None:
+    if len(embeddings) != chunk_count:
+        raise RuntimeError(f"Cached embeddings row count mismatch for {path}: embeddings={len(embeddings)} chunks={chunk_count}")
+    meta_path = path.with_suffix(path.suffix + ".meta.json")
+    if not meta_path.exists():
+        raise RuntimeError(f"Cached embeddings metadata missing: {meta_path}")
+    meta = json.loads(meta_path.read_text(encoding="utf-8"))
+    expected = {"chunks_key": chunks_key, "embedding": embedding_config}
+    if meta != expected:
+        raise RuntimeError(f"Cached embeddings metadata mismatch for {path}")
+
+
+def _validate_index_cache(index, chunk_count: int, embeddings, path: Path) -> None:
+    if getattr(index, "ntotal", None) != chunk_count:
+        raise RuntimeError(f"FAISS index row count mismatch for {path}: index={getattr(index, 'ntotal', None)} chunks={chunk_count}")
+    embedding_dim = int(embeddings.shape[1]) if len(embeddings.shape) > 1 else None
+    if getattr(index, "dim", None) != embedding_dim:
+        raise RuntimeError(f"FAISS index dimension mismatch for {path}: index={getattr(index, 'dim', None)} embeddings={embedding_dim}")
 
 
 def _load_chunks(path: Path) -> list[ChunkRecord] | None:

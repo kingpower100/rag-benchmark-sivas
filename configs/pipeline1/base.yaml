@@ -5,6 +5,7 @@ experiment:
 
 data:
   documents_path: "data/raw/documents.jsonl"
+  documents_recursive: true
   questions_path: "data/raw/questions_only.jsonl"
   question_id_field: "id"
   question_field: "question"
@@ -20,6 +21,10 @@ chunking:
   chunk_overlap: 64
   tokenizer_name: "cl100k_base"
   allow_word_fallback: false
+  max_chunk_chars: 8000
+  max_chunk_tokens: 1800
+  oversized_chunk_policy: "split"
+  oversized_chunk_warning: true
 
 embedding:
   provider: "sentence_transformers"
@@ -60,6 +65,13 @@ generation:
   max_tokens: 16
   timeout_s: 300
   include_metadata_headers: false
+  max_prompt_tokens: 8192
+  max_context_tokens: 6000
+  max_chunk_tokens: 1800
+  max_context_chars: 24000
+  max_chunk_chars: 8000
+  context_truncation_strategy: "ranked_budget"
+  log_prompt_stats: true
   system_prompt: |
     You are a financial QA system specialized in numeric extraction.
 
@@ -86,3 +98,4 @@ runtime:
   log_level: "INFO"
   resume: false
   overwrite: true
+  cache_mismatch_policy: "raise"
