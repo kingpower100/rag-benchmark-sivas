@@ -62,6 +62,9 @@ def test_txt_folder_reader_creates_officeqa_document_records(tmp_path):
     assert docs[0].metadata["year"] == 1944
     assert docs[0].metadata["month"] == "01"
     assert docs[0].metadata["report_year"] == 1944
+    assert docs[0].metadata["treasury_year"] == 1944
+    assert docs[0].metadata["treasury_month"] == 1
+    assert docs[0].metadata["treasury_year_month"] == "1944_01"
     assert docs[0].metadata["source_dataset"] == "officeqa"
 
 
@@ -90,7 +93,21 @@ def test_parse_treasury_filename_extracts_metadata():
     assert metadata["year"] == 1941
     assert metadata["month"] == "01"
     assert metadata["report_year"] == 1941
+    assert metadata["treasury_year"] == 1941
+    assert metadata["treasury_month"] == 1
+    assert metadata["treasury_year_month"] == "1941_01"
     assert metadata["source_dataset"] == "officeqa"
+
+
+def test_parse_treasury_filename_supports_missing_month():
+    metadata = parse_treasury_filename("treasury_bulletin_1941.txt")
+
+    assert metadata["source_id"] == "treasury_bulletin_1941"
+    assert metadata["year"] == 1941
+    assert metadata["month"] is None
+    assert metadata["treasury_year"] == 1941
+    assert metadata["treasury_month"] is None
+    assert metadata["treasury_year_month"] is None
 
 
 def test_parse_treasury_filename_falls_back_for_unknown_name():
@@ -101,6 +118,9 @@ def test_parse_treasury_filename_falls_back_for_unknown_name():
     assert metadata["source_id"] == "other_report"
     assert metadata["year"] is None
     assert metadata["month"] is None
+    assert metadata["treasury_year"] is None
+    assert metadata["treasury_month"] is None
+    assert metadata["treasury_year_month"] is None
 
 
 def test_pipeline1_rejects_answer_bearing_query_file(tmp_path, monkeypatch):

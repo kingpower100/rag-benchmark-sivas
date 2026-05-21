@@ -8,17 +8,26 @@ from src.pipeline2.schemas.eval_config_schema import EvalConfig
 
 
 def test_pipeline_configs_load_current_examples():
-    p1 = PipelineConfig.from_yaml("configs/pipeline1/experiments/officeqa_treasury_bge_small_qwen2_5_7b.yaml")
-    p2 = EvalConfig.from_yaml("configs/pipeline2/experiments/eval_officeqa_treasury_bge_small_qwen2_5_7b.yaml")
+    p1 = PipelineConfig.from_yaml(
+        "configs/pipeline1/experiments/"
+        "01_officeqa_treasury_tableaware512_bge_small_dense_rerank3_qwen25_7b_ctxbudget.yaml"
+    )
+    p2 = EvalConfig.from_yaml(
+        "configs/pipeline2/experiments/"
+        "01_eval_officeqa_treasury_tableaware512_bge_small_dense_rerank3_qwen25_7b_fileeval_ks1_3_5_10_numacc.yaml"
+    )
 
-    assert p1.experiment.experiment_id == "officeqa_treasury_bge_small_qwen2_5_7b"
+    assert p1.experiment.experiment_id == "01_officeqa_treasury_tableaware512_bge_small_dense_rerank3_qwen25_7b_ctxbudget"
     assert p1.retrieval.top_k == 5
     assert p1.generation.model_name == "qwen2.5:7b"
     assert p1.runtime.overwrite is False
     assert p1.embedding.device == "cuda"
     assert p1.embedding.require_cuda is True
     assert p1.reranker.device == "cuda"
-    assert p2.evaluation.eval_run_id == "eval_officeqa_treasury_bge_small_qwen2_5_7b"
+    assert (
+        p2.evaluation.eval_run_id
+        == "01_eval_officeqa_treasury_tableaware512_bge_small_dense_rerank3_qwen25_7b_fileeval_ks1_3_5_10_numacc"
+    )
     assert p2.evaluation.retrieval_eval_field == "retrieved_file_names"
     assert p2.evaluation.max_generation_failure_rate == 0.05
     assert p2.evaluation.strict_failure_threshold is False

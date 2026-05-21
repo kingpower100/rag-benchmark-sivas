@@ -39,6 +39,7 @@ class OutputRecord(BaseModel):
     raw_duplicate_rate: float | None = None
     retrieval_warnings: list[str] = Field(default_factory=list)
     query_metadata: dict = Field(default_factory=dict)
+    retrieval_diagnostics: dict = Field(default_factory=dict)
     top_k: int
     chunking_strategy: str
     chunk_size: int

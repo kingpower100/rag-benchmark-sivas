@@ -79,6 +79,8 @@ def compute_metadata_match_metrics(
     query = _query_metadata_from_payload(query_metadata) if query_metadata else extract_query_metadata(question, retrieved_metadata)
     company_values = []
     year_values = []
+    month_values = []
+    year_month_values = []
     metadata_values = []
     for metadata in retrieved_metadata:
         matches = metadata_matches(metadata or {}, query)
@@ -86,12 +88,18 @@ def compute_metadata_match_metrics(
             company_values.append(float(bool(matches["company_match"])))
         if matches["year_match"] is not None:
             year_values.append(float(bool(matches["year_match"])))
+        if matches["month_match"] is not None:
+            month_values.append(float(bool(matches["month_match"])))
+        if matches["year_month_match"] is not None:
+            year_month_values.append(float(bool(matches["year_month_match"])))
         if matches["metadata_match"] is not None:
             metadata_values.append(float(bool(matches["metadata_match"])))
     return {
         "metadata_match_rate": None if not metadata_values else sum(metadata_values) / len(metadata_values),
         "company_match_rate": None if not company_values else sum(company_values) / len(company_values),
         "year_match_rate": None if not year_values else sum(year_values) / len(year_values),
+        "month_match_rate": None if not month_values else sum(month_values) / len(month_values),
+        "exact_year_month_match_rate": None if not year_month_values else sum(year_month_values) / len(year_month_values),
     }
 
 
@@ -100,6 +108,9 @@ def _query_metadata_from_payload(payload: dict) -> QueryMetadata:
         company_names=frozenset(payload.get("company_names") or []),
         company_symbols=frozenset(payload.get("company_symbols") or []),
         years=frozenset(int(value) for value in (payload.get("years") or [])),
+        months=frozenset(int(value) for value in (payload.get("months") or [])),
+        year_months=frozenset(str(value) for value in (payload.get("year_months") or [])),
+        fiscal_years=frozenset(int(value) for value in (payload.get("fiscal_years") or [])),
         report_periods=frozenset(payload.get("report_periods") or []),
         file_names=frozenset(payload.get("file_names") or []),
         source_datasets=frozenset(payload.get("source_datasets") or []),

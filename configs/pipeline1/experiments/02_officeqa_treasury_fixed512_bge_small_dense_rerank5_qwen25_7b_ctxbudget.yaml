@@ -1,15 +1,22 @@
+# Experiment 02: fixed512 dense rerank5 baseline
+extends: "../base.yaml"
+
 experiment:
-  experiment_id: "p1_base"
+  experiment_id: "02_officeqa_treasury_fixed512_bge_small_dense_rerank5_qwen25_7b_ctxbudget"
   random_seed: 42
   output_dir: "data/runs/pipeline1"
 
+documents:
+  source_type: "txt_folder"
+  path: "data/raw/transformed"
+  file_glob: "*.txt"
+  recursive: true
+  text_field: "cleaned_context"
+
 data:
-  documents_path: "data/raw/documents.jsonl"
-  documents_recursive: true
   questions_path: "data/raw/questions_only.jsonl"
-  question_id_field: "id"
+  question_id_field: "uid"
   question_field: "question"
-  document_text_field: "cleaned_context"
   allow_document_text_fallback: false
   allow_unsafe_query_fields: false
   use_ground_truth_contexts: false
@@ -30,9 +37,9 @@ embedding:
   provider: "sentence_transformers"
   model_name: "BAAI/bge-small-en-v1.5"
   normalize_embeddings: true
-  batch_size: 32
+  batch_size: 128
   device: "cuda"
-  require_cuda: false
+  require_cuda: true
 
 index:
   type: "faiss"
@@ -40,35 +47,41 @@ index:
 
 retrieval:
   retriever_type: "dense"
-  top_k: 3
-  fetch_k: 10
+  top_k: 10
+  fetch_k: 30
+  bm25:
+    enabled: true
+    backend: "local"
+    k1: 1.5
+    b: 0.75
+  hybrid:
+    rrf_k: 60
+    dense_weight: 1.0
+    bm25_weight: 1.0
   metadata_boosting:
     enabled: false
     company_weight: 0.3
     year_weight: 0.15
-    month_weight: 0.0
-    year_month_weight: 0.0
     symbol_weight: 0.2
     file_name_weight: 0.0
   metadata_filtering:
     enabled: false
     strict: false
-    strict_year_match: false
-    strict_year_month_match: false
 
 reranker:
-  enabled: false
-  model_name: null
-  device: "cpu"
+  enabled: true
+  model_name: "cross-encoder/ms-marco-MiniLM-L-6-v2"
+  device: "cuda"
+  final_top_k: 5
 
 generation:
   provider: "ollama"
-  model_name: "gemma3:1b"
+  model_name: "qwen2.5:7b"
   base_url: "http://localhost:11434"
   temperature: 0.0
-  max_tokens: 16
-  timeout_s: 300
-  include_metadata_headers: false
+  max_tokens: 64
+  timeout_s: 180
+  include_metadata_headers: true
   max_prompt_tokens: 8192
   max_context_tokens: 6000
   max_chunk_tokens: 1800
@@ -77,7 +90,7 @@ generation:
   context_truncation_strategy: "ranked_budget"
   log_prompt_stats: true
   system_prompt: |
-    You are a financial QA system specialized in numeric extraction.
+    You are a financial question-answering system.
 
     Use ONLY the retrieved context to answer the question.
 
@@ -86,10 +99,9 @@ generation:
     - Do NOT explain your reasoning.
     - Do NOT output full sentences.
     - Do NOT use markdown.
-    - If the answer is numeric, return only the number.
     - Preserve decimals and negative signs.
-    - If the answer cannot be found in the context, return EXACTLY: UNKNOWN
-
+    - Compute from the retrieved evidence when needed.
+    - If the required evidence is missing, return EXACTLY: UNKNOWN
 
 telemetry:
   estimate_cost: true
@@ -100,6 +112,6 @@ telemetry:
 runtime:
   save_csv: true
   log_level: "INFO"
-  resume: false
-  overwrite: true
+  resume: true
+  overwrite: false
   cache_mismatch_policy: "raise"

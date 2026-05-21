@@ -24,6 +24,7 @@ class HybridRRFRetriever(BaseRetriever):
         self.last_dense_candidates: list[RetrievalItem] = []
         self.last_bm25_candidates: list[RetrievalItem] = []
         self.last_fused_candidates: list[RetrievalItem] = []
+        self.last_retrieval_diagnostics: dict = {}
 
     def retrieve(self, question: str, top_k: int) -> list[RetrievalItem]:
         candidate_k = max(top_k, self.fetch_k)
@@ -33,6 +34,12 @@ class HybridRRFRetriever(BaseRetriever):
         self.last_dense_candidates = dense
         self.last_bm25_candidates = bm25
         self.last_fused_candidates = fused
+        self.last_retrieval_diagnostics = {
+            **getattr(self.dense_retriever, "last_retrieval_diagnostics", {}),
+            "hybrid_dense_candidates": len(dense),
+            "hybrid_bm25_candidates": len(bm25),
+            "hybrid_fused_candidates": len(fused),
+        }
         return fused[:top_k]
 
     def extract_query_metadata(self, question: str):

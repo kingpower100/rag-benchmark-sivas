@@ -50,6 +50,8 @@ def summarize_by_experiment(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
             "metadata_match_rate",
             "company_match_rate",
             "year_match_rate",
+            "month_match_rate",
+            "exact_year_month_match_rate",
             "retrieval_time_ms",
             "generation_time_ms",
             "total_latency_ms",

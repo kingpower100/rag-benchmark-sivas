@@ -67,6 +67,8 @@ class MetadataBoostingConfig(StrictConfigModel):
     enabled: bool = False
     company_weight: float = 0.3
     year_weight: float = 0.15
+    month_weight: float = 0.0
+    year_month_weight: float = 0.0
     symbol_weight: float = 0.2
     file_name_weight: float = 0.0
 
@@ -74,6 +76,8 @@ class MetadataBoostingConfig(StrictConfigModel):
 class MetadataFilteringConfig(StrictConfigModel):
     enabled: bool = False
     strict: bool = False
+    strict_year_match: bool = False
+    strict_year_month_match: bool = False
 
 
 class BM25Config(StrictConfigModel):

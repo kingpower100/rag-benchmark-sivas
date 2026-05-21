@@ -5,7 +5,7 @@ from src.pipeline1.metadata import normalize_metadata, safe_int
 from src.pipeline1.retrieval.bm25_retriever import BM25Retriever
 from src.pipeline1.retrieval.dense_retriever import DenseRetriever
 from src.pipeline1.retrieval.hybrid_rrf_retriever import HybridRRFRetriever
-from src.pipeline1.retrieval.metadata import extract_query_metadata
+from src.pipeline1.retrieval.metadata import extract_query_metadata, filter_candidates_by_metadata, metadata_boost_components
 from src.pipeline1.schemas.chunk import ChunkRecord
 from src.pipeline1.schemas.config_schema import MetadataBoostingConfig, MetadataFilteringConfig, PipelineConfig
 from src.pipeline1.schemas.document import DocumentRecord
@@ -41,6 +41,25 @@ def _chunk(chunk_id, company, year, symbol=""):
             "report_year": year,
             "file_name": f"{company}_{year}.pdf",
             "source_dataset": "finqa",
+        },
+    )
+
+
+def _treasury_chunk(chunk_id, year, month, score=1.0):
+    return RetrievalItem(
+        chunk_id=chunk_id,
+        original_context_id=chunk_id,
+        text=chunk_id,
+        score=score,
+        dense_score=score,
+        metadata={
+            "file_name": f"treasury_bulletin_{year}_{month:02d}.txt",
+            "source_file": f"treasury_bulletin_{year}_{month:02d}.txt",
+            "treasury_year": year,
+            "treasury_month": month,
+            "treasury_year_month": f"{year}_{month:02d}",
+            "report_year": year,
+            "source_dataset": "officeqa",
         },
     )
 
@@ -109,6 +128,34 @@ def test_query_metadata_extraction_uses_known_names_symbols_years_and_quarters()
     assert extracted.report_periods == frozenset({"q2"})
 
 
+def test_query_metadata_extraction_detects_treasury_year_month_and_fiscal_year():
+    extracted = extract_query_metadata("What was the Treasury balance in March 1956 during fiscal year 1941?", [])
+
+    assert 1956 in extracted.years
+    assert 3 in extracted.months
+    assert "1956_03" in extracted.year_months
+    assert 1941 in extracted.fiscal_years
+
+
+def test_treasury_metadata_boost_components_include_year_month_and_month():
+    query = extract_query_metadata("June 1948 Treasury Bulletin", [])
+    item = _treasury_chunk("treasury_bulletin_1948_06:0", 1948, 6)
+
+    components = metadata_boost_components(
+        item.metadata,
+        query,
+        company_weight=0.0,
+        year_weight=0.35,
+        month_weight=0.25,
+        year_month_weight=0.50,
+        symbol_weight=0.0,
+        file_name_weight=0.10,
+    )
+
+    assert components == {"year": 0.35, "month": 0.25, "year_month": 0.50}
+    assert sum(components.values()) == 1.10
+
+
 def test_metadata_boosting_changes_dense_ranking():
     chunks = [_chunk("microsoft", "Microsoft", 2021, "MSFT"), _chunk("apple", "Apple", 2021, "AAPL")]
     retriever = DenseRetriever(
@@ -169,6 +216,58 @@ def test_metadata_filtering_falls_back_if_no_candidate_matches():
     assert [item.chunk_id for item in items] == ["microsoft", "apple"]
 
 
+def test_strict_year_month_filtering_keeps_matching_treasury_candidates():
+    query = extract_query_metadata("What was reported in March 1956?", [])
+    candidates = [
+        _treasury_chunk("treasury_bulletin_1956_02:0", 1956, 2),
+        _treasury_chunk("treasury_bulletin_1956_03:0", 1956, 3),
+    ]
+
+    filtered = filter_candidates_by_metadata(
+        candidates,
+        query,
+        strict=False,
+        strict_year_month_match=True,
+    )
+
+    assert [item.chunk_id for item in filtered] == ["treasury_bulletin_1956_03:0"]
+
+
+def test_strict_metadata_filtering_fails_open_when_no_treasury_candidate_matches():
+    query = extract_query_metadata("What was reported in March 1956?", [])
+    candidates = [_treasury_chunk("treasury_bulletin_1955_03:0", 1955, 3)]
+
+    filtered = filter_candidates_by_metadata(
+        candidates,
+        query,
+        strict=False,
+        strict_year_month_match=True,
+    )
+
+    assert filtered == candidates
+
+
+def test_treasury_chunking_propagates_filename_metadata():
+    doc = DocumentRecord(
+        document_id="treasury_bulletin_1956_03.txt",
+        original_context_id="treasury_bulletin_1956_03.txt",
+        text="one two three",
+        metadata={
+            "file_name": "treasury_bulletin_1956_03.txt",
+            "source_file": "treasury_bulletin_1956_03.txt",
+            "treasury_year": 1956,
+            "treasury_month": 3,
+            "treasury_year_month": "1956_03",
+        },
+    )
+
+    chunk = FixedWordChunker(chunk_size=10, chunk_overlap=0).chunk_documents([doc])[0]
+
+    assert chunk.metadata["treasury_year"] == 1956
+    assert chunk.metadata["treasury_month"] == 3
+    assert chunk.metadata["treasury_year_month"] == "1956_03"
+
+
 def test_prompt_can_include_metadata_header_without_changing_default():
     item = RetrievalItem(
         chunk_id="c1",
@@ -210,7 +309,13 @@ def test_metadata_match_metrics_use_explicit_query_metadata_payload():
         {"company_names": ["apple"], "years": [2021]},
     )
 
-    assert metrics == {"metadata_match_rate": 0.5, "company_match_rate": 0.5, "year_match_rate": 0.5}
+    assert metrics == {
+        "metadata_match_rate": 0.5,
+        "company_match_rate": 0.5,
+        "year_match_rate": 0.5,
+        "month_match_rate": None,
+        "exact_year_month_match_rate": None,
+    }
 
 
 def test_backward_compatible_config_defaults_metadata_features_off():

@@ -1,7 +1,8 @@
+# Experiment 04: fixed512 dense rerank10
 extends: "../base.yaml"
 
 experiment:
-  experiment_id: "officeqa_treasury_fixed512_bge_small_dense_rerank10_qwen25_7b_ctxbudget"
+  experiment_id: "04_officeqa_treasury_fixed512_bge_small_dense_rerank10_qwen25_7b_ctxbudget"
   random_seed: 42
   output_dir: "data/runs/pipeline1"
 

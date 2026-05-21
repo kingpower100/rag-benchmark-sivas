@@ -1,7 +1,8 @@
+# Experiment 05: fixed512 dense rerank10 metadata boost
 extends: "../base.yaml"
 
 experiment:
-  experiment_id: "officeqa_treasury_fixed512_bge_small_dense_rerank5_qwen25_7b_ctxbudget"
+  experiment_id: "05_officeqa_treasury_fixed512_bge_small_dense_rerank10_metadata_boost_qwen25_7b"
   random_seed: 42
   output_dir: "data/runs/pipeline1"
 
@@ -47,31 +48,23 @@ index:
 retrieval:
   retriever_type: "dense"
   top_k: 10
-  fetch_k: 30
-  bm25:
-    enabled: true
-    backend: "local"
-    k1: 1.5
-    b: 0.75
-  hybrid:
-    rrf_k: 60
-    dense_weight: 1.0
-    bm25_weight: 1.0
+  fetch_k: 50
   metadata_boosting:
-    enabled: false
-    company_weight: 0.3
-    year_weight: 0.15
-    symbol_weight: 0.2
-    file_name_weight: 0.0
+    enabled: true
+    year_weight: 0.35
+    month_weight: 0.25
+    year_month_weight: 0.50
+    file_name_weight: 0.10
   metadata_filtering:
     enabled: false
-    strict: false
+    strict_year_match: false
+    strict_year_month_match: false
 
 reranker:
   enabled: true
   model_name: "cross-encoder/ms-marco-MiniLM-L-6-v2"
   device: "cuda"
-  final_top_k: 5
+  final_top_k: 10
 
 generation:
   provider: "ollama"
@@ -111,6 +104,6 @@ telemetry:
 runtime:
   save_csv: true
   log_level: "INFO"
-  resume: true
-  overwrite: false
+  resume: false
+  overwrite: true
   cache_mismatch_policy: "raise"

@@ -1,7 +1,8 @@
+# Experiment 01: table-aware dense rerank3 baseline
 extends: "../base.yaml"
 
 experiment:
-  experiment_id: "officeqa_treasury_fixed512_bge_small_dense_norerank_fetch50_qwen25_7b_ctxbudget"
+  experiment_id: "01_officeqa_treasury_tableaware512_bge_small_dense_rerank3_qwen25_7b_ctxbudget"
   random_seed: 42
   output_dir: "data/runs/pipeline1"
 
@@ -22,9 +23,9 @@ data:
   use_gold_answers: false
 
 chunking:
-  strategy: "fixed_token"
+  strategy: "table_aware"
   chunk_size: 512
-  chunk_overlap: 64
+  chunk_overlap: 200
   tokenizer_name: "cl100k_base"
   allow_word_fallback: false
   max_chunk_chars: 8000
@@ -46,8 +47,8 @@ index:
 
 retrieval:
   retriever_type: "dense"
-  top_k: 10
-  fetch_k: 50
+  top_k: 5 
+  fetch_k: 10
   bm25:
     enabled: true
     backend: "local"
@@ -68,10 +69,10 @@ retrieval:
     strict: false
 
 reranker:
-  enabled: false
+  enabled: true
   model_name: "cross-encoder/ms-marco-MiniLM-L-6-v2"
   device: "cuda"
-  final_top_k: 5
+  final_top_k: 3
 
 generation:
   provider: "ollama"

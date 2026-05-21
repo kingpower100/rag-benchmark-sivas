@@ -1,7 +1,8 @@
+# Eval 04: fixed512 dense rerank10
 extends: "../base_eval.yaml"
 
 evaluation:
-  eval_run_id: "eval_officeqa_treasury_fixed512_bge_small_dense_norerank_fetch50_qwen25_7b_fileeval_ks1_3_5_10_numacc"
+  eval_run_id: "04_eval_officeqa_treasury_fixed512_bge_small_dense_rerank10_qwen25_7b_fileeval_ks1_3_5_10_numacc"
   output_dir: "data/eval/runs/pipeline2"
   retrieval_only: false
   retrieval_eval_field: "retrieved_file_names"
@@ -10,7 +11,7 @@ evaluation:
 
 inputs:
   rag_outputs:
-    - "data/runs/pipeline1/officeqa_treasury_fixed512_bge_small_dense_norerank_fetch50_qwen25_7b_ctxbudget/results.jsonl"
+    - "data/runs/pipeline1/04_officeqa_treasury_fixed512_bge_small_dense_rerank10_qwen25_7b_ctxbudget/results.jsonl"
   qa_path: "data/raw/qa_test.jsonl"
   gold_contexts_path: "data/raw/ground_truth_contexts.jsonl"
 

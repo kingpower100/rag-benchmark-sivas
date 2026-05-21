@@ -15,3 +15,6 @@ class RetrievalItem(BaseModel):
     chunk_unit: str | None = None
     metadata: dict = Field(default_factory=dict)
     metadata_boost: float = 0.0
+    metadata_boost_components: dict = Field(default_factory=dict)
+    score_before_metadata: float | None = None
+    metadata_filter_matched: bool | None = None

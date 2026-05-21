@@ -211,6 +211,7 @@ def run_pipeline(config_path: str) -> Path:
             raw_dense_retrieved = _last_candidates(retriever, "last_dense_candidates")
             raw_bm25_retrieved = _last_candidates(retriever, "last_bm25_candidates")
             fused_retrieved = _last_candidates(retriever, "last_fused_candidates")
+            retrieval_diagnostics = _retrieval_diagnostics(retriever)
             retrieval_time_ms = (time.perf_counter() - retrieval_start) * 1000
             for warning in retrieval_warnings:
                 logger.warning("row_retrieval_warning question_id=%s warning=%s", query.question_id, warning)
@@ -233,6 +234,7 @@ def run_pipeline(config_path: str) -> Path:
                     retrieval_time_ms,
                     reranker_used,
                     retrieval_warnings,
+                    retrieval_diagnostics,
                 )
             )
 
@@ -247,6 +249,7 @@ def run_pipeline(config_path: str) -> Path:
             retrieval_time_ms,
             reranker_used,
             retrieval_warnings,
+            retrieval_diagnostics,
         ) in enumerate(
             tqdm(retrieval_rows, desc="Generating answers", unit="question"), start=1
         ):
@@ -348,10 +351,14 @@ def run_pipeline(config_path: str) -> Path:
                     "company_names": sorted(query_metadata.company_names),
                     "company_symbols": sorted(query_metadata.company_symbols),
                     "years": sorted(query_metadata.years),
+                    "months": sorted(query_metadata.months),
+                    "year_months": sorted(query_metadata.year_months),
+                    "fiscal_years": sorted(query_metadata.fiscal_years),
                     "report_periods": sorted(query_metadata.report_periods),
                     "file_names": sorted(query_metadata.file_names),
                     "source_datasets": sorted(query_metadata.source_datasets),
                 },
+                retrieval_diagnostics=retrieval_diagnostics,
                 top_k=final_top_k,
                 chunking_strategy=cfg.chunking.strategy,
                 chunk_size=cfg.chunking.chunk_size,
@@ -543,6 +550,23 @@ def retrieve_top_k_unique_contexts(
 def _last_candidates(retriever, attribute: str) -> list:
     value = getattr(retriever, attribute, None)
     return list(value) if isinstance(value, list) else []
+
+
+def _retrieval_diagnostics(retriever) -> dict:
+    value = getattr(retriever, "last_retrieval_diagnostics", None)
+    if not isinstance(value, dict):
+        return {}
+    return _json_safe(value)
+
+
+def _json_safe(value):
+    if isinstance(value, dict):
+        return {str(key): _json_safe(item) for key, item in value.items()}
+    if isinstance(value, (list, tuple)):
+        return [_json_safe(item) for item in value]
+    if isinstance(value, (set, frozenset)):
+        return sorted(_json_safe(item) for item in value)
+    return value
 
 
 def _log_run_info(
