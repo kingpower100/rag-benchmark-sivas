@@ -40,9 +40,9 @@ index:
   metric: "cosine"
 
 retrieval:
-  retriever_type: "hybrid_rrf"
-  top_k: 10
-  fetch_k: 50
+  retriever_type: "dense"
+  top_k: 5 
+  fetch_k: 10
   bm25:
     enabled: true
     backend: "local"
