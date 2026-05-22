@@ -5,7 +5,7 @@ evaluation:
   eval_run_id: "22eval_officeqa_treasury_fixed512_bge_small_elastic_script_score_qwen25_7b_fileeval_ks1_3_5_10_numacc"
   output_dir: "data/eval/runs/pipeline2"
   retrieval_only: false
-  retrieval_eval_field: "retrieved_file_names"
+  retrieval_eval_field: "retrieved_file_names1"
   max_generation_failure_rate: 0.05
   strict_failure_threshold: false
 
