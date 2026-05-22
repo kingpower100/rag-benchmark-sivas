@@ -11,7 +11,7 @@ evaluation:
 
 inputs:
   rag_outputs:
-    - "data/runs/pipeline1/officeqa_treasury_fixed512_bge_small_elastic_script_score_qwen25_7b_ctxbudget/results.jsonl"
+    - "data/runs/pipeline1/22officeqa_treasury_fixed512_bge_small_elastic_script_score_qwen25_7b_ctxbudget/results.jsonl"
   qa_path: "data/raw/qa_test.jsonl"
   gold_contexts_path: "data/raw/ground_truth_contexts.jsonl"
 
