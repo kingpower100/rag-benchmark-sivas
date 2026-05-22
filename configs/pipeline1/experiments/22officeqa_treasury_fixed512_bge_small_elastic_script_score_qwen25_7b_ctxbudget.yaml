@@ -43,7 +43,7 @@ embedding:
 
 index:
   type: "elasticsearch"
-  host: "http://localhost:9200"
+  host: "http://localhost:9201"
   index_name: "officeqa_treasury_fixed512_bge_small_script_score"
   dense_dim: 384
   vector_field: "embedding"
