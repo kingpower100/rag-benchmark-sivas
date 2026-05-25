@@ -52,13 +52,13 @@ The script also reads `ELASTICSEARCH_HOST`, `ELASTICSEARCH_USERNAME`, `ELASTICSE
 Script-score Elasticsearch:
 
 ```bash
-python -m src.pipeline1.main --config configs/pipeline1/experiments/officeqa_treasury_fixed512_bge_small_elastic_script_score_qwen25_7b_ctxbudget.yaml
+python -m src.pipeline1.main --config configs/pipeline1/experiments/07_fixed512_es_dense_script_score_qwen25.yaml
 ```
 
 Native kNN Elasticsearch:
 
 ```bash
-python -m src.pipeline1.main --config configs/pipeline1/experiments/officeqa_treasury_fixed512_bge_small_elastic_knn_qwen25_7b_ctxbudget.yaml
+python -m src.pipeline1.main --config configs/pipeline1/experiments/06_fixed512_es_dense_knn_qwen25.yaml
 ```
 
 Both configs mirror the fixed512 BGE-small FAISS baseline and only swap the index and retriever to Elasticsearch.
@@ -68,13 +68,13 @@ Both configs mirror the fixed512 BGE-small FAISS baseline and only swap the inde
 After Pipeline 1 writes `results.jsonl`, evaluate the script-score run:
 
 ```bash
-python -m src.pipeline2.main --config configs/pipeline2/experiments/eval_officeqa_treasury_fixed512_bge_small_elastic_script_score_qwen25_7b_fileeval_ks1_3_5_10_numacc.yaml
+python -m src.pipeline2.main --config configs/pipeline2/experiments/07_eval_fixed512_es_dense_script_score_qwen25.yaml
 ```
 
 Evaluate the kNN run:
 
 ```bash
-python -m src.pipeline2.main --config configs/pipeline2/experiments/eval_officeqa_treasury_fixed512_bge_small_elastic_knn_qwen25_7b_fileeval_ks1_3_5_10_numacc.yaml
+python -m src.pipeline2.main --config configs/pipeline2/experiments/06_eval_fixed512_es_dense_knn_qwen25.yaml
 ```
 
 ## Compare Against FAISS
@@ -82,17 +82,17 @@ python -m src.pipeline2.main --config configs/pipeline2/experiments/eval_officeq
 Run the matching FAISS baseline first:
 
 ```bash
-python -m src.pipeline1.main --config configs/pipeline1/experiments/03_officeqa_treasury_fixed512_bge_small_dense_norerank_fetch50_qwen25_7b_ctxbudget.yaml
-python -m src.pipeline2.main --config configs/pipeline2/experiments/03_eval_officeqa_treasury_fixed512_bge_small_dense_norerank_fetch50_qwen25_7b_fileeval_ks1_3_5_10_numacc.yaml
+python -m src.pipeline1.main --config configs/pipeline1/experiments/01_fixed512_faiss_dense_norerank_qwen25.yaml
+python -m src.pipeline2.main --config configs/pipeline2/experiments/01_eval_fixed512_faiss_dense_norerank_qwen25.yaml
 ```
 
 Then inspect the Pipeline 2 summaries:
 
 ```bash
 python scripts/compare_runs.py \
-  data/eval/runs/pipeline2/03_eval_officeqa_treasury_fixed512_bge_small_dense_norerank_fetch50_qwen25_7b_fileeval_ks1_3_5_10_numacc/summary_by_experiment.csv \
-  data/eval/runs/pipeline2/eval_officeqa_treasury_fixed512_bge_small_elastic_script_score_qwen25_7b_fileeval_ks1_3_5_10_numacc/summary_by_experiment.csv \
-  data/eval/runs/pipeline2/eval_officeqa_treasury_fixed512_bge_small_elastic_knn_qwen25_7b_fileeval_ks1_3_5_10_numacc/summary_by_experiment.csv
+  data/eval/runs/pipeline2/01_eval_fixed512_faiss_dense_norerank_qwen25/summary_by_experiment.csv \
+  data/eval/runs/pipeline2/07_eval_fixed512_es_dense_script_score_qwen25/summary_by_experiment.csv \
+  data/eval/runs/pipeline2/06_eval_fixed512_es_dense_knn_qwen25/summary_by_experiment.csv
 ```
 
 ## Warnings

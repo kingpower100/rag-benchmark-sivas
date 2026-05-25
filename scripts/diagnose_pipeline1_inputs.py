@@ -22,11 +22,18 @@ def main() -> None:
     project_root = Path(__file__).resolve().parents[1]
     docs_path = project_root / cfg.data.documents_path
 
-    if cfg.data.documents_source_type != "txt_folder":
-        raise ValueError(f"This diagnostic expects data.documents_source_type='txt_folder', got {cfg.data.documents_source_type!r}.")
-
-    files = list_txt_files(docs_path, cfg.data.documents_file_glob, cfg.data.documents_recursive)
-    docs = JsonlReader.read_txt_folder(str(docs_path), cfg.data.documents_file_glob, cfg.data.documents_recursive)
+    if cfg.data.documents_source_type == "jsonl":
+        docs = JsonlReader.read_documents(
+            str(docs_path),
+            text_field=cfg.data.document_text_field,
+            allow_text_fallback=cfg.data.allow_document_text_fallback,
+        )
+        files = []
+    elif cfg.data.documents_source_type == "txt_folder":
+        files = list_txt_files(docs_path, cfg.data.documents_file_glob, cfg.data.documents_recursive)
+        docs = JsonlReader.read_txt_folder(str(docs_path), cfg.data.documents_file_glob, cfg.data.documents_recursive)
+    else:
+        raise ValueError(f"Unsupported documents_source_type={cfg.data.documents_source_type!r}.")
     chunks = _build_chunker(cfg).chunk_documents(docs, show_progress=False)
 
     doc_lengths = [len(doc.text) for doc in docs]
@@ -35,14 +42,18 @@ def main() -> None:
     chunk_ids = [chunk.chunk_id for chunk in chunks]
 
     print(f"documents_path: {docs_path}")
-    print(f"documents_file_glob: {cfg.data.documents_file_glob}")
-    print(f"documents_recursive: {cfg.data.documents_recursive}")
-    print(f"txt_files_found: {len(files)}")
-    print("first_10_file_paths:")
-    for path in files[:10]:
-        print(f"  - {path.relative_to(docs_path).as_posix()}")
+    print(f"documents_source_type: {cfg.data.documents_source_type}")
+    print(f"document_text_field: {cfg.data.document_text_field}")
+    if cfg.data.documents_source_type == "txt_folder":
+        print(f"documents_file_glob: {cfg.data.documents_file_glob}")
+        print(f"documents_recursive: {cfg.data.documents_recursive}")
+        print(f"txt_files_found: {len(files)}")
+        print("first_10_file_paths:")
+        for path in files[:10]:
+            print(f"  - {path.relative_to(docs_path).as_posix()}")
     print(f"documents_loaded: {len(docs)}")
-    print(f"txt_files_skipped_empty: {len(files) - len(docs)}")
+    if cfg.data.documents_source_type == "txt_folder":
+        print(f"txt_files_skipped_empty: {len(files) - len(docs)}")
     print(f"document_length_chars: {_stats(doc_lengths)}")
     print(f"chunks_generated: {len(chunks)}")
     print(f"empty_chunks: {sum(1 for chunk in chunks if not chunk.text.strip())}")

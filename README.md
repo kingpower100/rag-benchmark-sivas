@@ -22,16 +22,25 @@ pip install -e .
 
 Pipeline 1 experiments:
 
-- `configs/pipeline1/experiments/01_officeqa_treasury_fixed512_dense_norerank_fetch50_qwen25_7b_ctxbudget.yaml`
+- `configs/pipeline1/experiments/01_fixed512_faiss_dense_norerank_qwen25.yaml`
+- `configs/pipeline1/experiments/02_fixed512_faiss_dense_rerank5_qwen25.yaml`
+- `configs/pipeline1/experiments/03_fixed512_faiss_dense_rerank10_qwen25.yaml`
+- `configs/pipeline1/experiments/04_fixed512_faiss_dense_rerank10_metaboost_qwen25.yaml`
+- `configs/pipeline1/experiments/05_tableaware512_faiss_dense_rerank3_qwen25.yaml`
+- `configs/pipeline1/experiments/06_fixed512_es_dense_knn_qwen25.yaml`
+- `configs/pipeline1/experiments/07_fixed512_es_dense_script_score_qwen25.yaml`
+- `configs/pipeline1/experiments/08_fixed512_es_hybrid_rrf_qwen25.yaml`
+- `configs/pipeline1/experiments/09_fixed512_es_hybrid_rrf_dateaware_qwen25.yaml`
+- `configs/pipeline1/experiments/10_fixed512_es_hybrid_rrf_dateaware_llama3.yaml`
 
 Primary Pipeline 2 evaluation:
 
-- `configs/pipeline2/experiments/01_eval_officeqa_treasury_fixed512_dense_norerank_fetch50_qwen25_7b_fileeval_ks1_3_5_10_numacc.yaml`
+- `configs/pipeline2/experiments/01_eval_fixed512_faiss_dense_norerank_qwen25.yaml`
 
 ## Run Pipeline 1
 
 ```bash
-python -m src.pipeline1.main --config configs/pipeline1/experiments/01_officeqa_treasury_fixed512_dense_norerank_fetch50_qwen25_7b_ctxbudget.yaml
+python -m src.pipeline1.main --config configs/pipeline1/experiments/01_fixed512_faiss_dense_norerank_qwen25.yaml
 ```
 
 Outputs are written under:
@@ -59,7 +68,7 @@ export PIPELINE1_SKIP_OLLAMA_PREFLIGHT=1
 Run evaluation after Pipeline 1 has produced `results.jsonl`:
 
 ```bash
-python -m src.pipeline2.main --config configs/pipeline2/experiments/01_eval_officeqa_treasury_fixed512_dense_norerank_fetch50_qwen25_7b_fileeval_ks1_3_5_10_numacc.yaml
+python -m src.pipeline2.main --config configs/pipeline2/experiments/01_eval_fixed512_faiss_dense_norerank_qwen25.yaml
 ```
 
 Outputs are written under:
@@ -84,9 +93,9 @@ Citation correctness is structural only: citations are checked as retrieved sour
 
 ```bash
 python scripts/list_configs.py
-python scripts/run_config.py configs/pipeline1/experiments/01_officeqa_treasury_fixed512_dense_norerank_fetch50_qwen25_7b_ctxbudget.yaml
+python scripts/run_config.py configs/pipeline1/experiments/01_fixed512_faiss_dense_norerank_qwen25.yaml
 python scripts/compare_runs.py
-python scripts/benchmark_pipeline1.py --config configs/pipeline1/experiments/01_officeqa_treasury_fixed512_dense_norerank_fetch50_qwen25_7b_ctxbudget.yaml
+python scripts/benchmark_pipeline1.py --config configs/pipeline1/experiments/01_fixed512_faiss_dense_norerank_qwen25.yaml
 python scripts/test_ollama.py --base-url http://localhost:11434
 ```
 
@@ -116,17 +125,17 @@ It sets `OLLAMA_BASE_URL=http://host.docker.internal:11434` so the container can
 
 ## Data Format
 
-`documents.jsonl` requires:
+`data/raw/treasury_bulletins_1939_1963.jsonl` is the active Pipeline 1 knowledge base for the bundled experiments. It requires:
 
 - `document_id` or `id`
-- `text` or `context`
+- `cleaned_context`
 
-`qa_test.jsonl` requires the question field configured by Pipeline 1, currently:
+`data/raw/questions_only.jsonl` is the active Pipeline 1 question file. It requires:
 
-- `id`
+- `uid`
 - `question`
 
-`ground_truth_contexts.jsonl` is used only by Pipeline 2 evaluation.
+`data/raw/qa_test.jsonl` and `data/raw/ground_truth_contexts.jsonl` are used only by Pipeline 2 evaluation.
 
 ## Cleanup Before Full Runs
 
