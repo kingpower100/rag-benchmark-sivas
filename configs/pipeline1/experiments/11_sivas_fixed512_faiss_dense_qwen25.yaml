@@ -29,7 +29,7 @@ embedding:
   batch_size: 128
   device: "cuda"
   require_cuda: true
-  cache_dir: "/models/sentence-transformers"
+  cache_dir: ".cache/sentence-transformers"
 
 index:
   type: "faiss"
