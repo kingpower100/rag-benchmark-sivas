@@ -1,8 +1,10 @@
 from __future__ import annotations
 
 import math
+import os
 import time
 import warnings
+from pathlib import Path
 
 import numpy as np
 
@@ -17,12 +19,23 @@ class BGEEncoder(BaseEmbedder):
         batch_size: int = 32,
         device: str = "cpu",
         require_cuda: bool = False,
+        cache_dir: str | None = None,
     ) -> None:
         from sentence_transformers import SentenceTransformer
 
         self.requested_device = device
         self.require_cuda = require_cuda
-        self.model = SentenceTransformer(model_name, device=device)
+        self.cache_dir = cache_dir
+        if cache_dir:
+            cache_path = Path(cache_dir)
+            cache_path.mkdir(parents=True, exist_ok=True)
+            os.environ.setdefault("SENTENCE_TRANSFORMERS_HOME", str(cache_path))
+            os.environ.setdefault("HF_HOME", str(cache_path.parent / "huggingface"))
+            os.environ.setdefault("TRANSFORMERS_CACHE", str(cache_path.parent / "huggingface"))
+        if cache_dir:
+            self.model = SentenceTransformer(model_name, device=device, cache_folder=cache_dir)
+        else:
+            self.model = SentenceTransformer(model_name, device=device)
         self.normalize_embeddings = normalize_embeddings
         self.batch_size = batch_size
         self.runtime_device = self._resolve_runtime_device()

@@ -43,13 +43,11 @@ Net income improved after cost reductions."""
         original_context_id="ctx1",
         text=text,
         metadata={
-            "file_name": "treasury_bulletin_1941_01.txt",
-            "source_file": "treasury_bulletin_1941_01.txt",
-            "source_id": "treasury_bulletin_1941_01",
-            "year": 1941,
-            "month": "01",
-            "subset": "finance",
-            "company_name": "ACME",
+            "file_name": "sivas_manual_01.md",
+            "source_file": "docs/sivas_manual_01.md",
+            "source_id": "doc-key-1",
+            "doc_key": "doc-key-1",
+            "kategorie": "ERP",
         },
     )
 
@@ -65,11 +63,10 @@ Net income improved after cost reductions."""
     assert table_chunk.metadata["chunk_strategy"] == "table_aware"
     assert table_chunk.metadata["chunk_unit"] == "table_or_text_block"
     assert table_chunk.metadata["contains_table"] is True
-    assert table_chunk.metadata["file_name"] == "treasury_bulletin_1941_01.txt"
-    assert table_chunk.metadata["source_file"] == "treasury_bulletin_1941_01.txt"
-    assert table_chunk.metadata["source_id"] == "treasury_bulletin_1941_01"
-    assert table_chunk.metadata["year"] == 1941
-    assert table_chunk.metadata["month"] == "01"
+    assert table_chunk.metadata["file_name"] == "sivas_manual_01.md"
+    assert table_chunk.metadata["source_file"] == "docs/sivas_manual_01.md"
+    assert table_chunk.metadata["source_id"] == "doc-key-1"
+    assert table_chunk.metadata["doc_key"] == "doc-key-1"
     assert table_chunk.metadata["chunk_id"] == table_chunk.chunk_id
 
 

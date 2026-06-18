@@ -5,8 +5,11 @@ from src.pipeline2.orchestrator import (
     _raise_on_failure_threshold,
     _run_validity_by_experiment,
     _index_by_id,
+    _gold_by_question,
     _merge_gold_with_qa_fallback,
     _validate_pipeline1_questions_have_qa,
+    _validate_pipeline1_questions_have_gold_contexts,
+    _validate_no_duplicate_pipeline1_question_ids,
     summarize_by_difficulty,
 )
 from src.pipeline2.schemas.eval_config_schema import EvalConfig
@@ -49,7 +52,7 @@ def test_numeric_accuracy_flag_is_respected():
     assert evaluated[0]["numeric_accuracy"] is None
     assert evaluated[0]["hit_at_1"] == 1.0
     assert evaluated[0]["hit_at_3"] == 1.0
-    assert evaluated[0]["context_precision_at_3"] == 1 / 3
+    assert evaluated[0]["context_precision_at_3"] == 1.0
     assert evaluated[0]["ndcg_at_3"] == 1.0
     assert evaluated[0]["raw_duplicate_rate"] == 0.5
     assert evaluated[0]["non_empty_answer_rate"] == 1.0
@@ -97,7 +100,7 @@ def test_missing_configured_retrieval_eval_field_raises_clear_error():
         )
 
 
-def test_retrieval_metrics_can_use_file_names_for_officeqa_gold_ids():
+def test_retrieval_metrics_can_use_file_names_for_sivas_gold_ids():
     cfg = EvalConfig.model_validate(
         {
             "evaluation": {"eval_run_id": "eval", "retrieval_eval_field": "retrieved_file_names"},
@@ -114,10 +117,10 @@ def test_retrieval_metrics_can_use_file_names_for_officeqa_gold_ids():
             "question": "Q?",
             "retrieved_original_context_ids": ["chunk_a", "chunk_b"],
             "raw_retrieved_original_context_ids": ["chunk_a", "chunk_b"],
-            "retrieved_file_names": ["treasury_bulletin_1944_01.txt", "treasury_bulletin_1944_01.txt"],
-            "raw_retrieved_file_names": ["treasury_bulletin_1944_01.txt", "treasury_bulletin_1944_01.txt"],
-            "retrieved_document_ids": ["treasury_bulletin_1944_01.txt", "treasury_bulletin_1944_01.txt"],
-            "raw_retrieved_document_ids": ["treasury_bulletin_1944_01.txt", "treasury_bulletin_1944_01.txt"],
+            "retrieved_file_names": ["sivas_manual_01.md", "sivas_manual_01.md"],
+            "raw_retrieved_file_names": ["sivas_manual_01.md", "sivas_manual_01.md"],
+            "retrieved_document_ids": ["doc-key-1", "doc-key-1"],
+            "raw_retrieved_document_ids": ["doc-key-1", "doc-key-1"],
             "total_latency_ms": 12,
             "total_tokens": 3,
             "estimated_cost": 0.0,
@@ -127,13 +130,13 @@ def test_retrieval_metrics_can_use_file_names_for_officeqa_gold_ids():
     evaluated = EvaluationOrchestrator()._evaluate_rows(
         rows,
         {"q1": {"id": "q1", "answer": "100"}},
-        {"q1": ["treasury_bulletin_1944_01.txt"]},
+        {"q1": ["sivas_manual_01.md"]},
         cfg,
     )
 
     assert evaluated[0]["retrieval_eval_ids"] == [
-        "treasury_bulletin_1944_01.txt",
-        "treasury_bulletin_1944_01.txt",
+        "sivas_manual_01.md",
+        "sivas_manual_01.md",
     ]
     assert evaluated[0]["hit_at_1"] == 1.0
     assert evaluated[0]["recall_at_1"] == 1.0
@@ -182,8 +185,34 @@ def test_missing_gold_contexts_fail_evaluation():
     )
     rows = [{"question_id": "q_missing", "experiment_id": "exp", "generated_answer": "100", "retrieved_original_context_ids": ["c1"]}]
 
-    with pytest.raises(ValueError, match="Missing 1 question"):
+    with pytest.raises(ValueError, match="Missing gold context for question q_missing"):
         EvaluationOrchestrator()._evaluate_rows(rows, {"q_missing": {"id": "q_missing", "answer": "100"}}, {}, cfg)
+
+
+def test_gold_context_validation_fails_before_summary_denominator_can_change():
+    rows = [{"question_id": "q_missing", "experiment_id": "exp"}]
+
+    with pytest.raises(ValueError, match="Missing gold context for question q_missing"):
+        _validate_pipeline1_questions_have_gold_contexts(rows, {})
+
+
+def test_same_question_ids_across_experiments_are_allowed():
+    rows = [
+        {"question_id": "q1", "experiment_id": "exp_a"},
+        {"question_id": "q1", "experiment_id": "exp_b"},
+    ]
+
+    _validate_no_duplicate_pipeline1_question_ids(rows)
+
+
+def test_duplicate_question_ids_inside_same_experiment_still_fail():
+    rows = [
+        {"question_id": "q1", "experiment_id": "exp_a"},
+        {"question_id": "q1", "experiment_id": "exp_a"},
+    ]
+
+    with pytest.raises(ValueError, match="exp_a:q1"):
+        _validate_no_duplicate_pipeline1_question_ids(rows)
 
 
 def test_pipeline1_error_row_is_retained_and_scores_zero_for_answer_metrics():
@@ -233,7 +262,7 @@ def test_qa_index_supports_uid_only_rows_and_numeric_answer_resolution():
                 "uid": "UID0002",
                 "question": "Q?",
                 "answer": "507",
-                "source_files": "treasury_bulletin_1944_01.txt",
+                "source_files": "sivas_manual_01.md",
             }
         ]
     )
@@ -251,14 +280,14 @@ def test_qa_index_supports_uid_only_rows_and_numeric_answer_resolution():
             "experiment_id": "exp",
             "generated_answer": "507",
             "question": "Q?",
-            "retrieved_original_context_ids": ["treasury_bulletin_1944_01.txt"],
+            "retrieved_original_context_ids": ["sivas_manual_01.md"],
         }
     ]
 
     evaluated = EvaluationOrchestrator()._evaluate_rows(
         rows,
         qa_by_id,
-        {"UID0002": ["treasury_bulletin_1944_01.txt"]},
+        {"UID0002": ["sivas_manual_01.md"]},
         cfg,
     )
 
@@ -314,9 +343,9 @@ def test_qa_index_empty_answer_fails():
 
 
 def test_qa_index_allows_empty_answers_for_retrieval_only_mode():
-    qa_by_id = _index_by_id([{"uid": "q1", "question": "Q?", "source_files": ["treasury_bulletin_1941_01.txt"]}], require_answer=False)
+    qa_by_id = _index_by_id([{"uid": "q1", "question": "Q?", "source_files": ["sivas_manual_02.md"]}], require_answer=False)
 
-    assert qa_by_id["q1"]["source_files"] == ["treasury_bulletin_1941_01.txt"]
+    assert qa_by_id["q1"]["source_files"] == ["sivas_manual_02.md"]
 
 
 def test_pipeline2_joins_difficulty():
@@ -334,14 +363,14 @@ def test_pipeline2_joins_difficulty():
             "experiment_id": "exp",
             "generated_answer": "507",
             "question": "Q?",
-            "retrieved_original_context_ids": ["treasury_bulletin_1944_01.txt"],
+            "retrieved_original_context_ids": ["sivas_manual_01.md"],
         }
     ]
 
     evaluated = EvaluationOrchestrator()._evaluate_rows(
         rows,
         {"UID0002": {"uid": "UID0002", "answer": "507", "difficulty": "easy"}},
-        {"UID0002": ["treasury_bulletin_1944_01.txt"]},
+        {"UID0002": ["sivas_manual_01.md"]},
         cfg,
     )
 
@@ -362,14 +391,14 @@ def test_retrieval_only_mode_skips_answer_metrics_without_generated_answer():
             "question_id": "UID0001",
             "experiment_id": "exp",
             "question": "Q?",
-            "retrieved_original_context_ids": ["treasury_bulletin_1941_01"],
+            "retrieved_original_context_ids": ["sivas_manual_02"],
         }
     ]
 
     evaluated = EvaluationOrchestrator()._evaluate_rows(
         rows,
-        {"UID0001": {"uid": "UID0001", "difficulty": "hard", "source_files": ["treasury_bulletin_1941_01.txt"]}},
-        {"UID0001": ["treasury_bulletin_1941_01.txt"]},
+        {"UID0001": {"uid": "UID0001", "difficulty": "hard", "source_files": ["sivas_manual_02.md"]}},
+        {"UID0001": ["sivas_manual_02"]},
         cfg,
     )
 
@@ -379,13 +408,22 @@ def test_retrieval_only_mode_skips_answer_metrics_without_generated_answer():
     assert evaluated[0]["answer_match_status"] == "skipped_retrieval_only"
 
 
-def test_source_files_fallback_from_qa_fills_missing_gold_contexts():
-    merged = _merge_gold_with_qa_fallback(
-        {},
-        {"UID0001": {"uid": "UID0001", "source_files": ["treasury_bulletin_1941_01.txt"]}},
-    )
+def test_source_files_fallback_from_qa_is_disabled():
+    with pytest.raises(RuntimeError, match="fallback.*disabled"):
+        _merge_gold_with_qa_fallback(
+            {},
+            {"UID0001": {"uid": "UID0001", "source_files": ["sivas_manual_02.md"]}},
+        )
 
-    assert merged == {"UID0001": ["treasury_bulletin_1941_01.txt"]}
+
+def test_gold_context_index_supports_uid_and_rejects_duplicates():
+    assert _gold_by_question([{"uid": "UID0001", "context_id": ["doc.txt"]}]) == {"UID0001": ["doc.txt"]}
+
+    with pytest.raises(ValueError, match="duplicate resolved IDs"):
+        _gold_by_question([
+            {"id": "UID0001", "context_id": ["doc.txt"]},
+            {"uid": "UID0001", "context_id": ["other.txt"]},
+        ])
 
 
 def test_difficulty_summary_includes_all_and_each_difficulty():
@@ -399,12 +437,6 @@ def test_difficulty_summary_includes_all_and_each_difficulty():
     assert [row["difficulty"] for row in summary] == ["all", "easy", "hard"]
     assert summary[0]["n_questions"] == 2
     assert summary[0]["mean_hit_at_1"] == 0.5
-
-
-def test_officeqa_smoke_check_is_disabled_by_default():
-    cfg = EvalConfig.model_validate({"evaluation": {"eval_run_id": "eval"}, "inputs": {"rag_outputs": []}})
-
-    assert cfg.debug.enable_officeqa_smoke_check is False
 
 
 def test_generation_failure_threshold_validity_counts_failures():

@@ -74,9 +74,142 @@ def test_retrieval_stage_elasticsearch_dense_retriever_works():
     assert row.raw_dense_retrieved[0].chunk_id == "c1"
 
 
+def test_retrieval_stage_uses_cleaned_question_and_detected_category():
+    cfg = _cfg(retriever_type="category_aware_dense", top_k=1, fetch_k=2)
+    chunks = [_chunk("c1", "alpha", "Einkauf"), _chunk("c2", "alpha", "Finanzen")]
+    embedder = _RecordingEmbedder()
+
+    output = RetrievalStage(cfg, embedder, _FaissIndex(), chunks).run(
+        StageInput(
+            {
+                "queries": [
+                    QueryRecord(
+                        question_id="q1",
+                        question="dirty alpha?",
+                        cleaned_question="clean alpha?",
+                        detected_category="Finanzen",
+                        category_confidence=0.8,
+                    )
+                ]
+            }
+        )
+    )
+
+    row = output.retrieval_rows[0]
+    assert embedder.last_query == "clean alpha?"
+    assert [item.chunk_id for item in row.retrieved] == ["c2"]
+    assert row.retrieval_diagnostics["detected_category"] == "Finanzen"
+
+
+def test_category_aware_retrieval_fills_remaining_slots_from_global_candidates():
+    cfg = _cfg(retriever_type="category_aware_dense", top_k=3, fetch_k=4)
+    chunks = [
+        _chunk("c1", "alpha", "Einkauf"),
+        _chunk("c2", "alpha", "Finanzen"),
+        _chunk("c3", "alpha", "Personal"),
+        _chunk("c4", "alpha", "Finanzen"),
+    ]
+
+    output = RetrievalStage(cfg, _Embedder(), _FourIndex(), chunks).run(
+        StageInput(
+            {
+                "queries": [
+                    QueryRecord(
+                        question_id="q1",
+                        question="alpha?",
+                        cleaned_question="alpha?",
+                        detected_category="Finanzen",
+                        category_confidence=0.9,
+                    )
+                ]
+            }
+        )
+    )
+
+    row = output.retrieval_rows[0]
+    assert [item.chunk_id for item in row.retrieved] == ["c2", "c4", "c1"]
+    assert row.retrieval_diagnostics["retrieved_chunks"] == ["c2", "c4", "c1"]
+    assert row.retrieval_diagnostics["retrieved_documents"] == ["doc-c2", "doc-c4", "doc-c1"]
+    assert row.retrieval_diagnostics["retrieved_categories"] == ["Finanzen", "Finanzen", "Einkauf"]
+    assert row.retrieval_diagnostics["category_filter_applied"] is True
+    assert row.retrieval_diagnostics["category_fallback_used"] is True
+
+
+def test_category_aware_retrieval_falls_back_to_global_when_category_missing():
+    cfg = _cfg(retriever_type="category_aware_dense", top_k=2, fetch_k=2)
+    chunks = [_chunk("c1", "alpha", "Einkauf"), _chunk("c2", "alpha", "Finanzen")]
+
+    output = RetrievalStage(cfg, _Embedder(), _FaissIndex(), chunks).run(
+        StageInput({"queries": [QueryRecord(question_id="q1", question="alpha?", cleaned_question="alpha?")]})
+    )
+
+    row = output.retrieval_rows[0]
+    assert [item.chunk_id for item in row.retrieved] == ["c1", "c2"]
+    assert row.retrieval_diagnostics["category_filter_applied"] is False
+    assert row.retrieval_diagnostics["category_fallback_used"] is False
+
+
+def test_sivas_chunk_metadata_is_available_during_retrieval():
+    cfg = _cfg(retriever_type="category_aware_dense", top_k=1, fetch_k=1)
+    chunks = [
+        ChunkRecord(
+            chunk_id="doc-a:chunk:0001",
+            document_id="doc-a",
+            original_context_id="doc-a",
+            text="alpha",
+            chunk_start=0,
+            chunk_end=1,
+            metadata={
+                "doc_id": 1,
+                "doc_key": "doc-a",
+                "doc_name": "a.md",
+                "kategorie": "Einkauf",
+                "wissensart": "FAQ",
+                "titel": "Bestellung",
+                "quellpfad": "kb/a.md",
+                "sprache": "de",
+            },
+        )
+    ]
+
+    output = RetrievalStage(cfg, _Embedder(), _SingleIndex(), chunks).run(
+        StageInput(
+            {
+                "queries": [
+                    QueryRecord(
+                        question_id="q1",
+                        question="alpha?",
+                        cleaned_question="alpha?",
+                        detected_category="Einkauf",
+                    )
+                ]
+            }
+        )
+    )
+
+    metadata = output.retrieval_rows[0].retrieved[0].metadata
+    assert output.retrieval_rows[0].retrieved[0].chunk_id == "doc-a:chunk:0001"
+    assert metadata["doc_id"] == 1
+    assert metadata["doc_key"] == "doc-a"
+    assert metadata["doc_name"] == "a.md"
+    assert metadata["kategorie"] == "Einkauf"
+    assert metadata["wissensart"] == "FAQ"
+    assert metadata["titel"] == "Bestellung"
+    assert metadata["quellpfad"] == "kb/a.md"
+    assert metadata["sprache"] == "de"
+
+
 class _Embedder:
     def encode_query(self, question):
         return np.ones(2, dtype="float32")
+
+
+class _RecordingEmbedder(_Embedder):
+    last_query = None
+
+    def encode_query(self, question):
+        self.last_query = question
+        return super().encode_query(question)
 
 
 class _FaissIndex:
@@ -87,6 +220,19 @@ class _FaissIndex:
 class _DuplicateIndex:
     def search(self, query_embedding, top_k):
         return np.array([1.0, 0.9], dtype="float32")[:top_k], np.array([0, 1], dtype="int64")[:top_k]
+
+
+class _FourIndex:
+    def search(self, query_embedding, top_k):
+        return (
+            np.array([1.0, 0.9, 0.8, 0.7], dtype="float32")[:top_k],
+            np.array([0, 1, 2, 3], dtype="int64")[:top_k],
+        )
+
+
+class _SingleIndex:
+    def search(self, query_embedding, top_k):
+        return np.array([1.0], dtype="float32")[:top_k], np.array([0], dtype="int64")[:top_k]
 
 
 class _ElasticsearchDenseIndex:
@@ -119,7 +265,7 @@ class _ReverseReranker:
         return reranked[:top_k]
 
 
-def _chunk(chunk_id: str, text: str):
+def _chunk(chunk_id: str, text: str, category: str | None = None):
     return ChunkRecord(
         chunk_id=chunk_id,
         document_id=f"doc-{chunk_id}",
@@ -127,7 +273,7 @@ def _chunk(chunk_id: str, text: str):
         text=text,
         chunk_start=0,
         chunk_end=len(text),
-        metadata={"document_id": f"doc-{chunk_id}", "file_name": f"{chunk_id}.txt"},
+        metadata={"document_id": f"doc-{chunk_id}", "file_name": f"{chunk_id}.txt", "kategorie": category},
     )
 
 

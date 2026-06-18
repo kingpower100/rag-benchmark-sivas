@@ -3,6 +3,8 @@ from __future__ import annotations
 from statistics import mean, median
 from typing import Any
 
+SIVAS_CATEGORIES = ["Technik", "Vertrieb", "Materialwirtschaft", "Einkauf", "Service"]
+
 
 def summarize_by_experiment(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
     by_experiment: dict[str, list[dict[str, Any]]] = {}
@@ -30,6 +32,8 @@ def summarize_by_experiment(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
             "non_empty_answer_rate",
             "answer_coverage_rate",
             "abstention_rate",
+            "rouge_l",
+            "embedding_similarity",
         ):
             summary[f"mean_{col}"] = _mean([row.get(col) for row in group if row.get(col) is not None])
         summary["mean_relative_error"] = _mean(
@@ -44,15 +48,23 @@ def summarize_by_experiment(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
         summary["mean_answer_relevancy"] = _mean(
             [row.get("answer_relevancy_score") for row in group if row.get("answer_relevancy_score") is not None]
         )
+        summary["mean_category_accuracy"] = _mean(
+            [row.get("category_correct") for row in group if row.get("category_correct") is not None]
+        )
         for col in (
             "duplicate_context_rate",
             "raw_duplicate_rate",
+            "raw_retrieved_count",
+            "unique_retrieved_document_count",
+            "duplicate_document_count",
+            "duplicate_document_rate",
             "metadata_match_rate",
             "company_match_rate",
             "year_match_rate",
             "month_match_rate",
             "exact_year_month_match_rate",
             "retrieval_time_ms",
+            "rerank_time_ms",
             "generation_time_ms",
             "total_latency_ms",
             "input_tokens",
@@ -115,3 +127,60 @@ def _median(values: list[Any]) -> float | None:
     if not numeric:
         return None
     return median(numeric)
+
+
+def summarize_by_category(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Aggregate per-question metrics grouped by SIVAS document category.
+
+    Groups are determined by the ``category_gold`` field written by
+    ``compute_category_metrics()``.  An ``"all"`` group covering every row is
+    always first.  Known SIVAS categories that are absent from the evaluated
+    rows are still included (with ``n_questions=0``) so downstream consumers
+    see a stable schema regardless of which categories a particular P1 run
+    happened to cover.
+    """
+    groups: dict[str, list[dict[str, Any]]] = {"all": list(rows)}
+    for row in rows:
+        cat = str(row.get("category_gold") or "unknown")
+        groups.setdefault(cat, []).append(row)
+
+    # Guarantee all canonical SIVAS categories appear in output
+    for cat in SIVAS_CATEGORIES:
+        groups.setdefault(cat, [])
+
+    output = []
+    category_order = ["all", *sorted(key for key in groups if key != "all")]
+    for cat in category_order:
+        group = groups[cat]
+        summary: dict[str, Any] = {"category": cat, "n_questions": len(group)}
+        if not group:
+            output.append(summary)
+            continue
+
+        metric_cols = _dynamic_metric_columns(group)
+        for col in metric_cols:
+            summary[f"mean_{col}"] = _mean([row.get(col) for row in group if row.get(col) is not None])
+
+        for col in (
+            "category_correct",
+            "exact_match",
+            "literal_exact_match",
+            "canonical_exact_match",
+            "numeric_accuracy",
+            "strict_numeric_accuracy",
+            "tolerant_numeric_accuracy",
+            "non_empty_answer_rate",
+            "abstention_rate",
+            "rouge_l",
+            "embedding_similarity",
+            "total_latency_ms",
+            "total_tokens",
+        ):
+            summary[f"mean_{col}"] = _mean([row.get(col) for row in group if row.get(col) is not None])
+
+        summary["mean_category_accuracy"] = summary.pop("mean_category_correct", None)
+        summary["pipeline_success_rate"] = _mean(
+            [1.0 if not row.get("generation_failed") else 0.0 for row in group]
+        )
+        output.append(summary)
+    return output

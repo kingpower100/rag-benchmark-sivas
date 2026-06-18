@@ -68,7 +68,7 @@ def test_strict_and_tolerant_numeric_metrics_are_separate():
     assert exact["tolerant_numeric_accuracy"] == 1.0
     assert tolerant_only["strict_numeric_accuracy"] == 0.0
     assert tolerant_only["tolerant_numeric_accuracy"] == 1.0
-    assert tolerant_only["numeric_accuracy"] == 0.0
+    assert tolerant_only["numeric_accuracy"] == 1.0
     assert scaled["strict_numeric_accuracy"] == 1.0
     assert empty["strict_numeric_accuracy"] == 0.0
     assert empty["tolerant_numeric_accuracy"] == 0.0
@@ -115,3 +115,19 @@ def test_answer_relevancy_score_is_deterministic_overlap_baseline():
 
     assert score == 1.0
     assert answer_relevancy_score("What was total revenue in 2020?", "1250") == 0.0
+
+
+def test_numeric_accuracy_uses_configurable_tolerance():
+    strict_default = compute_answer_metrics("100.2", "100")
+    loose = compute_answer_metrics("100.2", "100", numeric_tolerance_abs=0.25, numeric_tolerance_rel=0.0)
+
+    assert strict_default["numeric_accuracy"] == 0.0
+    assert loose["numeric_accuracy"] == 1.0
+
+
+def test_rouge_l_scores_lcs_token_overlap_and_empty_answers():
+    metrics = compute_answer_metrics("net income increased in 2020", "net income increased")
+
+    assert metrics["rouge_l"] == pytest.approx(0.75)
+    assert compute_answer_metrics("", "net income")["rouge_l"] == 0.0
+    assert compute_answer_metrics("UNKNOWN", "100")["rouge_l"] == 0.0

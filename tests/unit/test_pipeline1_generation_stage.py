@@ -19,8 +19,10 @@ def test_generation_stage_produces_output_record_compatible_row():
     record = output.generation_rows[0].output_record
     assert record.question_id == "q1"
     assert record.generated_answer == "42"
+    assert record.retrieved_chunks == ["c1"]
     assert record.retrieved_chunk_ids == ["c1"]
     assert record.retrieved_original_context_ids == ["ctx1"]
+    assert record.retrieved_documents == ["doc-key-1"]
     assert record.raw_retrieved_context_ids == ["c1"]
     assert record.input_tokens == 5
     assert record.output_tokens == 1
@@ -28,10 +30,12 @@ def test_generation_stage_produces_output_record_compatible_row():
     assert record.error is None
 
 
-def test_generation_stage_error_path_is_preserved(tmp_path):
+def test_generation_stage_error_path_is_preserved(tmp_path, monkeypatch):
+    monkeypatch.setattr("src.pipeline1.stages.generation_stage.time.sleep", lambda seconds: None)
     cfg = _cfg()
     events = EventWriter(tmp_path / "events.jsonl", experiment_id="exp")
-    output = GenerationStage(cfg, _Retriever(), event_writer=events, generator_factory=lambda config: _FailingGenerator()).run(
+    generator = _FailingGenerator()
+    output = GenerationStage(cfg, _Retriever(), event_writer=events, generator_factory=lambda config: generator).run(
         StageInput({"retrieval_rows": [_retrieval_row()], "final_top_k": 1})
     )
     events.close()
@@ -43,8 +47,53 @@ def test_generation_stage_error_path_is_preserved(tmp_path):
     assert record.output_tokens == 0
     assert record.total_tokens == 0
     assert record.error == "boom"
+    assert generator.calls == 3
     assert any(row["event_type"] == "generation_error" for row in event_rows)
     assert any(row["event_type"] == "generation_end" and row["metrics"]["generation_failed"] is True for row in event_rows)
+
+
+def test_generation_stage_retries_and_continues_after_transient_failure(monkeypatch):
+    monkeypatch.setattr("src.pipeline1.stages.generation_stage.time.sleep", lambda seconds: None)
+    cfg = _cfg()
+    generator = _FlakyGenerator(failures_before_success=2)
+
+    output = GenerationStage(cfg, _Retriever(), generator_factory=lambda config: generator).run(
+        StageInput({"retrieval_rows": [_retrieval_row()], "final_top_k": 1})
+    )
+
+    record = output.generation_rows[0].output_record
+    assert generator.calls == 3
+    assert record.generated_answer == "recovered"
+    assert record.error is None
+    assert record.input_tokens == 7
+    assert record.output_tokens == 2
+
+
+def test_generation_stage_failed_question_does_not_stop_remaining_rows(monkeypatch):
+    monkeypatch.setattr("src.pipeline1.stages.generation_stage.time.sleep", lambda seconds: None)
+    cfg = _cfg()
+    generator = _FailFirstQuestionGenerator()
+
+    output = GenerationStage(cfg, _Retriever(), generator_factory=lambda config: generator).run(
+        StageInput(
+            {
+                "retrieval_rows": [
+                    _retrieval_row(question_id="q1"),
+                    _retrieval_row(question_id="q2", question="Second question?"),
+                ],
+                "final_top_k": 1,
+            }
+        )
+    )
+
+    first = output.generation_rows[0].output_record
+    second = output.generation_rows[1].output_record
+    assert first.question_id == "q1"
+    assert first.generated_answer == ""
+    assert first.error == "first failed"
+    assert second.question_id == "q2"
+    assert second.generated_answer == "second ok"
+    assert second.error is None
 
 
 def test_generation_stage_preserves_prompt_context_diagnostics():
@@ -69,8 +118,35 @@ class _Generator:
 
 
 class _FailingGenerator:
+    def __init__(self):
+        self.calls = 0
+
     def generate(self, prompt):
+        self.calls += 1
         raise RuntimeError("boom")
+
+
+class _FlakyGenerator:
+    def __init__(self, failures_before_success):
+        self.failures_before_success = failures_before_success
+        self.calls = 0
+
+    def generate(self, prompt):
+        self.calls += 1
+        if self.calls <= self.failures_before_success:
+            raise RuntimeError(f"transient {self.calls}")
+        return GenerationResult(answer="recovered", input_tokens=7, output_tokens=2)
+
+
+class _FailFirstQuestionGenerator:
+    def __init__(self):
+        self.calls = 0
+
+    def generate(self, prompt):
+        self.calls += 1
+        if "What is the answer?" in prompt:
+            raise RuntimeError("first failed")
+        return GenerationResult(answer="second ok", input_tokens=5, output_tokens=2)
 
 
 class _Retriever:
@@ -78,17 +154,17 @@ class _Retriever:
         return None
 
 
-def _retrieval_row(text="alpha"):
+def _retrieval_row(text="alpha", question_id="q1", question="What is the answer?"):
     item = RetrievalItem(
         chunk_id="c1",
         original_context_id="ctx1",
         text=text,
         score=1.0,
         dense_score=1.0,
-        metadata={"document_id": "doc1", "file_name": "source.txt"},
+        metadata={"doc_id": 1, "doc_key": "doc-key-1", "document_id": "doc1", "file_name": "source.txt"},
     )
     return RetrievalRow(
-        query=QueryRecord(question_id="q1", question="What is the answer?"),
+        query=QueryRecord(question_id=question_id, question=question),
         raw_retrieved=[item],
         raw_dense_retrieved=[item],
         raw_bm25_retrieved=[],

@@ -11,7 +11,8 @@ def retrieval_item_to_search_result(item: RetrievalItem, rank: int | None = None
     metadata = dict(item.metadata or {})
     adapter_payload = metadata.pop(_ADAPTER_METADATA_KEY, {}) if isinstance(metadata.get(_ADAPTER_METADATA_KEY), dict) else {}
     document_id = (
-        metadata.get("document_id")
+        metadata.get("doc_key")
+        or metadata.get("document_id")
         or metadata.get("doc_id")
         or adapter_payload.get("document_id")
         or item.original_context_id

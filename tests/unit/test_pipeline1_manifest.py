@@ -32,6 +32,12 @@ class _FakeIndex:
 
 class _FakeGenerator:
     def generate(self, prompt):
+        if "fixed preprocessing model" in prompt:
+            return GenerationResult(
+                answer='{"cleaned_question":"Q?","detected_category":"","category_confidence":0.0}',
+                input_tokens=5,
+                output_tokens=5,
+            )
         return GenerationResult(answer="1", input_tokens=5, output_tokens=1)
 
 
@@ -39,11 +45,16 @@ def test_pipeline1_manifest_contains_reproducibility_fields(tmp_path, monkeypatc
     project_root = tmp_path
     data_dir = project_root / "data" / "raw"
     data_dir.mkdir(parents=True)
-    (data_dir / "documents.jsonl").write_text(
-        '{"context_id":"ctx1","cleaned_context":"alpha"}\n{"context_id":"ctx2","cleaned_context":"beta"}\n',
+    (data_dir / "kb_documents_fixed.jsonl").write_text(
+        (
+            '{"doc_key":"doc-1","doc_name":"sivas_1.md","text":"alpha",'
+            '"kategorie":"ERP","wissensart":"howto","titel":"Alpha","quellpfad":"docs/sivas_1.md"}\n'
+            '{"doc_key":"doc-2","doc_name":"sivas_2.md","text":"beta",'
+            '"kategorie":"ERP","wissensart":"howto","titel":"Beta","quellpfad":"docs/sivas_2.md"}\n'
+        ),
         encoding="utf-8",
     )
-    (data_dir / "questions_only.jsonl").write_text('{"id":"q1","question":"Q?"}\n', encoding="utf-8")
+    (data_dir / "questions_fixed.jsonl").write_text('{"question_id":"q1","frage":"Q?"}\n', encoding="utf-8")
     cfg_path = project_root / "config.yaml"
     cfg_path.write_text(
         """
@@ -52,11 +63,12 @@ experiment:
   random_seed: 42
   output_dir: "runs"
 data:
-  documents_path: "data/raw/documents.jsonl"
-  questions_path: "data/raw/questions_only.jsonl"
-  question_id_field: "id"
-  question_field: "question"
-  document_text_field: "cleaned_context"
+  dataset_schema: "sivas"
+  documents_path: "data/raw/kb_documents_fixed.jsonl"
+  questions_path: "data/raw/questions_fixed.jsonl"
+  question_id_field: "question_id"
+  question_field: "frage"
+  document_text_field: "text"
   allow_document_text_fallback: false
   allow_unsafe_query_fields: false
 chunking:
@@ -106,17 +118,30 @@ runtime:
     run_dir = run_pipeline(str(cfg_path))
 
     manifest = json.loads((run_dir / "run_manifest.json").read_text(encoding="utf-8"))
+    alias_manifest = json.loads((run_dir / "manifest.json").read_text(encoding="utf-8"))
     events = [json.loads(line) for line in (run_dir / "events.jsonl").read_text(encoding="utf-8").splitlines()]
+    assert alias_manifest["run_id"] == "test_exp"
+    assert manifest["run_id"] == "test_exp"
     assert manifest["config_path"] == str(cfg_path.resolve())
     assert manifest["config_hash"]
+    assert manifest["machine"]["hostname"] is not None
+    assert manifest["machine"]["python_version"]
     assert manifest["data_hashes"]["documents_sha256"]
     assert manifest["resolved_config"]["experiment"]["experiment_id"] == "test_exp"
+    assert manifest["models"]["embedding_model"] == "fake"
+    assert manifest["models"]["index_type"] == "faiss"
+    assert manifest["models"]["reranker_enabled"] is False
+    assert manifest["models"]["generator_model"] == "fake"
     assert manifest["cache_artifact_paths"]["chunks"].endswith(".jsonl")
     assert manifest["cache_artifact_paths"]["embeddings"].endswith(".npy")
     assert manifest["cache_artifact_paths"]["index"].endswith(".faiss")
     assert manifest["chunker_versions"]["chunker_implementation"]
     assert manifest["chunk_units"]["word"] == 2
     assert manifest["output_row_counts"]["results.jsonl"] == 1
+    assert manifest["run_stats"]["n_chunks"] == 2
+    assert manifest["run_stats"]["failed_questions"] == 0
+    assert manifest["artifacts"]["results.jsonl"]["sha256"]
+    assert manifest["artifacts"]["events.jsonl"]["sha256"]
     assert manifest["start_timestamp_utc"]
     assert manifest["end_timestamp_utc"]
     assert events[0]["event_type"] == "pipeline_start"
@@ -130,9 +155,9 @@ def test_pipeline1_manifest_records_txt_folder_input(tmp_path, monkeypatch):
     data_dir = project_root / "data" / "raw"
     transformed_dir = data_dir / "transformed"
     transformed_dir.mkdir(parents=True)
-    (transformed_dir / "treasury_bulletin_1944_01.txt").write_text("alpha", encoding="utf-8")
-    (transformed_dir / "treasury_bulletin_1944_02.txt").write_text("beta", encoding="utf-8")
-    (data_dir / "questions_only.jsonl").write_text('{"id":"q1","question":"Q?"}\n', encoding="utf-8")
+    (transformed_dir / "sivas_manual_01.txt").write_text("alpha", encoding="utf-8")
+    (transformed_dir / "sivas_manual_02.txt").write_text("beta", encoding="utf-8")
+    (data_dir / "questions_fixed.jsonl").write_text('{"question_id":"q1","frage":"Q?"}\n', encoding="utf-8")
     cfg_path = project_root / "config.yaml"
     cfg_path.write_text(
         """
@@ -146,9 +171,10 @@ documents:
   text_field: "cleaned_context"
   file_glob: "*.txt"
 data:
-  questions_path: "data/raw/questions_only.jsonl"
-  question_id_field: "id"
-  question_field: "question"
+  dataset_schema: "sivas"
+  questions_path: "data/raw/questions_fixed.jsonl"
+  question_id_field: "question_id"
+  question_field: "frage"
 chunking:
   strategy: "fixed_word"
   chunk_size: 10
@@ -191,6 +217,7 @@ runtime:
     run_dir = run_pipeline(str(cfg_path))
 
     manifest = json.loads((run_dir / "run_manifest.json").read_text(encoding="utf-8"))
+    assert (run_dir / "manifest.json").exists()
     assert manifest["data_hashes"]["documents_sha256"] is None
     assert manifest["data_hashes"]["documents_source_type"] == "txt_folder"
     assert manifest["data_hashes"]["txt_files_loaded"] == 2

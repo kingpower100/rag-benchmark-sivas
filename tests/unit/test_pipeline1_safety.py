@@ -6,10 +6,10 @@ import pytest
 import torch
 
 from src.pipeline1.chunking.fixed_token_chunker import FixedTokenChunker
+from src.pipeline1.chunking.fixed_word_chunker import FixedWordChunker
 from src.pipeline1.config_loader import load_pipeline_config_payload
 from src.pipeline1.embedding.bge_encoder import BGEEncoder
 from src.pipeline1.io.jsonl_reader import JsonlReader
-from src.pipeline1.metadata import parse_treasury_filename
 from src.pipeline1.orchestrator import _chunker_versions
 from src.pipeline1.preflight import run_preflight_checks
 from src.pipeline1.schemas.config_schema import PipelineConfig
@@ -44,83 +44,167 @@ def test_document_text_field_missing_fails_without_explicit_fallback(tmp_path):
         JsonlReader.read_documents(str(path), require_context_id=True, text_field="cleaned_context")
 
 
-def test_txt_folder_reader_creates_officeqa_document_records(tmp_path):
+def test_sivas_document_schema_maps_doc_key_and_text(tmp_path):
+    path = tmp_path / "kb_documents_fixed.jsonl"
+    path.write_text(
+        '{"doc_id":1,"doc_key":"doc-a","doc_name":"a.md","kategorie":"IT","wissensart":"FAQ",'
+        '"titel":"Title","quellpfad":"kb/a.md","sprache":"de","text":"SIVAS text"}\n',
+        encoding="utf-8",
+    )
+
+    docs = JsonlReader.read_documents(str(path), dataset_schema="sivas")
+
+    assert docs[0].document_id == "doc-a"
+    assert docs[0].original_context_id == "doc-a"
+    assert docs[0].text == "SIVAS text"
+    assert docs[0].metadata["source_dataset"] == "sivas"
+    assert docs[0].metadata["kategorie"] == "IT"
+
+
+def test_sivas_document_reader_accepts_utf8_bom(tmp_path):
+    path = tmp_path / "kb_documents_fixed.jsonl"
+    path.write_text(
+        '{"doc_id":1,"doc_key":"doc-a","doc_name":"a.md","kategorie":"IT","wissensart":"FAQ",'
+        '"titel":"Title","quellpfad":"kb/a.md","sprache":"de","text":"SIVAS text"}\n',
+        encoding="utf-8-sig",
+    )
+
+    docs = JsonlReader.read_documents(str(path), dataset_schema="sivas")
+
+    assert docs[0].document_id == "doc-a"
+    assert docs[0].text == "SIVAS text"
+
+
+def test_sivas_metadata_and_stable_chunk_ids_survive_fixed_word_chunking(tmp_path):
+    path = tmp_path / "kb_documents_fixed.jsonl"
+    path.write_text(
+        '{"doc_id":1,"doc_key":"doc-a","doc_name":"a.md","kategorie":"Einkauf","wissensart":"FAQ",'
+        '"titel":"Bestellung","quellpfad":"kb/a.md","sprache":"de","text":"eins zwei drei vier fünf sechs"}\n',
+        encoding="utf-8",
+    )
+    doc = JsonlReader.read_documents(str(path), dataset_schema="sivas")[0]
+
+    chunks = FixedWordChunker(chunk_size=3, chunk_overlap=0).chunk_documents([doc])
+
+    assert [chunk.chunk_id for chunk in chunks] == ["doc-a:chunk:0001", "doc-a:chunk:0002"]
+    for chunk in chunks:
+        assert chunk.document_id == "doc-a"
+        assert chunk.original_context_id == "doc-a"
+        assert chunk.metadata["doc_id"] == 1
+        assert chunk.metadata["doc_key"] == "doc-a"
+        assert chunk.metadata["doc_name"] == "a.md"
+        assert chunk.metadata["kategorie"] == "Einkauf"
+        assert chunk.metadata["wissensart"] == "FAQ"
+        assert chunk.metadata["titel"] == "Bestellung"
+        assert chunk.metadata["quellpfad"] == "kb/a.md"
+        assert chunk.metadata["sprache"] == "de"
+
+
+def test_sivas_document_schema_falls_back_to_doc_id(tmp_path):
+    path = tmp_path / "kb_documents_fixed.jsonl"
+    path.write_text('{"doc_id":1,"text":"SIVAS text"}\n', encoding="utf-8")
+
+    docs = JsonlReader.read_documents(str(path), dataset_schema="sivas")
+
+    assert docs[0].document_id == "1"
+    assert docs[0].original_context_id == "1"
+
+
+def test_sivas_document_missing_text_fails(tmp_path):
+    path = tmp_path / "kb_documents_fixed.jsonl"
+    path.write_text('{"doc_id":1,"doc_key":"doc-a"}\n', encoding="utf-8")
+
+    with pytest.raises(ValueError, match="missing non-empty text field 'text'"):
+        JsonlReader.read_documents(str(path), dataset_schema="sivas")
+
+
+def test_empty_document_file_fails(tmp_path):
+    path = tmp_path / "kb_documents_fixed.jsonl"
+    path.write_text("", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="No documents loaded"):
+        JsonlReader.read_documents(str(path), dataset_schema="sivas")
+
+
+def test_sivas_question_schema_maps_frage(tmp_path):
+    path = tmp_path / "questions_fixed.jsonl"
+    path.write_text('{"question_id":"Q001","frage":"Wie geht das?"}\n', encoding="utf-8")
+
+    queries = list(JsonlReader.iter_queries(str(path), "question_id", "question", dataset_schema="sivas"))
+
+    assert queries[0].question_id == "Q001"
+    assert queries[0].question == "Wie geht das?"
+
+
+def test_sivas_question_reader_accepts_utf8_bom(tmp_path):
+    path = tmp_path / "questions_fixed.jsonl"
+    path.write_text('{"question_id":"Q001","frage":"Wie geht das?"}\n', encoding="utf-8-sig")
+
+    queries = list(JsonlReader.iter_queries(str(path), "question_id", "question", dataset_schema="sivas"))
+
+    assert queries[0].question_id == "Q001"
+    assert queries[0].question == "Wie geht das?"
+
+
+def test_sivas_question_missing_frage_fails(tmp_path):
+    path = tmp_path / "questions_fixed.jsonl"
+    path.write_text('{"question_id":"Q001","question":"wrong field"}\n', encoding="utf-8")
+
+    with pytest.raises(ValueError, match="missing non-empty question field 'frage'"):
+        list(JsonlReader.iter_queries(str(path), "question_id", "question", dataset_schema="sivas"))
+
+
+def test_duplicate_question_id_fails(tmp_path):
+    path = tmp_path / "questions_fixed.jsonl"
+    path.write_text(
+        '{"question_id":"Q001","frage":"Eine Frage?"}\n{"question_id":"Q001","frage":"Andere Frage?"}\n',
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="duplicate question_id: Q001"):
+        list(JsonlReader.iter_queries(str(path), "question_id", "question", dataset_schema="sivas"))
+
+
+def test_empty_questions_file_fails(tmp_path):
+    path = tmp_path / "questions_fixed.jsonl"
+    path.write_text("", encoding="utf-8")
+
+    with pytest.raises(ValueError, match="No questions loaded"):
+        list(JsonlReader.iter_queries(str(path), "question_id", "question", dataset_schema="sivas"))
+
+
+def test_txt_folder_reader_creates_neutral_document_records(tmp_path):
     folder = tmp_path / "transformed"
     folder.mkdir()
-    (folder / "treasury_bulletin_1944_01.txt").write_text("OfficeQA text", encoding="utf-8")
+    (folder / "sivas_manual_01.txt").write_text("SIVAS text", encoding="utf-8")
     (folder / "ignored.md").write_text("ignore", encoding="utf-8")
 
     docs = JsonlReader.read_txt_folder(str(folder), "*.txt")
 
     assert len(docs) == 1
-    assert docs[0].document_id == "treasury_bulletin_1944_01.txt"
-    assert docs[0].original_context_id == "treasury_bulletin_1944_01.txt"
-    assert docs[0].text == "OfficeQA text"
-    assert docs[0].metadata["file_name"] == "treasury_bulletin_1944_01.txt"
-    assert docs[0].metadata["source_file"] == "treasury_bulletin_1944_01.txt"
-    assert docs[0].metadata["source_id"] == "treasury_bulletin_1944_01"
-    assert docs[0].metadata["year"] == 1944
-    assert docs[0].metadata["month"] == "01"
-    assert docs[0].metadata["report_year"] == 1944
-    assert docs[0].metadata["treasury_year"] == 1944
-    assert docs[0].metadata["treasury_month"] == 1
-    assert docs[0].metadata["treasury_year_month"] == "1944_01"
-    assert docs[0].metadata["source_dataset"] == "officeqa"
+    assert docs[0].document_id == "sivas_manual_01.txt"
+    assert docs[0].original_context_id == "sivas_manual_01.txt"
+    assert docs[0].text == "SIVAS text"
+    assert docs[0].metadata["file_name"] == "sivas_manual_01.txt"
+    assert docs[0].metadata["source_file"] == "sivas_manual_01.txt"
+    assert docs[0].metadata["source_id"] == "sivas_manual_01"
+    assert docs[0].metadata["source_dataset"] is None
 
 
 def test_txt_folder_reader_recurses_and_preserves_relative_paths(tmp_path):
     folder = tmp_path / "transformed"
     nested = folder / "nested"
     nested.mkdir(parents=True)
-    (nested / "treasury_bulletin_1944_02.txt").write_text("Nested OfficeQA text", encoding="utf-8")
+    (nested / "sivas_manual_02.txt").write_text("Nested SIVAS text", encoding="utf-8")
 
     docs = JsonlReader.read_txt_folder(str(folder), "*.txt", recursive=True)
 
     assert len(docs) == 1
-    assert docs[0].document_id == "nested/treasury_bulletin_1944_02.txt"
-    assert docs[0].original_context_id == "nested/treasury_bulletin_1944_02.txt"
-    assert docs[0].metadata["file_name"] == "treasury_bulletin_1944_02.txt"
-    assert docs[0].metadata["source_file"] == "nested/treasury_bulletin_1944_02.txt"
-    assert docs[0].metadata["source_path"] == "nested/treasury_bulletin_1944_02.txt"
-
-
-def test_parse_treasury_filename_extracts_metadata():
-    metadata = parse_treasury_filename("treasury_bulletin_1941_01.txt")
-
-    assert metadata["source_file"] == "treasury_bulletin_1941_01.txt"
-    assert metadata["file_name"] == "treasury_bulletin_1941_01.txt"
-    assert metadata["source_id"] == "treasury_bulletin_1941_01"
-    assert metadata["year"] == 1941
-    assert metadata["month"] == "01"
-    assert metadata["report_year"] == 1941
-    assert metadata["treasury_year"] == 1941
-    assert metadata["treasury_month"] == 1
-    assert metadata["treasury_year_month"] == "1941_01"
-    assert metadata["source_dataset"] == "officeqa"
-
-
-def test_parse_treasury_filename_supports_missing_month():
-    metadata = parse_treasury_filename("treasury_bulletin_1941.txt")
-
-    assert metadata["source_id"] == "treasury_bulletin_1941"
-    assert metadata["year"] == 1941
-    assert metadata["month"] is None
-    assert metadata["treasury_year"] == 1941
-    assert metadata["treasury_month"] is None
-    assert metadata["treasury_year_month"] is None
-
-
-def test_parse_treasury_filename_falls_back_for_unknown_name():
-    metadata = parse_treasury_filename("other_report.txt")
-
-    assert metadata["source_file"] == "other_report.txt"
-    assert metadata["file_name"] == "other_report.txt"
-    assert metadata["source_id"] == "other_report"
-    assert metadata["year"] is None
-    assert metadata["month"] is None
-    assert metadata["treasury_year"] is None
-    assert metadata["treasury_month"] is None
-    assert metadata["treasury_year_month"] is None
+    assert docs[0].document_id == "nested/sivas_manual_02.txt"
+    assert docs[0].original_context_id == "nested/sivas_manual_02.txt"
+    assert docs[0].metadata["file_name"] == "sivas_manual_02.txt"
+    assert docs[0].metadata["source_file"] == "nested/sivas_manual_02.txt"
+    assert docs[0].metadata["source_path"] == "nested/sivas_manual_02.txt"
 
 
 def test_pipeline1_rejects_answer_bearing_query_file(tmp_path, monkeypatch):
@@ -133,13 +217,13 @@ def test_pipeline1_rejects_answer_bearing_query_file(tmp_path, monkeypatch):
 
     errors = run_preflight_checks(_cfg(False, top_k=1, fetch_k=1), tmp_path)
 
-    assert any("questions_only.jsonl-style" in error for error in errors)
+    assert any("Pipeline 1 questions file without answers/gold contexts" in error for error in errors)
 
 
 def test_preflight_accepts_txt_folder_documents(tmp_path, monkeypatch):
     folder = tmp_path / "transformed"
     folder.mkdir()
-    (folder / "treasury_bulletin_1944_01.txt").write_text("OfficeQA text", encoding="utf-8")
+    (folder / "sivas_manual_01.txt").write_text("SIVAS text", encoding="utf-8")
     (tmp_path / "questions.jsonl").write_text('{"question_id":"q1","question":"Q?"}\n', encoding="utf-8")
     cfg = _cfg(False, top_k=1, fetch_k=1)
     cfg.data.documents_path = "transformed"
@@ -326,7 +410,7 @@ documents:
   file_glob: "*.txt"
   recursive: true
 data:
-  questions_path: data/raw/questions_only.jsonl
+  questions_path: data/raw/questions_fixed.jsonl
 chunking: {strategy: fixed_word, chunk_size: 10, chunk_overlap: 0}
 embedding: {provider: sentence_transformers, model_name: fake}
 index: {type: faiss}

@@ -28,17 +28,18 @@ class ResultWriter:
 
     def write(self, record) -> None:
         validated = OutputRecord.model_validate(record)
-        row = validated.model_dump()
+        export_row = validated.to_export_record()
         with self.jsonl_path.open("a", encoding="utf-8") as f:
-            f.write(json.dumps(row, ensure_ascii=False) + "\n")
+            f.write(json.dumps(export_row, ensure_ascii=False) + "\n")
         if self.save_csv:
+            flat_row = validated.model_dump()
             if self._csv_writer is None:
                 exists = self.csv_path.exists() and self.csv_path.stat().st_size > 0
                 self._csv_file = self.csv_path.open("a", encoding="utf-8", newline="")
-                self._csv_writer = csv.DictWriter(self._csv_file, fieldnames=list(row.keys()))
+                self._csv_writer = csv.DictWriter(self._csv_file, fieldnames=list(flat_row.keys()))
                 if not exists:
                     self._csv_writer.writeheader()
-            self._csv_writer.writerow(row)
+            self._csv_writer.writerow(flat_row)
             self._csv_file.flush()
 
     def close(self) -> None:

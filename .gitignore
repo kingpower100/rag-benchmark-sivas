@@ -52,11 +52,13 @@ logs/
 log/
 
 # RAG datasets and generated benchmark artifacts
-data/**
-!data/
-!data/README.md
-!data/**/
-!data/**/.gitkeep
+data/processed/
+data/runs/
+data/eval/
+.project_tmp/
+!data/raw/kb_documents_fixed.jsonl
+!data/raw/questions_fixed.jsonl
+!data/raw/qa_ground_truth_fixed.jsonl
 
 # FAISS indexes, embeddings, and vector-store caches
 *.faiss

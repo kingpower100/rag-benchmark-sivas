@@ -7,8 +7,8 @@ from tqdm.auto import tqdm
 from src.pipeline1.chunking.base import BaseChunker
 from src.pipeline1.schemas.chunk import ChunkRecord
 from src.pipeline1.schemas.document import DocumentRecord
-from src.pipeline1.metadata import canonical_chunk_metadata
-from src.pipeline1.utils.ids import make_configured_chunk_id
+from src.pipeline1.metadata import chunk_metadata
+from src.pipeline1.utils.ids import make_configured_chunk_id_for_document
 
 
 _SENTENCE_BOUNDARY_RE = re.compile(r"(?<=[.!?])\s+(?=[A-Z0-9])")
@@ -62,30 +62,32 @@ class SentenceChunker(BaseChunker):
             text = " ".join(group).strip()
             if not text:
                 continue
+            chunk_id = make_configured_chunk_id_for_document(
+                doc.document_id,
+                chunk_index,
+                text,
+                self.strategy_config,
+                doc.metadata,
+            )
             records.append(
                 ChunkRecord(
-                    chunk_id=make_configured_chunk_id(doc.document_id, chunk_index, text, self.strategy_config),
+                    chunk_id=chunk_id,
                     document_id=doc.document_id,
                     original_context_id=doc.original_context_id,
                     text=text,
                     chunk_start=chunk_index,
                     chunk_end=chunk_index + len(group),
-                    metadata={
-                        **dict(doc.metadata),
-                        **canonical_chunk_metadata(doc.metadata, doc.original_context_id),
-                        "doc_id": doc.document_id,
-                        "original_context_id": doc.original_context_id,
-                        "source_file": doc.metadata.get("source_file") or doc.metadata.get("file_name"),
-                        "source_id": doc.metadata.get("source_id"),
-                        "year": doc.metadata.get("year"),
-                        "month": doc.metadata.get("month"),
-                        "subset": doc.metadata.get("subset"),
-                        "split": doc.metadata.get("split") or doc.metadata.get("source_split"),
-                        "chunk_id": make_configured_chunk_id(doc.document_id, chunk_index, text, self.strategy_config),
-                        "chunk_index": chunk_index,
-                        "chunk_strategy": "sentence",
-                        "chunk_unit": unit,
-                    },
+                    metadata=chunk_metadata(
+                        doc.metadata,
+                        doc.document_id,
+                        doc.original_context_id,
+                        chunk_id,
+                        "sentence",
+                        unit,
+                        subset=doc.metadata.get("subset"),
+                        split=doc.metadata.get("split") or doc.metadata.get("source_split"),
+                        chunk_index=chunk_index,
+                    ),
                 )
             )
         return records

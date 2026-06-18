@@ -1,4 +1,5 @@
 from src.pipeline1.retrieval.bm25_retriever import BM25Retriever
+from src.pipeline1.retrieval.category_aware_dense_retriever import CategoryAwareDenseRetriever
 from src.pipeline1.retrieval.dense_retriever import DenseRetriever
 from src.pipeline1.retrieval.elasticsearch_bm25_retriever import ElasticsearchBM25Error, ElasticsearchBM25Retriever
 from src.pipeline1.retrieval.elasticsearch_dense_retriever import ElasticsearchDenseRetriever
@@ -21,6 +22,12 @@ def build_retriever(config: RetrievalConfig, embedder, index, chunks):
         )
 
     dense_retriever = _build_dense_retriever(config, embedder, index, chunks)
+    if config.retriever_type == "category_aware_dense":
+        return CategoryAwareDenseRetriever(
+            dense_retriever=dense_retriever,
+            category_field=config.category_field,
+            fallback_to_global=config.fallback_to_global,
+        )
     if config.retriever_type == "hybrid_rrf":
         return HybridRRFRetriever(
             dense_retriever=dense_retriever,

@@ -68,7 +68,7 @@ def test_retrieval_metric_formulas_at_dynamic_k():
         "hit_at_5": 1.0,
         "recall_at_5": 0.5,
         "mrr_at_5": 0.5,
-        "context_precision_at_5": 1 / 5,
+        "context_precision_at_5": 1 / 3,
         "ndcg_at_5": pytest.approx((1 / 1.584962500721156) / (1 + 1 / 1.584962500721156)),
     })
 
@@ -77,7 +77,14 @@ def test_retrieval_metric_names_use_configured_k():
     metrics = compute_retrieval_metrics(["ctx_a", "ctx_b"], ["ctx_c"], k=2)
 
     assert {"duplicate_context_rate", "raw_duplicate_rate", "hit_at_2", "recall_at_2", "context_precision_at_2", "mrr_at_2", "ndcg_at_2"} <= set(metrics)
-    assert all(value == 0.0 for key, value in metrics.items() if key != "raw_duplicate_rate" and key != "deduped_recall_at_2")
+    assert metrics["hit_at_2"] == 0.0
+    assert metrics["recall_at_2"] == 0.0
+    assert metrics["context_precision_at_2"] == 0.0
+    assert metrics["mrr_at_2"] == 0.0
+    assert metrics["ndcg_at_2"] == 0.0
+    assert metrics["raw_retrieved_count"] == 2
+    assert metrics["unique_retrieved_document_count"] == 2
+    assert metrics["duplicate_document_count"] == 0
     assert metrics["raw_duplicate_rate"] is None
 
 
@@ -91,14 +98,16 @@ def test_recall_is_none_when_no_gold_contexts():
     assert metrics["ndcg_at_5"] == 0.0
 
 
-def test_retrieved_ids_are_deduplicated_after_top_k():
+def test_retrieval_metrics_use_raw_ranking_and_report_duplicates():
     metrics = compute_retrieval_metrics(["ctx_a", "ctx_a", "ctx_b"], ["ctx_a", "ctx_b"], k=3)
 
     assert metrics["hit_at_3"] == 1.0
     assert metrics["recall_at_3"] == 1.0
-    assert metrics["context_precision_at_3"] == 1.0
+    assert metrics["context_precision_at_3"] == 2 / 3
     assert metrics["mrr_at_3"] == 1.0
     assert metrics["duplicate_context_rate"] == 1 / 3
+    assert metrics["duplicate_document_count"] == 1
+    assert metrics["duplicate_document_rate"] == 1 / 3
     assert metrics["duplicate_count_at_3"] == 1
     assert metrics["duplicate_rate_at_3"] == 1 / 3
     assert metrics["deduped_recall_at_3"] == 1.0
@@ -114,7 +123,7 @@ def test_multi_k_retrieval_metrics_are_emitted():
     assert metrics["hit_at_5"] == 1.0
     assert metrics["recall_at_3"] == 1.0
     assert metrics["mrr_at_3"] == 0.5
-    assert metrics["context_precision_at_5"] == 1 / 5
+    assert metrics["context_precision_at_5"] == 1 / 3
     assert metrics["ndcg_at_5"] == pytest.approx(1 / 1.584962500721156)
 
 
@@ -125,7 +134,7 @@ def test_raw_duplicate_rate_uses_pre_dedup_candidates():
     assert metrics["raw_duplicate_rate"] == 1 / 3
 
 
-def test_retrieval_metrics_slice_top_k_before_deduping():
+def test_retrieval_metrics_do_not_dedupe_before_slicing_top_k():
     from src.pipeline2.metrics.retrieval_metrics import compute_retrieval_metrics_for_ks
 
     metrics = compute_retrieval_metrics_for_ks(["A", "A", "A", "GOLD"], ["GOLD"], [3, 4])
@@ -133,20 +142,44 @@ def test_retrieval_metrics_slice_top_k_before_deduping():
     assert metrics["hit_at_3"] == 0.0
     assert metrics["recall_at_3"] == 0.0
     assert metrics["mrr_at_3"] == 0.0
+    assert metrics["ndcg_at_3"] == 0.0
     assert metrics["hit_at_4"] == 1.0
     assert metrics["mrr_at_4"] == 0.25
+    assert metrics["deduped_hit_at_3"] == 1.0
+    assert metrics["deduped_mrr_at_3"] == 0.5
+    assert metrics["duplicate_document_count"] == 2
+    assert metrics["duplicate_document_rate"] == 0.5
     assert metrics["duplicate_count_at_3"] == 2
     assert metrics["duplicate_rate_at_3"] == 2 / 3
 
 
 def test_source_id_normalization_matches_txt_and_non_txt_forms():
-    assert normalize_source_id("treasury_bulletin_1941_01.txt") == "treasury_bulletin_1941_01"
-    assert normalize_source_id("treasury_bulletin_1941_01") == "treasury_bulletin_1941_01"
+    assert normalize_source_id("sivas_manual_01.md") == "sivas_manual_01.md"
+    assert normalize_source_id("sivas_manual_01") == "sivas_manual_01"
 
-    metrics = compute_retrieval_metrics(["treasury_bulletin_1941_01"], ["treasury_bulletin_1941_01.txt"], k=1)
+    metrics = compute_retrieval_metrics(["sivas_manual_01"], ["sivas_manual_01.md"], k=1)
 
-    assert metrics["hit_at_1"] == 1.0
-    assert metrics["recall_at_1"] == 1.0
+    assert metrics["hit_at_1"] == 0.0
+    assert metrics["recall_at_1"] == 0.0
+
+
+def test_source_id_normalization_strips_known_chunk_suffixes_to_document_id():
+    expected = "sivas_manual_02.md"
+
+    assert normalize_source_id("sivas_manual_02.md_chunk_17") == expected
+    assert normalize_source_id("sivas_manual_02.md::chunk_17") == expected
+    assert normalize_source_id("sivas_manual_02.md#chunk=17") == expected
+
+    metrics = compute_retrieval_metrics(
+        ["sivas_manual_02.md_chunk_17", "sivas_manual_02.md_chunk_18"],
+        ["sivas_manual_02.md"],
+        k=2,
+    )
+
+    assert metrics["hit_at_2"] == 1.0
+    assert metrics["recall_at_2"] == 1.0
+    assert metrics["context_precision_at_2"] == 0.5
+    assert metrics["duplicate_document_count"] == 1
 
 
 def _assert_metric_subset(metrics, expected):

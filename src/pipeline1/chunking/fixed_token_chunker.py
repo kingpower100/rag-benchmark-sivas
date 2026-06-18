@@ -1,8 +1,8 @@
 from src.pipeline1.chunking.base import BaseChunker
 from src.pipeline1.schemas.chunk import ChunkRecord
 from src.pipeline1.schemas.document import DocumentRecord
-from src.pipeline1.metadata import canonical_chunk_metadata
-from src.pipeline1.utils.ids import make_chunk_id
+from src.pipeline1.metadata import chunk_metadata
+from src.pipeline1.utils.ids import make_chunk_id_for_document
 from tqdm.auto import tqdm
 
 
@@ -34,12 +34,13 @@ class FixedTokenChunker(BaseChunker):
         iterator = tqdm(docs, desc="Chunking documents", unit="doc") if show_progress else docs
         for doc in iterator:
             units = self._encode_units(doc.text)
+            chunk_index = 0
             for start in range(0, len(units), step):
                 end = min(start + self.chunk_size, len(units))
                 text = self._decode_units(units[start:end]).strip()
                 if not text:
                     continue
-                chunk_id = make_chunk_id(doc.document_id, start, end, text)
+                chunk_id = make_chunk_id_for_document(doc.document_id, start, end, text, doc.metadata, chunk_index)
                 chunks.append(ChunkRecord(
                     chunk_id=chunk_id,
                     document_id=doc.document_id,
@@ -47,21 +48,17 @@ class FixedTokenChunker(BaseChunker):
                     text=text,
                     chunk_start=start,
                     chunk_end=end,
-                    metadata={
-                        **dict(doc.metadata),
-                        **canonical_chunk_metadata(doc.metadata, doc.original_context_id),
-                        "doc_id": doc.document_id,
-                        "original_context_id": doc.original_context_id,
-                        "source_file": doc.metadata.get("source_file") or doc.metadata.get("file_name"),
-                        "source_id": doc.metadata.get("source_id"),
-                        "year": doc.metadata.get("year"),
-                        "month": doc.metadata.get("month"),
-                        "chunk_id": chunk_id,
-                        "chunk_unit": "token" if self.encoding is not None else "word_fallback",
-                        "chunk_strategy": "fixed_token",
-                        "tokenizer_name": self.tokenizer_name,
-                    },
+                    metadata=chunk_metadata(
+                        doc.metadata,
+                        doc.document_id,
+                        doc.original_context_id,
+                        chunk_id,
+                        "fixed_token",
+                        "token" if self.encoding is not None else "word_fallback",
+                        tokenizer_name=self.tokenizer_name,
+                    ),
                 ))
+                chunk_index += 1
                 if end == len(units):
                     break
         return chunks

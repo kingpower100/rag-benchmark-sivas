@@ -6,10 +6,10 @@ from src.pipeline1.orchestrator import run_pipeline
 
 
 def main() -> None:
-    parser = argparse.ArgumentParser(description="Run the default Pipeline 1 benchmark.")
+    parser = argparse.ArgumentParser(description="Run the SIVAS Pipeline 1 baseline.")
     parser.add_argument(
         "--config",
-        default="configs/pipeline1/experiments/01_officeqa_treasury_fixed512_dense_norerank_fetch50_qwen25_7b_ctxbudget.yaml",
+        default="configs/pipeline1/experiments/11_sivas_fixed512_faiss_dense_qwen25.yaml",
     )
     args = parser.parse_args()
     print(run_pipeline(args.config))

@@ -1,0 +1,96 @@
+{"question_id": "Q001", "frage": "Was ist der Unterschied zwischen Verlagerung und Beistellung?"}
+{"question_id": "Q002", "frage": "Warum sehe ich in der Stammstückliste keine Arbeitsgänge?"}
+{"question_id": "Q003", "frage": "Wie kann ich eine Rechnung zum aktuellen Auftrag erfassen und an den Kunden schicken ?"}
+{"question_id": "Q004", "frage": "Wofür steht der Sofortabgang und welchen Zweck erfüllt er?"}
+{"question_id": "Q005", "frage": "Wo sehe ich die geplanten Zugänge eines Teils ?"}
+{"question_id": "Q006", "frage": "Wie erstelle ich eine Proformarechnung für einen Auftrag ?"}
+{"question_id": "Q007", "frage": "Kann ich abweichende Adresse für die Lieferung und Rechnung definieren?"}
+{"question_id": "Q008", "frage": "Was für Rechnungsarten gibt es bei Teilrechnungen ?"}
+{"question_id": "Q009", "frage": "Wie erfasse ich eine Auftragsbestätigung meines Lieferanten zu meiner Bestellung ?"}
+{"question_id": "Q010", "frage": "Gibt es Prüfpläne in der BDE ?"}
+{"question_id": "Q011", "frage": "Wo sehe ich ob Material für die Erstellung einer Ausfassliste verfügbar ist ?"}
+{"question_id": "Q012", "frage": "Was bedeuten die Feldfärbungen in der Arbeitsvoratsliste ?"}
+{"question_id": "Q013", "frage": "Was macht man in der Arbeitsvoratsliste ?"}
+{"question_id": "Q014", "frage": "Wie erfasse ich die Zeit auf einen Kontruktionsarbeitsgang ?"}
+{"question_id": "Q015", "frage": "Gibt es Rahmenvereinbarungen mit Kunden auch im SIVAS also Rahmenvereinbarungen im Vertrieb ?"}
+{"question_id": "Q016", "frage": "Gibt es eine Präferenzkalkulation in SIVAS?"}
+{"question_id": "Q017", "frage": "Wo sehe ich die CRM-Daten meines Systems ?"}
+{"question_id": "Q018", "frage": "Wie kann ich Provisionen mit Vertretern in SIVAS abbilden ?"}
+{"question_id": "Q019", "frage": "Wie kann ich ein Service-Ticket von einem Kunden erfassen ?"}
+{"question_id": "Q020", "frage": "Wie erfasse ich eine Verlagerung ?"}
+{"question_id": "Q021", "frage": "Kann ich ein Teil, von dem ich weiss, dass es lange dauert, bis geliefert wird, auch gleich bestellen ?"}
+{"question_id": "Q022", "frage": "Wie kann ich solch eine Rahmenvereinbarung mit einem Lieferanten erfassen ?"}
+{"question_id": "Q023", "frage": "Kann ich einen Lieferanten daran erinnern, dass er mal bitte liefern soll. Wenn ja, wie ?"}
+{"question_id": "Q024", "frage": "Shehe ich irgendwo welche Bestellungen einen überzogenen Liefertermin haben, also welche Bestellungen eigentlich schon geliefert sein sollten ?"}
+{"question_id": "Q025", "frage": "gibt es eine Möglichkeit Wareneingänge bei Eingang zu reklamieren ? Wenn ja welche ?"}
+{"question_id": "Q026", "frage": "Wie kann ich ein Lageretikett drucken ?"}
+{"question_id": "Q027", "frage": "Welchen Status kann ein Vertrag annehmen?"}
+{"question_id": "Q028", "frage": "Wie lege ich einen neuen Operationsschritt im techn. Auftrag an ?"}
+{"question_id": "Q029", "frage": "Was kann das wareneingangsprogramm mehr als der mobile wareneingang ?"}
+{"question_id": "Q030", "frage": "Kann ich eine Ausfassliste über Materialzuordnungen erstellen ?"}
+{"question_id": "Q031", "frage": "Was sind Langläufer und wofür werden sie verwendet?"}
+{"question_id": "Q032", "frage": "wo sehe ich geplante abgänge und zugänge für ein teil in SIVAS ?"}
+{"question_id": "Q033", "frage": "Wo finde ich die Historie eines Artikel-Verkaufspreises?"}
+{"question_id": "Q034", "frage": "Wo wird das kreditlimit von Kunden in SIVAS verwaltet ?"}
+{"question_id": "Q035", "frage": "Ich habe ein Angebot an Kunden gesendet. Dieser akzeptiert das Angebot nicht. was mache ich jetzt ?"}
+{"question_id": "Q036", "frage": "Was bedeutet der RP-Wert?"}
+{"question_id": "Q037", "frage": "Wie viele Bestellbestätigungen können pro Bestellung erfasst werden?"}
+{"question_id": "Q038", "frage": "Wo sehe ich, ob eine Rechnung vom Kunden bezahlt wurde?"}
+{"question_id": "Q039", "frage": "Kann ich in SIVAS Rechnungen noch bearbeiten, solange diese nicht in der FiBu sind?"}
+{"question_id": "Q040", "frage": "Gibt es Vorlagen die ich im Teilrechnungsplan verwenden kann ?"}
+{"question_id": "Q041", "frage": "Welche Stadien durchläuft ein Ticket ?"}
+{"question_id": "Q042", "frage": "Wie entnehme ich Teile für einen Auftrag aus dem Lager ?"}
+{"question_id": "Q043", "frage": "Kann ich Pönale in SIVAS erfassen für einen Lieferanten ?"}
+{"question_id": "Q044", "frage": "Welche Objekte kann man in SIVAS mahnen ?"}
+{"question_id": "Q045", "frage": "Was macht das Feld  Feld \"Anzahl Tage für die Anzeige von Arbeitsgängen in der Zukunft\" in der Konfiguration der Technik ?"}
+{"question_id": "Q046", "frage": "Wie erstelle ich eine Ausfassliste ?"}
+{"question_id": "Q047", "frage": "Was ist der Unterschied zwischen dem BDE-Terminal und der BDE-Funktionen in der Arbeitsvorratsliste ?"}
+{"question_id": "Q048", "frage": "Wo kann ich die rückgemeldeten Zeiten auf Arbeitsgänge einsehen ?"}
+{"question_id": "Q049", "frage": "Was ist der Unterschied zwischen einem Sammelarbeitsgang und der Mehrmaschinenbedienung ?"}
+{"question_id": "Q050", "frage": "Kann ich mehrere Arbeistgänge gleichzeitig anstempeln ?"}
+{"question_id": "Q051", "frage": "Kann ich beim Stempeln auf eine andere Kostenstelle wechseln wie die vorgesehene ?"}
+{"question_id": "Q052", "frage": "Kann ich als Meister überwachen, auf welche Arbeitsgänge sich meine Mitarbeiter angestempelt haben aktuell ?"}
+{"question_id": "Q053", "frage": "Wie erstelle ich einen Sammelarbeitsgang für meinen Mitarbeiter ?"}
+{"question_id": "Q054", "frage": "Wie stempele ich einen Arbeitsgang an ?"}
+{"question_id": "Q055", "frage": "Gibt es eine OSEON-Schnittstelle ?"}
+{"question_id": "Q056", "frage": "Wie erstelle ich eine Rechnung zu einem Vertriebsauftrag ?"}
+{"question_id": "Q057", "frage": "Wie erfasse ich einen Teilrechnungsplan zu einem Auftrag ?"}
+{"question_id": "Q058", "frage": "Gibt es eine Schnittstelle zu einem Webshop für SIVAS ?"}
+{"question_id": "Q059", "frage": "Wo kann ich in SIVAS Verträge hinterlegen ?"}
+{"question_id": "Q060", "frage": "wAAS macht das Programm \"eingehende Anrufe\" ?"}
+{"question_id": "Q061", "frage": "Kann ich mit einem Lieferanten vereinbarte Teilzahlungen im System erfassen zu einer Bestellung ?"}
+{"question_id": "Q062", "frage": "wie ist der allgemeine einkaufsprozess in sivas.erp ?"}
+{"question_id": "Q063", "frage": "Kann ich festlegen, dass eine bestimmte Bestellung immer zuerst von meinem Vorgesetzten unterschrieben werden muss, bevor ich bestelle ?"}
+{"question_id": "Q064", "frage": "Wie entsteht ein Bestellwunsch ?"}
+{"question_id": "Q065", "frage": "Kann ich ein Teil auch bei mehren Lieferanten gleichzeitig anfragen, oder muss ich für jeden Lieferant eine eigene Anfrage machen ?"}
+{"question_id": "Q066", "frage": "Wie frage ich ein Teil, dass ich bestellen will, bei einem Lieferanten an ?"}
+{"question_id": "Q067", "frage": "wAS ist eine Rahmenvereinbarun ?"}
+{"question_id": "Q068", "frage": "Wo erfasse ich alle Lieferanten zu einem Teil ? Und kann ich die einzelnen Daten des Lieferanten wie Preise zum Teil etc. auch erfassen ?"}
+{"question_id": "Q069", "frage": "Was ist ein Transportbeleg und wie verwendet man den ?"}
+{"question_id": "Q070", "frage": "Wo kann ich festlegen, dass ein Teil QS-pflichtig generell?"}
+{"question_id": "Q071", "frage": "kann ich externe Lagerverwaltungssysteme an SIVAS anbinden ?"}
+{"question_id": "Q072", "frage": "Wie kann ich einen neuen Lagerort anlegen ?"}
+{"question_id": "Q073", "frage": "Wo sehe ich den Gesamtlagerbestand eines Teils ?"}
+{"question_id": "Q074", "frage": "Ich befinde mich in einem techn. Auftrag und will eine Baugruppe verlagern. Wie mache ich das ?"}
+{"question_id": "Q075", "frage": "Was mache ich wenn im Auftrag eine Unterschrift erforderlich ist ?"}
+{"question_id": "Q076", "frage": "Vergleiche die verschiedenen Kalkulationsarten in SIVAS"}
+{"question_id": "Q077", "frage": "Ich habe einen Auftrag angelegt. Das Feld „Unser Zeichen“ wurde automatisch gefüllt. Wie wurde das Feld gefüllt?"}
+{"question_id": "Q078", "frage": "Kann ich im Stammarbeitsplan Vorgabezeiten angeben ?"}
+{"question_id": "Q079", "frage": "Kann ich Materialzuordnungen bereits im Stammarbeitsplan pflegen ?"}
+{"question_id": "Q080", "frage": "Kann man Variantenteile über eine Stammstückliste abbilden ?"}
+{"question_id": "Q081", "frage": "Wo sehe ich wieviel Zeit auf einen Arbeitsgang erfasst wurde ?"}
+{"question_id": "Q082", "frage": "Wo kann ich Übersetzungen für Teile erfassen ?"}
+{"question_id": "Q083", "frage": "Wie kann ich mir das CRM-Portal so einrichten, dass direkt beim Start eine bestimmte Ansicht aufgerufen wird ?"}
+{"question_id": "Q084", "frage": "Was kann man mit dem Konfigurationsmanagement in SIVAS alles machen ?"}
+{"question_id": "Q085", "frage": "Wozu dient die Vorkalkulation ?"}
+{"question_id": "Q086", "frage": "Was ist eine Kundenbeistellung ?"}
+{"question_id": "Q087", "frage": "Kann ich einen bereits erstellten Sammelarbeitsgang nachträglich bearbeiten, also erweitern ?"}
+{"question_id": "Q088", "frage": "Was ist die Liegezeit ?"}
+{"question_id": "Q089", "frage": "Wozu dient ein Stammarbeitsplan ?"}
+{"question_id": "Q090", "frage": "Was ist der Unterscheid zwischen L-Knoten und O-Knoten ?"}
+{"question_id": "Q091", "frage": "Kann ich eine Stammstückliste auf Rekursionen prüfen ?"}
+{"question_id": "Q092", "frage": "Gibt es eine PL-Schnitttelle ?"}
+{"question_id": "Q093", "frage": "Gibt es ein BDE-Terminal von SIVAS ? Wenn ja, was kann das ?"}
+{"question_id": "Q094", "frage": "Wie werden die Zeiten berechnet die auf einen Sammelarbeitsgang gemeldet wurden ?"}
+{"question_id": "Q095", "frage": "Kann ich gefertigte Mengen beim Beenden eines Arbeitsganges angeben ?"}
+{"question_id": "Q096", "frage": "Was passiert wenn ein Arbeitsgang gestartet wurde ?"}

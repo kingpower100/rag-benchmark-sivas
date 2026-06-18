@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from src.pipeline2.config_loader import load_eval_config_payload
 
@@ -26,9 +26,17 @@ class EvaluationConfig(StrictEvalConfigModel):
 
 
 class InputsConfig(StrictEvalConfigModel):
-    rag_outputs: list[str]
-    qa_path: str = "data/raw/qa_test.jsonl"
-    gold_contexts_path: str = "data/raw/gold_contexts.jsonl"
+    pipeline1_results_path: str = "data/runs/pipeline1/11_sivas_fixed512_faiss_dense_qwen25/results.jsonl"
+    rag_outputs: list[str] = Field(default_factory=list)
+    questions_path: str = "data/raw/questions_fixed.jsonl"
+    qa_path: str = "data/raw/qa_ground_truth_fixed.jsonl"
+    gold_contexts_path: str = "data/raw/qa_ground_truth_fixed.jsonl"
+
+    @model_validator(mode="after")
+    def ensure_pipeline1_output_paths(self) -> "InputsConfig":
+        if not self.rag_outputs:
+            self.rag_outputs = [self.pipeline1_results_path]
+        return self
 
 
 class RetrievalEvalConfig(StrictEvalConfigModel):
@@ -38,9 +46,18 @@ class RetrievalEvalConfig(StrictEvalConfigModel):
 
 class AnswerQualityConfig(StrictEvalConfigModel):
     enable_numeric_accuracy: bool = True
+    numeric_tolerance_abs: float = Field(default=0.0001, ge=0.0)
+    numeric_tolerance_rel: float = Field(default=0.001, ge=0.0)
     abstention_patterns: list[str] = Field(
         default_factory=lambda: ["UNKNOWN", "NOT FOUND", "N/A", "CANNOT DETERMINE"]
     )
+
+
+class EmbeddingSimilarityConfig(StrictEvalConfigModel):
+    provider: Literal["deterministic_hash", "sentence_transformers"] = "deterministic_hash"
+    model_name: str = "hashing-bow-v1"
+    dimensions: int = Field(default=256, gt=0)
+    enabled: bool = True
 
 
 class RuntimeConfig(StrictEvalConfigModel):
@@ -53,17 +70,13 @@ class LeaderboardConfig(StrictEvalConfigModel):
     sort_ascending: bool = False
 
 
-class DebugConfig(StrictEvalConfigModel):
-    enable_officeqa_smoke_check: bool = False
-
-
 class EvalConfig(StrictEvalConfigModel):
     evaluation: EvaluationConfig
     inputs: InputsConfig
     retrieval: RetrievalEvalConfig = RetrievalEvalConfig()
     answer_quality: AnswerQualityConfig = AnswerQualityConfig()
+    embedding_similarity: EmbeddingSimilarityConfig = EmbeddingSimilarityConfig()
     leaderboard: LeaderboardConfig = LeaderboardConfig()
-    debug: DebugConfig = DebugConfig()
     runtime: RuntimeConfig = RuntimeConfig()
 
     @classmethod

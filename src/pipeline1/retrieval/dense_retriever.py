@@ -136,9 +136,10 @@ class DenseRetriever(BaseRetriever):
                     "metadata_boost": item.diagnostics.get("metadata_boost", 0.0),
                     "metadata_boost_components": item.diagnostics.get("metadata_boost_components", {}),
                     "file_name": item.metadata.get("file_name"),
-                    "treasury_year": item.metadata.get("treasury_year"),
-                    "treasury_month": item.metadata.get("treasury_month"),
-                    "treasury_year_month": item.metadata.get("treasury_year_month"),
+                    "doc_key": item.metadata.get("doc_key"),
+                    "doc_name": item.metadata.get("doc_name"),
+                    "kategorie": item.metadata.get("kategorie"),
+                    "wissensart": item.metadata.get("wissensart"),
                 }
                 for item in ranked[:10]
             ],

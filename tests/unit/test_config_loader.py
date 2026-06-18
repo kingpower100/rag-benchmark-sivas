@@ -1,5 +1,3 @@
-from pathlib import Path
-
 import pytest
 from pydantic import ValidationError
 
@@ -7,82 +5,48 @@ from src.pipeline1.schemas.config_schema import PipelineConfig
 from src.pipeline2.schemas.eval_config_schema import EvalConfig
 
 
-def test_pipeline_configs_load_current_examples():
-    p1 = PipelineConfig.from_yaml(
-        "configs/pipeline1/experiments/"
-        "05_tableaware512_faiss_dense_rerank3_qwen25.yaml"
-    )
-    p2 = EvalConfig.from_yaml(
-        "configs/pipeline2/experiments/"
-        "05_eval_tableaware512_faiss_dense_rerank3_qwen25.yaml"
-    )
+def test_pipeline1_sivas_baseline_config_loads():
+    cfg = PipelineConfig.from_yaml("configs/pipeline1/experiments/11_sivas_fixed512_faiss_dense_qwen25.yaml")
 
-    assert p1.experiment.experiment_id == "05_tableaware512_faiss_dense_rerank3_qwen25"
-    assert p1.chunking.strategy == "table_aware"
-    assert p1.retrieval.top_k == 5
-    assert p1.generation.model_name == "qwen2.5:7b"
-    assert p1.runtime.resume is False
-    assert p1.runtime.overwrite is True
-    assert p1.embedding.device == "cuda"
-    assert p1.embedding.require_cuda is True
-    assert p1.reranker.device == "cuda"
+    assert cfg.experiment.experiment_id == "11_sivas_fixed512_faiss_dense_qwen25"
+    assert cfg.data.dataset_schema == "sivas"
+    assert cfg.data.documents_path == "data/raw/kb_documents_fixed.jsonl"
+    assert cfg.data.questions_path == "data/raw/questions_fixed.jsonl"
+    assert cfg.data.document_text_field == "text"
+    assert cfg.data.question_id_field == "question_id"
+    assert cfg.data.question_field == "frage"
+    assert cfg.retrieval.retriever_type == "category_aware_dense"
+    assert cfg.index.type == "faiss"
+    assert cfg.generation.model_name == "qwen2.5:7b"
+    assert cfg.runtime.resume is False
+    assert cfg.runtime.overwrite is True
+
+
+def test_pipeline1_base_uses_sivas_defaults_and_safe_run_defaults():
+    cfg = PipelineConfig.from_yaml("configs/pipeline1/base.yaml")
+
+    assert cfg.data.dataset_schema == "sivas"
+    assert cfg.data.documents_path == "data/raw/kb_documents_fixed.jsonl"
+    assert cfg.data.questions_path == "data/raw/questions_fixed.jsonl"
+    assert cfg.data.document_text_field == "text"
+    assert cfg.data.allow_unsafe_query_fields is False
+    assert cfg.runtime.resume is False
+    assert cfg.runtime.overwrite is True
+
+
+def test_pipeline2_base_uses_sivas_defaults():
+    cfg = EvalConfig.from_yaml("configs/pipeline2/base_eval.yaml")
+
+    assert cfg.evaluation.eval_run_id == "11_sivas_fixed512_faiss_dense_qwen25_eval"
+    assert cfg.inputs.qa_path == "data/raw/qa_ground_truth_fixed.jsonl"
+    assert cfg.inputs.questions_path == "data/raw/questions_fixed.jsonl"
     assert (
-        p2.evaluation.eval_run_id
-        == "05_eval_tableaware512_faiss_dense_rerank3_qwen25"
+        cfg.inputs.pipeline1_results_path
+        == "data/runs/pipeline1/11_sivas_fixed512_faiss_dense_qwen25/results.jsonl"
     )
-    assert p2.evaluation.retrieval_eval_field == "retrieved_file_names"
-    assert p2.evaluation.max_generation_failure_rate == 0.05
-    assert p2.evaluation.strict_failure_threshold is False
-    assert p2.retrieval.k == 5
-    assert p2.runtime.overwrite is True
-
-
-def test_elasticsearch_pipeline_configs_load():
-    script_score = PipelineConfig.from_yaml(
-        "configs/pipeline1/experiments/"
-        "07_fixed512_es_dense_script_score_qwen25.yaml"
-    )
-    knn = PipelineConfig.from_yaml(
-        "configs/pipeline1/experiments/"
-        "06_fixed512_es_dense_knn_qwen25.yaml"
-    )
-    eval_script_score = EvalConfig.from_yaml(
-        "configs/pipeline2/experiments/"
-        "07_eval_fixed512_es_dense_script_score_qwen25.yaml"
-    )
-    eval_knn = EvalConfig.from_yaml(
-        "configs/pipeline2/experiments/"
-        "06_eval_fixed512_es_dense_knn_qwen25.yaml"
-    )
-
-    assert script_score.index.type == "elasticsearch"
-    assert script_score.index.retrieval_mode == "script_score"
-    assert script_score.retrieval.retriever_type == "elasticsearch_dense"
-    assert script_score.retrieval.fetch_k == 50
-    assert script_score.runtime.resume is False
-    assert script_score.runtime.overwrite is True
-    assert knn.index.type == "elasticsearch"
-    assert knn.index.retrieval_mode == "knn"
-    assert knn.index.num_candidates == 100
-    assert knn.retrieval.retriever_type == "elasticsearch_dense"
-    assert eval_script_score.inputs.rag_outputs == [
-        "data/runs/pipeline1/07_fixed512_es_dense_script_score_qwen25/results.jsonl"
+    assert cfg.inputs.rag_outputs == [
+        "data/runs/pipeline1/11_sivas_fixed512_faiss_dense_qwen25/results.jsonl"
     ]
-    assert eval_knn.inputs.rag_outputs == [
-        "data/runs/pipeline1/06_fixed512_es_dense_knn_qwen25/results.jsonl"
-    ]
-    assert eval_script_score.retrieval.ks == [1, 3, 5, 10]
-    assert eval_knn.retrieval.ks == [1, 3, 5, 10]
-
-
-def test_pipeline1_base_uses_question_only_and_safe_run_defaults():
-    p1 = PipelineConfig.from_yaml("configs/pipeline1/base.yaml")
-
-    assert p1.data.questions_path == "data/raw/questions_only.jsonl"
-    assert p1.data.document_text_field == "cleaned_context"
-    assert p1.data.allow_unsafe_query_fields is False
-    assert p1.runtime.resume is False
-    assert p1.runtime.overwrite is True
 
 
 def test_pipeline1_unknown_config_fields_fail():

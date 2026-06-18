@@ -9,25 +9,30 @@ description = "RAG execution and evaluation benchmark"
 readme = "README.md"
 requires-python = ">=3.11"
 dependencies = [
-  "pydantic>=2.7.0",
-  "pyyaml>=6.0.1",
-  "jsonlines>=4.0.0",
-  "sentence-transformers>=3.0.1",
-  "faiss-cpu>=1.8.0",
-  "numpy>=1.26.4",
-  "pandas>=2.2.2",
-  "tqdm>=4.66.0",
-  "tiktoken>=0.7.0",
-  "requests>=2.32.3",
-  "elasticsearch>=8.13.0",
-  "pytest>=8.2.0",
+  "pydantic==2.8.2",
+  "pyyaml==6.0.2",
+  "jsonlines==4.0.0",
+  "torch==2.4.1",
+  "sentence-transformers==3.0.1",
+  "transformers==4.44.2",
+  "huggingface-hub==0.24.6",
+  "tokenizers==0.19.1",
+  "safetensors==0.4.5",
+  "faiss-cpu==1.8.0.post1",
+  "numpy==1.26.4",
+  "pandas==2.2.2",
+  "tqdm==4.66.5",
+  "tiktoken==0.7.0",
+  "requests==2.32.3",
+  "elasticsearch==8.15.1",
+  "pytest==8.3.3",
 ]
 
 [project.optional-dependencies]
 ragas = [
-  "ragas>=0.1.21,<0.2.0",
-  "datasets>=2.19.0",
-  "langchain-openai>=0.1.8",
+  "ragas==0.1.21",
+  "datasets==2.21.0",
+  "langchain-openai==0.1.25",
 ]
 
 [tool.setuptools]

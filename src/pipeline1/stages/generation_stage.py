@@ -9,16 +9,20 @@ from tqdm.auto import tqdm
 from src.pipeline1.generation.cost_estimator import estimate_cost
 from src.pipeline1.generation.factory import build_generator
 from src.pipeline1.generation.prompt_builder import (
-    PROMPT_TEMPLATE_VERSION,
+PROMPT_TEMPLATE_VERSION,
     PromptBudget,
     build_prompt_with_stats,
     dedupe_prompt_contexts,
 )
+
+MAX_GENERATION_RETRIES = 3
+GENERATION_BACKOFF_BASE_SECONDS = 1.0
 from src.pipeline1.observability.events import EventType
 from src.pipeline1.schemas.config_schema import PipelineConfig
 from src.pipeline1.schemas.output_record import OutputRecord
 from src.pipeline1.stages.base import BaseStage, StageInput, StageOutput
 from src.pipeline1.stages.retrieval_stage import RetrievalRow
+from src.pipeline1.utils.ids import stable_retrieved_document_id
 
 
 @dataclass(frozen=True)
@@ -102,7 +106,7 @@ class GenerationStage(BaseStage):
             )
         prompt, prompt_stats = build_prompt_with_stats(
             self.cfg.generation.system_prompt,
-            query.question,
+            query.retrieval_question,
             prompt_contexts,
             include_metadata_headers=self.cfg.generation.include_metadata_headers,
             budget=PromptBudget(
@@ -135,33 +139,15 @@ class GenerationStage(BaseStage):
             },
             diagnostics=prompt_stats,
         )
-        error = None
-        try:
-            generation = generator.generate(prompt)
-            answer = generation.answer
-            input_tokens = generation.input_tokens
-            output_tokens = generation.output_tokens
-        except Exception as ex:
+        generation, error, attempts = self._generate_with_retries(generator, prompt, query.question_id)
+        if generation is None:
             answer = ""
             input_tokens = 0
             output_tokens = 0
-            error = str(ex)
-            if self.logger:
-                self.logger.exception("row_generation_error question_id=%s error=%s", query.question_id, error)
-            self._write_event(
-                stage="generation",
-                event_type=EventType.GENERATION_ERROR,
-                message="Generation failed.",
-                question_id=query.question_id,
-                diagnostics={"error": error},
-            )
-            self._write_event(
-                stage="pipeline",
-                event_type=EventType.PIPELINE_ERROR,
-                message="Generation failed.",
-                question_id=query.question_id,
-                diagnostics={"error": error},
-            )
+        else:
+            answer = generation.answer
+            input_tokens = generation.input_tokens
+            output_tokens = generation.output_tokens
         generation_time_ms = (time.perf_counter() - generation_start) * 1000
         self._write_event(
             stage="generation",
@@ -174,8 +160,9 @@ class GenerationStage(BaseStage):
                 "output_tokens": output_tokens,
                 "answer_chars": len(answer),
                 "generation_failed": error is not None,
+                "generation_attempts": attempts,
             },
-            diagnostics={"error": error} if error else {},
+            diagnostics={"error": error, "generation_attempts": attempts} if error else {"generation_attempts": attempts},
         )
         total_tokens = input_tokens + output_tokens
         cost = (
@@ -193,7 +180,12 @@ class GenerationStage(BaseStage):
             question_id=query.question_id,
             uid=query.question_id,
             question=query.question,
+            cleaned_question=query.cleaned_question,
+            detected_category=query.detected_category,
+            category_confidence=query.category_confidence,
+            orchestration_error=query.orchestration_error,
             generated_answer=answer,
+            retrieved_chunks=[item.chunk_id for item in retrieved],
             retrieved_chunk_ids=[item.chunk_id for item in retrieved],
             retrieved_original_context_ids=[item.original_context_id for item in retrieved],
             raw_retrieved_context_ids=[item.chunk_id for item in raw_retrieved],
@@ -201,9 +193,16 @@ class GenerationStage(BaseStage):
             raw_dense_retrieved_context_ids=[item.chunk_id for item in raw_dense_retrieved],
             raw_bm25_retrieved_context_ids=[item.chunk_id for item in raw_bm25_retrieved],
             retrieved_context_ids=[item.chunk_id for item in retrieved],
-            retrieved_document_ids=[item.metadata.get("doc_id") or item.metadata.get("document_id") or item.original_context_id for item in retrieved],
+            retrieved_document_ids=[stable_retrieved_document_id(item.metadata, item.original_context_id) for item in retrieved],
+            retrieved_documents=[
+                stable_retrieved_document_id(item.metadata, item.original_context_id)
+                for item in retrieved
+            ],
+            retrieved_categories=[item.metadata.get(self.cfg.retrieval.category_field) for item in retrieved],
+            category_filter_applied=bool(retrieval_diagnostics.get("category_filter_applied", False)),
+            category_fallback_used=bool(retrieval_diagnostics.get("category_fallback_used", False)),
             raw_retrieved_document_ids=[
-                item.metadata.get("doc_id") or item.metadata.get("document_id") or item.original_context_id
+                stable_retrieved_document_id(item.metadata, item.original_context_id)
                 for item in raw_retrieved
             ],
             retrieved_file_names=[item.metadata.get("file_name") or item.metadata.get("source_file") for item in retrieved],
@@ -283,6 +282,45 @@ class GenerationStage(BaseStage):
     def _write_event(self, **kwargs) -> None:
         if self.event_writer is not None:
             self.event_writer.write(**kwargs)
+
+    def _generate_with_retries(self, generator, prompt: str, question_id: str):
+        last_error = None
+        for attempt in range(1, MAX_GENERATION_RETRIES + 1):
+            try:
+                return generator.generate(prompt), None, attempt
+            except Exception as ex:
+                last_error = str(ex)
+                if self.logger:
+                    self.logger.warning(
+                        "row_generation_attempt_failed question_id=%s attempt=%s/%s error=%s",
+                        question_id,
+                        attempt,
+                        MAX_GENERATION_RETRIES,
+                        last_error,
+                        exc_info=True,
+                    )
+                self._write_event(
+                    stage="generation",
+                    event_type=EventType.GENERATION_ERROR,
+                    message="Generation attempt failed.",
+                    question_id=question_id,
+                    diagnostics={
+                        "error": last_error,
+                        "attempt": attempt,
+                        "max_retries": MAX_GENERATION_RETRIES,
+                        "will_retry": attempt < MAX_GENERATION_RETRIES,
+                    },
+                )
+                if attempt < MAX_GENERATION_RETRIES:
+                    time.sleep(GENERATION_BACKOFF_BASE_SECONDS * (2 ** (attempt - 1)))
+        self._write_event(
+            stage="pipeline",
+            event_type=EventType.PIPELINE_ERROR,
+            message="Generation failed after retries.",
+            question_id=question_id,
+            diagnostics={"error": last_error, "attempts": MAX_GENERATION_RETRIES},
+        )
+        return None, last_error, MAX_GENERATION_RETRIES
 
 
 def build_citations(items: list) -> list[dict]:

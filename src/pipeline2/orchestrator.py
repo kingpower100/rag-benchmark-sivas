@@ -3,13 +3,16 @@ from __future__ import annotations
 import json
 import time
 import warnings
+from collections import Counter
 from pathlib import Path
 from typing import Any
 
-from src.pipeline2.aggregation.summarizer import build_leaderboard, summarize_by_experiment
+from src.pipeline2.aggregation.summarizer import build_leaderboard, summarize_by_category, summarize_by_experiment
 from src.pipeline2.io.jsonl import read_jsonl, write_jsonl
 from src.pipeline2.io.tabular import write_csv
 from src.pipeline2.metrics.answer_metrics import compute_answer_metrics, resolve_ground_truth_answer
+from src.pipeline2.metrics.category_metrics import compute_category_metrics
+from src.pipeline2.metrics.embedding_similarity import build_answer_embedder, compute_embedding_similarity
 from src.pipeline2.metrics.efficiency_metrics import compute_efficiency_metrics
 from src.pipeline2.metrics.retrieval_metrics import compute_metadata_match_metrics, compute_retrieval_metrics_for_ks
 from src.pipeline2.schemas.eval_config_schema import EvalConfig
@@ -29,11 +32,16 @@ class EvaluationOrchestrator:
         if run_dir.exists() and cfg.runtime.overwrite:
             for name in (
                 "per_question.jsonl",
+                "per_question_metrics.jsonl",
                 "per_question.csv",
+                "summary_metrics.json",
                 "summary_by_experiment.csv",
                 "summary_by_difficulty.csv",
                 "summary_by_difficulty.json",
+                "summary_by_category.csv",
+                "summary_by_category.json",
                 "leaderboard.csv",
+                "leaderboard.md",
                 "eval_manifest.json",
             ):
                 path = run_dir / name
@@ -47,31 +55,49 @@ class EvaluationOrchestrator:
         for rag_path in cfg.inputs.rag_outputs:
             resolved = _resolve(project_root, rag_path)
             resolved_rag_paths.append(resolved)
+            if not resolved.exists():
+                print("Real-run audit skipped: Pipeline 1 outputs not found on this machine.")
+                audit = _skipped_real_run_audit(config_path, cfg, resolved_rag_paths, start_time)
+                _write_audit_reports(run_dir, audit)
+                return run_dir
             print(f"Pipeline 1 results path: {resolved}")
             rows = read_jsonl(resolved)
             print(f"Pipeline 1 results rows: {len(rows)}")
             rag_rows.extend(rows)
-        print("[2/6] Loading QA gold answers")
+        print("[2/6] Loading SIVAS QA ground truth")
+        questions_path = _resolve(project_root, cfg.inputs.questions_path)
+        print(f"SIVAS questions file: {questions_path}")
+        questions_rows = read_jsonl(questions_path)
         qa_path = _resolve(project_root, cfg.inputs.qa_path)
-        print(f"QA file: {qa_path}")
+        print(f"SIVAS QA ground truth file: {qa_path}")
         qa_rows = read_jsonl(qa_path)
+        strict_alignment = build_three_way_alignment_report(questions_rows, qa_rows, [], [])
+        _validate_no_duplicate_pipeline1_question_ids(rag_rows)
         qa_by_id = _index_by_id(qa_rows, require_answer=not cfg.evaluation.retrieval_only)
         _validate_pipeline1_questions_have_qa(rag_rows, qa_by_id)
-        if cfg.debug.enable_officeqa_smoke_check:
-            _run_officeqa_smoke_validation(qa_by_id)
-        print("[3/6] Loading gold contexts")
+        print("[3/6] Loading SIVAS retrieval evidence")
         gold_path = _resolve(project_root, cfg.inputs.gold_contexts_path)
-        print(f"Gold contexts file: {gold_path}")
+        print(f"SIVAS retrieval evidence file: {gold_path}")
         gold_rows = read_jsonl(gold_path) if gold_path.exists() else []
-        gold_by_id = _merge_gold_with_qa_fallback(_gold_by_question(gold_rows), qa_by_id)
-        input_diagnostics = build_eval_diagnostics(rag_rows, qa_rows, gold_rows, qa_by_id, gold_by_id, cfg)
+        strict_alignment = build_three_way_alignment_report(questions_rows, qa_rows, gold_rows, rag_rows)
+        _validate_three_way_alignment(strict_alignment)
+        gold_by_id = _gold_by_question(gold_rows)
+        _validate_pipeline1_questions_have_gold_contexts(rag_rows, gold_by_id)
+        input_diagnostics = build_eval_diagnostics(rag_rows, questions_rows, qa_rows, gold_rows, qa_by_id, gold_by_id, strict_alignment, cfg)
         _print_eval_diagnostics(input_diagnostics)
         _validate_eval_diagnostics(input_diagnostics, cfg)
+        leakage_audit = build_leakage_audit(resolved_rag_paths)
+        if leakage_audit.get("message"):
+            print(leakage_audit["message"])
+        _validate_leakage_audit(leakage_audit)
 
         print("[4/6] Computing automatic metrics")
         per_question = self._evaluate_rows(rag_rows, qa_by_id, gold_by_id, cfg)
         if not per_question:
             raise ValueError("Pipeline 2 evaluated zero rows.")
+        reported_metric_comparison = compare_reported_vs_recomputed_metrics(rag_rows, per_question, _metric_ks(cfg))
+        if reported_metric_comparison.get("message"):
+            print(reported_metric_comparison["message"])
         print("[5/6] Aggregating summaries")
         summary = summarize_by_experiment(per_question)
         run_validity = _run_validity_by_experiment(per_question, cfg.evaluation.max_generation_failure_rate)
@@ -79,6 +105,7 @@ class EvaluationOrchestrator:
         if cfg.evaluation.strict_failure_threshold:
             _raise_on_failure_threshold(run_validity, cfg.evaluation.max_generation_failure_rate)
         difficulty_summary = summarize_by_difficulty(per_question)
+        category_summary = summarize_by_category(per_question)
         leaderboard = build_leaderboard(summary, cfg.leaderboard.sort_metric, cfg.leaderboard.sort_ascending)
         ks = _metric_ks(cfg)
         per_fields = _per_question_fields(ks)
@@ -86,13 +113,33 @@ class EvaluationOrchestrator:
         leaderboard_fields = ["rank", "sort_metric", *summary_fields]
         print("[6/6] Writing evaluation outputs")
         write_jsonl(run_dir / "per_question.jsonl", per_question)
+        write_jsonl(run_dir / "per_question_metrics.jsonl", per_question)
+        (run_dir / "summary_metrics.json").write_text(
+            json.dumps(
+                {
+                    "summary_by_experiment": summary,
+                    "summary_by_difficulty": difficulty_summary,
+                    "summary_by_category": category_summary,
+                    "run_validity": run_validity,
+                },
+                indent=2,
+                ensure_ascii=False,
+            ),
+            encoding="utf-8",
+        )
         if cfg.runtime.save_csv:
             write_csv(run_dir / "per_question.csv", per_question, per_fields)
             write_csv(run_dir / "summary_by_experiment.csv", summary, summary_fields)
             write_csv(run_dir / "summary_by_difficulty.csv", difficulty_summary, _difficulty_summary_fields(ks))
+            write_csv(run_dir / "summary_by_category.csv", category_summary, _category_summary_fields(ks))
             write_csv(run_dir / "leaderboard.csv", leaderboard, leaderboard_fields)
+        (run_dir / "leaderboard.md").write_text(_leaderboard_markdown(leaderboard, leaderboard_fields), encoding="utf-8")
         (run_dir / "summary_by_difficulty.json").write_text(
             json.dumps(difficulty_summary, indent=2, ensure_ascii=False),
+            encoding="utf-8",
+        )
+        (run_dir / "summary_by_category.json").write_text(
+            json.dumps(category_summary, indent=2, ensure_ascii=False),
             encoding="utf-8",
         )
         (run_dir / "eval_manifest.json").write_text(
@@ -104,6 +151,7 @@ class EvaluationOrchestrator:
                     qa_path,
                     gold_path,
                     rag_rows,
+                    questions_rows,
                     qa_rows,
                     gold_rows,
                     per_question,
@@ -111,6 +159,9 @@ class EvaluationOrchestrator:
                     difficulty_summary,
                     run_validity,
                     input_diagnostics,
+                    strict_alignment,
+                    leakage_audit,
+                    reported_metric_comparison,
                     start_time,
                     time.time(),
                 ),
@@ -119,6 +170,60 @@ class EvaluationOrchestrator:
             ),
             encoding="utf-8",
         )
+        audit_report = _eval_manifest(
+            config_path,
+            cfg,
+            resolved_rag_paths,
+            qa_path,
+            gold_path,
+            rag_rows,
+            questions_rows,
+            qa_rows,
+            gold_rows,
+            per_question,
+            leaderboard,
+            difficulty_summary,
+            run_validity,
+            input_diagnostics,
+            strict_alignment,
+            leakage_audit,
+            reported_metric_comparison,
+            start_time,
+            time.time(),
+        )
+        audit_report["fake_run_detection"] = build_fake_run_detection(
+            cfg,
+            resolved_rag_paths,
+            rag_rows,
+            questions_rows,
+            per_question,
+            reported_metric_comparison,
+            leakage_audit,
+            run_validity,
+        )
+        audit_report["linked_pipeline1_runs"] = _linked_pipeline1_runs(resolved_rag_paths)
+        audit_report["input_artifact_hashes"] = _artifact_hashes(
+            [questions_path, qa_path, gold_path, *resolved_rag_paths]
+        )
+        audit_report["output_artifact_hashes"] = _artifact_hashes(
+            [
+                run_dir / "per_question.jsonl",
+                run_dir / "per_question_metrics.jsonl",
+                run_dir / "summary_metrics.json",
+                run_dir / "per_question.csv",
+                run_dir / "summary_by_experiment.csv",
+                run_dir / "summary_by_difficulty.csv",
+                run_dir / "summary_by_difficulty.json",
+                run_dir / "summary_by_category.csv",
+                run_dir / "summary_by_category.json",
+                run_dir / "leaderboard.csv",
+                run_dir / "leaderboard.md",
+                run_dir / "eval_manifest.json",
+            ]
+        )
+        audit_report["final_verdict"] = _verdict_from_audit(audit_report)
+        audit_report["strict_audit_pass"] = audit_report["final_verdict"] == "valid"
+        _write_audit_reports(run_dir, audit_report)
         return run_dir
 
     def _evaluate_rows(
@@ -129,19 +234,14 @@ class EvaluationOrchestrator:
         cfg: EvalConfig,
     ) -> list[dict[str, Any]]:
         ks = _metric_ks(cfg)
-        missing_gold_ids = [
-            str(row.get("question_id", ""))
-            for row in rag_rows
-            if not gold_by_id.get(str(row.get("question_id", "")))
-        ]
-        if missing_gold_ids:
-            sample = ", ".join(missing_gold_ids[:20])
-            suffix = "" if len(missing_gold_ids) <= 20 else f", ... ({len(missing_gold_ids)} total)"
-            raise ValueError(
-                "Pipeline 2 requires ground_truth_contexts.jsonl entries for every evaluated Pipeline 1 "
-                f"question_id. Missing {len(missing_gold_ids)} question(s): {sample}{suffix}"
-            )
         evaluated = []
+        embedder = None
+        if not cfg.evaluation.retrieval_only and cfg.embedding_similarity.enabled:
+            embedder = build_answer_embedder(
+                cfg.embedding_similarity.provider,
+                cfg.embedding_similarity.model_name,
+                cfg.embedding_similarity.dimensions,
+            )
         for row in tqdm(rag_rows, desc="Computing metrics", unit="question"):
             errors = []
             qid = str(row.get("question_id", ""))
@@ -165,9 +265,13 @@ class EvaluationOrchestrator:
                 errors.append("retrieved_original_context_ids must be a list")
             gold_ids = gold_by_id.get(qid, [])
             if not gold_ids:
-                id_alignment_ok = False
+                raise ValueError(f"Missing gold context for question {qid}")
             retrieval_eval_ids = _configured_retrieval_eval_ids(row, cfg.evaluation.retrieval_eval_field)
             qa_row = qa_by_id.get(qid, {})
+            category_metrics = compute_category_metrics(
+                row.get("detected_category"),
+                qa_row.get("gold_kategorie"),
+            )
             ground_truth = "" if cfg.evaluation.retrieval_only else resolve_ground_truth_answer(row, qa_by_id)
             raw_retrieved_ids = row.get("raw_retrieved_original_context_ids")
             if raw_retrieved_ids is not None and not isinstance(raw_retrieved_ids, list):
@@ -186,6 +290,13 @@ class EvaluationOrchestrator:
                     ground_truth,
                     question=str(row.get("question", "")),
                     abstention_patterns=cfg.answer_quality.abstention_patterns,
+                    numeric_tolerance_abs=cfg.answer_quality.numeric_tolerance_abs,
+                    numeric_tolerance_rel=cfg.answer_quality.numeric_tolerance_rel,
+                )
+                answer_metrics["embedding_similarity"] = (
+                    compute_embedding_similarity(str(row.get("generated_answer", "")), ground_truth, embedder)
+                    if embedder is not None
+                    else None
                 )
                 if not cfg.answer_quality.enable_numeric_accuracy:
                     answer_metrics["numeric_accuracy"] = None
@@ -206,6 +317,8 @@ class EvaluationOrchestrator:
                         "answer_coverage_rate": 0.0,
                         "abstention_rate": 0.0,
                         "answer_relevancy_score": 0.0,
+                        "rouge_l": 0.0,
+                        "embedding_similarity": 0.0,
                         "normalized_generated_answer": "",
                         "generated_number": None,
                         "absolute_error": None,
@@ -243,6 +356,8 @@ class EvaluationOrchestrator:
                 "answer_coverage_rate": answer_metrics["answer_coverage_rate"],
                 "abstention_rate": answer_metrics["abstention_rate"],
                 "answer_relevancy_score": answer_metrics["answer_relevancy_score"],
+                "rouge_l": answer_metrics["rouge_l"],
+                "embedding_similarity": answer_metrics["embedding_similarity"],
                 "normalized_generated_answer": answer_metrics["normalized_generated_answer"],
                 "normalized_gold_answer": answer_metrics["normalized_gold_answer"],
                 "generated_number": answer_metrics["generated_number"],
@@ -250,6 +365,9 @@ class EvaluationOrchestrator:
                 "absolute_error": answer_metrics["absolute_error"],
                 "relative_error": answer_metrics["relative_error"],
                 "answer_match_status": answer_metrics["answer_match_status"],
+                "category_correct": category_metrics["category_correct"],
+                "category_predicted": category_metrics["category_predicted"],
+                "category_gold": category_metrics["category_gold"],
                 "hallucination_rate": None,
                 **compute_efficiency_metrics(row),
                 "pipeline_success": pipeline_success,
@@ -312,7 +430,15 @@ def _resolve_qa_row_id(row: dict[str, Any]) -> tuple[str, Any]:
 
 
 def _has_non_empty_answer(row: dict[str, Any]) -> bool:
-    for key in ("ground_truth_answer", "answer", "gold_answer", "expected_answer", "program_answer", "original_answer"):
+    for key in (
+        "ground_truth_answer",
+        "answer",
+        "gold_answer",
+        "expected_answer",
+        "program_answer",
+        "original_answer",
+        "referenzantwort",
+    ):
         if key in row and row[key] is not None and str(row[key]).strip() != "":
             return True
     return False
@@ -330,12 +456,149 @@ def _validate_pipeline1_questions_have_qa(rag_rows: list[dict[str, Any]], qa_by_
         raise ValueError(f"QA file is missing answers for {len(missing)} Pipeline 1 question_id(s): {sample}{suffix}")
 
 
+def _validate_pipeline1_questions_have_gold_contexts(
+    rag_rows: list[dict[str, Any]],
+    gold_by_id: dict[str, list[str]],
+) -> None:
+    missing = [
+        str(row.get("question_id", ""))
+        for row in rag_rows
+        if not gold_by_id.get(str(row.get("question_id", "")))
+    ]
+    if missing:
+        sample = ", ".join(missing[:20])
+        suffix = "" if len(missing) <= 20 else f", ... ({len(missing)} total)"
+        raise ValueError(f"Missing gold context for question {sample}{suffix}")
+
+
+def _validate_no_duplicate_pipeline1_question_ids(rag_rows: list[dict[str, Any]]) -> None:
+    keys = [_experiment_question_key(row) for row in rag_rows if _experiment_question_key(row)[1]]
+    duplicates = sorted(key for key, count in Counter(keys).items() if count > 1)
+    if duplicates:
+        sample = ", ".join(_format_experiment_question_key(key) for key in duplicates[:20])
+        suffix = "" if len(duplicates) <= 20 else f", ... ({len(duplicates)} total)"
+        raise ValueError(
+            "Pipeline 1 result files contain duplicate question_id values within the same experiment: "
+            f"{sample}{suffix}"
+        )
+
+
+def build_three_way_alignment_report(
+    questions_rows: list[dict[str, Any]],
+    qa_rows: list[dict[str, Any]],
+    gold_rows: list[dict[str, Any]],
+    rag_rows: list[dict[str, Any]] | None = None,
+) -> dict[str, Any]:
+    questions = _id_collection_report(questions_rows, "questions_fixed.jsonl")
+    qa = _id_collection_report(qa_rows, "qa_ground_truth_fixed.jsonl")
+    gold = _id_collection_report(gold_rows, "qa_ground_truth_fixed.jsonl")
+    sets = {
+        "questions": set(questions["ids"]),
+        "qa_ground_truth": set(qa["ids"]),
+        "retrieval_evidence": set(gold["ids"]),
+    }
+    union = set().union(*sets.values()) if sets else set()
+    exact = sets["questions"] == sets["qa_ground_truth"] == sets["retrieval_evidence"]
+    report = {
+        "files": {
+            "questions": questions,
+            "qa_ground_truth": qa,
+            "retrieval_evidence": gold,
+        },
+        "aligned_id_count": len(sets["questions"] & sets["qa_ground_truth"] & sets["retrieval_evidence"]),
+        "exact_set_equality": exact,
+        "missing_from_questions": sorted(union - sets["questions"]),
+        "missing_from_qa_ground_truth": sorted(union - sets["qa_ground_truth"]),
+        "missing_from_retrieval_evidence": sorted(union - sets["retrieval_evidence"]),
+        "extra_in_questions": sorted(sets["questions"] - (sets["qa_ground_truth"] & sets["retrieval_evidence"])),
+        "extra_in_qa_ground_truth": sorted(sets["qa_ground_truth"] - (sets["questions"] & sets["retrieval_evidence"])),
+        "extra_in_retrieval_evidence": sorted(sets["retrieval_evidence"] - (sets["questions"] & sets["qa_ground_truth"])),
+        "duplicate_id_summary": {
+            "questions": questions["duplicates"],
+            "qa_ground_truth": qa["duplicates"],
+            "retrieval_evidence": gold["duplicates"],
+            "pipeline1_results": _duplicate_experiment_question_ids_from_rows(rag_rows or []),
+        },
+    }
+    return report
+
+
+def _validate_three_way_alignment(report: dict[str, Any]) -> None:
+    duplicates = {
+        name: values
+        for name, values in report["duplicate_id_summary"].items()
+        if values
+    }
+    if duplicates:
+        pieces = [f"{name}: {', '.join(values[:10])}" for name, values in duplicates.items()]
+        raise ValueError(f"Strict audit failed because duplicate IDs were found. {'; '.join(pieces)}")
+    if not report["exact_set_equality"]:
+        raise ValueError(
+            "Strict audit failed because questions_fixed.jsonl and qa_ground_truth_fixed.jsonl ID sets are not identical. "
+            f"missing_from_questions={report['missing_from_questions'][:10]} "
+            f"missing_from_qa_ground_truth={report['missing_from_qa_ground_truth'][:10]} "
+            f"missing_from_retrieval_evidence={report['missing_from_retrieval_evidence'][:10]}"
+        )
+
+
+def _id_collection_report(rows: list[dict[str, Any]], label: str) -> dict[str, Any]:
+    ids = []
+    missing_rows = []
+    key_counts = {"uid": 0, "id": 0, "question_id": 0}
+    for line_number, row in enumerate(rows, start=1):
+        key_name, raw_id = _resolve_qa_row_id(row)
+        if raw_id is None or str(raw_id).strip() == "":
+            missing_rows.append(line_number)
+            continue
+        qid = str(raw_id).strip()
+        ids.append(qid)
+        if key_name in key_counts:
+            key_counts[key_name] += 1
+    duplicates = sorted(qid for qid, count in Counter(ids).items() if count > 1)
+    return {
+        "label": label,
+        "row_count": len(rows),
+        "unique_id_count": len(set(ids)),
+        "ids": sorted(set(ids)),
+        "duplicates": duplicates,
+        "missing_id_rows": missing_rows,
+        "id_field_counts": key_counts,
+    }
+
+
+def _duplicate_ids_from_rows(rows: list[dict[str, Any]], keys: tuple[str, ...]) -> list[str]:
+    ids = []
+    for row in rows:
+        for key in keys:
+            value = row.get(key)
+            if value is not None and str(value).strip():
+                ids.append(str(value).strip())
+                break
+    return sorted(qid for qid, count in Counter(ids).items() if count > 1)
+
+
+def _duplicate_experiment_question_ids_from_rows(rows: list[dict[str, Any]]) -> list[str]:
+    keys = [_experiment_question_key(row) for row in rows if _experiment_question_key(row)[1]]
+    return [_format_experiment_question_key(key) for key, count in sorted(Counter(keys).items()) if count > 1]
+
+
+def _experiment_question_key(row: dict[str, Any]) -> tuple[str, str]:
+    return (str(row.get("experiment_id", "")).strip(), str(row.get("question_id", "")).strip())
+
+
+def _format_experiment_question_key(key: tuple[str, str]) -> str:
+    experiment_id, question_id = key
+    return f"{experiment_id or '<missing_experiment>'}:{question_id}"
+
+
 def build_eval_diagnostics(
     rag_rows: list[dict[str, Any]],
+    questions_rows: list[dict[str, Any]],
     qa_rows: list[dict[str, Any]],
     gold_rows: list[dict[str, Any]],
     qa_by_id: dict[str, dict[str, Any]],
     gold_by_id: dict[str, list[str]],
+    strict_alignment: dict[str, Any],
     cfg: EvalConfig,
 ) -> dict[str, Any]:
     rag_ids = [str(row.get("question_id", "")) for row in rag_rows if str(row.get("question_id", "")).strip()]
@@ -359,6 +622,7 @@ def build_eval_diagnostics(
     ]
     return {
         "pipeline1_result_rows": len(rag_rows),
+        "questions_rows": len(questions_rows),
         "qa_rows": len(qa_rows),
         "gold_context_rows": len(gold_rows),
         "qa_indexed_rows": len(qa_by_id),
@@ -379,6 +643,7 @@ def build_eval_diagnostics(
         "missing_in_gold_examples": sorted(rag_set - gold_set)[:5],
         "missing_generated_answer_examples": missing_generated_ids[:5],
         "missing_retrieved_field_examples": missing_retrieved_ids[:5],
+        "strict_alignment": strict_alignment,
     }
 
 
@@ -413,22 +678,6 @@ def _validate_eval_diagnostics(diagnostics: dict[str, Any], cfg: EvalConfig) -> 
         )
 
 
-def _run_officeqa_smoke_validation(qa_by_id: dict[str, dict[str, Any]]) -> None:
-    if "UID0002" not in qa_by_id:
-        return
-    probe_row = {"question_id": "UID0002", "generated_answer": "507"}
-    gold_answer = resolve_ground_truth_answer(probe_row, qa_by_id)
-    if not gold_answer.strip():
-        raise ValueError("OfficeQA smoke validation failed: UID0002 resolved to an empty gold answer.")
-    metrics = compute_answer_metrics(probe_row["generated_answer"], gold_answer)
-    if metrics["numeric_accuracy"] != 1.0:
-        raise ValueError(
-            "OfficeQA smoke validation failed: generated_answer='507' did not numerically match "
-            f"UID0002 gold answer={gold_answer!r}."
-        )
-    print(f"OfficeQA smoke validation: UID0002 gold_answer={gold_answer!r} numeric_accuracy=1.0")
-
-
 def _resolve(project_root: Path, raw_path: str) -> Path:
     path = Path(raw_path)
     return path if path.is_absolute() else project_root / path
@@ -436,30 +685,48 @@ def _resolve(project_root: Path, raw_path: str) -> Path:
 
 def _gold_by_question(rows: list[dict[str, Any]]) -> dict[str, list[str]]:
     output: dict[str, list[str]] = {}
-    for row in rows:
-        qid = str(row.get("id") or row.get("question_id"))
-        ids = row.get("context_id") or []
+    duplicates: set[str] = set()
+    missing_rows: list[int] = []
+    for line_number, row in enumerate(rows, start=1):
+        _, raw_id = _resolve_qa_row_id(row)
+        if raw_id is None or str(raw_id).strip() == "":
+            missing_rows.append(line_number)
+            continue
+        qid = str(raw_id).strip()
+        if qid in output:
+            duplicates.add(qid)
+        ids = row.get("context_id")
+        if ids is None:
+            ids = row.get("source_files")
+        if ids is None:
+            ids = [
+                evidence.get("source_document")
+                for evidence in row.get("partner_retrieval_evidence", [])
+                if isinstance(evidence, dict) and evidence.get("source_document")
+            ]
+        if ids is None:
+            ids = []
         if isinstance(ids, str):
             ids = [ids]
         elif not isinstance(ids, list):
             ids = []
-        output.setdefault(qid, [])
-        output[qid].extend(str(item) for item in ids if item is not None)
+        output[qid] = [str(item) for item in ids if item is not None and str(item).strip()]
+    if missing_rows:
+        sample = ", ".join(str(item) for item in missing_rows[:20])
+        suffix = "" if len(missing_rows) <= 20 else f", ... ({len(missing_rows)} total)"
+        raise ValueError(f"Gold context rows are missing uid/id/question_id on line(s): {sample}{suffix}")
+    if duplicates:
+        sample = ", ".join(sorted(duplicates)[:20])
+        suffix = "" if len(duplicates) <= 20 else f", ... ({len(duplicates)} total)"
+        raise ValueError(f"Gold context rows contain duplicate resolved IDs: {sample}{suffix}")
     return output
 
 
 def _merge_gold_with_qa_fallback(gold_by_id: dict[str, list[str]], qa_by_id: dict[str, dict[str, Any]]) -> dict[str, list[str]]:
-    merged = {qid: list(ids) for qid, ids in gold_by_id.items()}
-    for qid, row in qa_by_id.items():
-        if merged.get(qid):
-            continue
-        source_files = row.get("source_files") or []
-        if isinstance(source_files, str):
-            source_files = [source_files]
-        elif not isinstance(source_files, list):
-            source_files = []
-        merged[qid] = [str(item) for item in source_files if item is not None and str(item).strip()]
-    return merged
+    raise RuntimeError(
+        "QA source_files fallback for retrieval gold is disabled. "
+        "Use qa_ground_truth_fixed.jsonl retrieval evidence entries only."
+    )
 
 
 def _null_answer_metrics() -> dict[str, Any]:
@@ -475,6 +742,8 @@ def _null_answer_metrics() -> dict[str, Any]:
         "answer_coverage_rate": None,
         "abstention_rate": None,
         "answer_relevancy_score": None,
+        "rouge_l": None,
+        "embedding_similarity": None,
         "normalized_generated_answer": "",
         "normalized_gold_answer": "",
         "generated_number": None,
@@ -607,6 +876,10 @@ def _per_question_fields(ks: list[int]) -> list[str]:
         *metric_fields,
         "duplicate_context_rate",
         "raw_duplicate_rate",
+        "raw_retrieved_count",
+        "unique_retrieved_document_count",
+        "duplicate_document_count",
+        "duplicate_document_rate",
         "metadata_match_rate",
         "company_match_rate",
         "year_match_rate",
@@ -623,6 +896,8 @@ def _per_question_fields(ks: list[int]) -> list[str]:
         "answer_coverage_rate",
         "abstention_rate",
         "answer_relevancy_score",
+        "rouge_l",
+        "embedding_similarity",
         "normalized_generated_answer",
         "normalized_gold_answer",
         "generated_number",
@@ -630,7 +905,11 @@ def _per_question_fields(ks: list[int]) -> list[str]:
         "absolute_error",
         "relative_error",
         "answer_match_status",
+        "category_correct",
+        "category_predicted",
+        "category_gold",
         "retrieval_time_ms",
+        "rerank_time_ms",
         "generation_time_ms",
         "total_latency_ms",
         "input_tokens",
@@ -684,6 +963,8 @@ def summarize_by_difficulty(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
             "strict_numeric_accuracy",
             "tolerant_numeric_accuracy",
             "hallucination_rate",
+            "rouge_l",
+            "embedding_similarity",
             "total_latency_ms",
             "total_tokens",
             "generation_failed",
@@ -691,6 +972,455 @@ def summarize_by_difficulty(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
             summary[f"mean_{col}"] = _mean([row.get(col) for row in group if row.get(col) is not None])
         output.append(summary)
     return output
+
+
+def compare_reported_vs_recomputed_metrics(
+    reported_rows: list[dict[str, Any]],
+    recomputed_rows: list[dict[str, Any]],
+    ks: list[int],
+    tolerance: float = 1e-6,
+) -> dict[str, Any]:
+    by_id = {_experiment_question_key(row): row for row in recomputed_rows}
+    metric_names = [
+        *[name for k in ks for name in (
+            f"hit_at_{k}",
+            f"recall_at_{k}",
+            f"mrr_at_{k}",
+            f"ndcg_at_{k}",
+            f"context_precision_at_{k}",
+        )],
+        "exact_match",
+        "numeric_accuracy",
+        "numeric_parse_success",
+        "numeric_parse_success_rate",
+        "non_empty_answer_rate",
+        "abstention_rate",
+        "rouge_l",
+        "embedding_similarity",
+    ]
+    comparisons = []
+    for reported in reported_rows:
+        qid = str(reported.get("question_id", ""))
+        recomputed = by_id.get(_experiment_question_key(reported))
+        if recomputed is None:
+            continue
+        for name in metric_names:
+            if name not in reported:
+                continue
+            recomputed_name = "numeric_parse_success" if name == "numeric_parse_success_rate" else name
+            if recomputed_name not in recomputed:
+                continue
+            reported_value = _as_float_or_none(reported.get(name))
+            recomputed_value = _as_float_or_none(recomputed.get(recomputed_name))
+            if reported_value is None or recomputed_value is None:
+                continue
+            difference = abs(reported_value - recomputed_value)
+            comparisons.append(
+                {
+                    "question_id": qid,
+                    "metric": name,
+                    "reported_value": reported_value,
+                    "recomputed_value": recomputed_value,
+                    "absolute_difference": difference,
+                    "passed": difference <= tolerance,
+                }
+            )
+    failed = [item for item in comparisons if not item["passed"]]
+    return {
+        "message": "No reported metrics found to compare against." if not comparisons else None,
+        "tolerance": tolerance,
+        "comparison_count": len(comparisons),
+        "failure_count": len(failed),
+        "passed": bool(comparisons) and not failed,
+        "comparisons": comparisons[:200],
+        "failed_examples": failed[:20],
+    }
+
+
+def build_leakage_audit(rag_paths: list[Path]) -> dict[str, Any]:
+    forbidden_terms = (
+        "answer-bearing question file",
+        "legacy gold context file",
+        "gold_answer",
+        "ground_truth_answer",
+        "expected_answer",
+        "program_answer",
+        "original_answer",
+        "gold_context_id",
+        "gold_context_ids",
+        "context_id",
+        "source_files",
+    )
+    findings = []
+    checked_files = []
+    for rag_path in rag_paths:
+        run_dir = rag_path.parent
+        candidates = [
+            run_dir / "run_manifest.json",
+            run_dir / "logs.txt",
+            run_dir / "config.yaml",
+            run_dir / "pipeline1_config.yaml",
+            *sorted(run_dir.glob("*prompt*")),
+            *sorted(run_dir.glob("*config*.json")),
+            *sorted(run_dir.glob("*config*.yaml")),
+            *sorted(run_dir.glob("*config*.yml")),
+        ]
+        seen_candidates: set[Path] = set()
+        for path in candidates:
+            if path in seen_candidates:
+                continue
+            seen_candidates.add(path)
+            if not path.exists() or not path.is_file():
+                continue
+            checked_files.append(str(path))
+            try:
+                text = path.read_text(encoding="utf-8", errors="ignore").casefold()
+            except OSError:
+                continue
+            for term in forbidden_terms:
+                if term.casefold() in text:
+                    findings.append({"path": str(path), "term": term})
+    if not checked_files:
+        return {
+            "checked_files": [],
+            "critical_leakage_found": False,
+            "findings": [],
+            "result": "skipped",
+            "message": "Leakage audit skipped: Pipeline 1 artifacts not found.",
+        }
+    return {
+        "checked_files": checked_files,
+        "critical_leakage_found": bool(findings),
+        "findings": findings[:100],
+        "result": "fail" if findings else "pass",
+        "message": None,
+    }
+
+
+def _validate_leakage_audit(report: dict[str, Any]) -> None:
+    if report.get("critical_leakage_found"):
+        examples = ", ".join(f"{item['term']} in {item['path']}" for item in report.get("findings", [])[:5])
+        raise ValueError(f"Strict audit failed because possible gold-data leakage was found: {examples}")
+
+
+def _as_float_or_none(value: Any) -> float | None:
+    if value is None or value == "":
+        return None
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def build_fake_run_detection(
+    cfg: EvalConfig,
+    rag_paths: list[Path],
+    rag_rows: list[dict[str, Any]],
+    questions_rows: list[dict[str, Any]],
+    per_question: list[dict[str, Any]],
+    reported_metric_comparison: dict[str, Any],
+    leakage_audit: dict[str, Any],
+    run_validity: dict[str, dict[str, Any]],
+) -> dict[str, Any]:
+    checks = []
+    checks.append(_fake_check("pipeline1_result_file_missing", any(not path.exists() for path in rag_paths), [str(path) for path in rag_paths if not path.exists()]))
+    checks.append(_fake_check("pipeline1_result_file_zero_rows", len(rag_rows) == 0, []))
+    row_count_report = _result_row_count_report(rag_rows, questions_rows)
+    checks.append(
+        _fake_check(
+            "result_rows_do_not_match_questions",
+            row_count_report["suspicious"],
+            row_count_report,
+        )
+    )
+    duplicate_result_ids = _duplicate_experiment_question_ids_from_rows(rag_rows)
+    checks.append(_fake_check("duplicate_pipeline1_result_question_ids_within_experiment", bool(duplicate_result_ids), duplicate_result_ids[:50]))
+    checks.append(_fake_check("pipeline2_metrics_exist_but_raw_rows_missing", bool(per_question) and not rag_rows, []))
+    checks.append(_fake_check("reported_metrics_differ_from_recomputed", reported_metric_comparison.get("failure_count", 0) > 0, reported_metric_comparison.get("failed_examples", [])))
+    checks.append(_fake_check("leakage_detected", leakage_audit.get("critical_leakage_found", False), leakage_audit.get("findings", [])))
+    checks.extend(_fake_run_row_checks(cfg, rag_rows))
+    checks.extend(_pipeline1_manifest_checks(cfg, rag_paths, rag_rows))
+    suspicious = [check for check in checks if check["suspicious"]]
+    return {
+        "suspicious": bool(suspicious),
+        "suspicious_count": len(suspicious),
+        "checks": checks,
+        "suspicious_examples": suspicious[:20],
+    }
+
+
+def _result_row_count_report(rag_rows: list[dict[str, Any]], questions_rows: list[dict[str, Any]]) -> dict[str, Any]:
+    expected_questions = len(questions_rows)
+    by_experiment: dict[str, int] = {}
+    for row in rag_rows:
+        by_experiment.setdefault(str(row.get("experiment_id", "")), 0)
+        by_experiment[str(row.get("experiment_id", ""))] += 1
+    mismatches = {
+        experiment_id: count
+        for experiment_id, count in by_experiment.items()
+        if expected_questions and count != expected_questions
+    }
+    return {
+        "suspicious": bool(expected_questions and mismatches),
+        "result_rows": len(rag_rows),
+        "question_rows": expected_questions,
+        "experiment_count": len(by_experiment),
+        "rows_by_experiment": by_experiment,
+        "mismatches": mismatches,
+    }
+
+
+def _fake_run_row_checks(cfg: EvalConfig, rag_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    if not rag_rows:
+        return [
+            _fake_check("many_generated_answers_identical", False, {}),
+            _fake_check("all_retrieval_lists_empty", False, {}),
+            _fake_check("all_latencies_zero_or_missing", False, {}),
+            _fake_check("result_model_fields_mismatch_config", False, {}),
+        ]
+    answers = [str(row.get("generated_answer", "")).strip() for row in rag_rows]
+    non_empty_answers = [answer for answer in answers if answer]
+    answer_counts = Counter(non_empty_answers)
+    most_common_answer, most_common_count = answer_counts.most_common(1)[0] if answer_counts else ("", 0)
+    repeated_answer_rate = most_common_count / len(non_empty_answers) if non_empty_answers else 0.0
+    retrieval_field = cfg.evaluation.retrieval_eval_field
+    all_retrieval_empty = all(not _list_field(row, retrieval_field) for row in rag_rows)
+    latencies = [
+        _as_float_or_none(row.get("total_latency_ms", row.get("latency_ms")))
+        for row in rag_rows
+    ]
+    all_latency_missing_or_zero = all(value is None or value == 0.0 for value in latencies)
+    mismatches = []
+    for row in rag_rows[:1000]:
+        if row.get("llm_model") and str(row.get("llm_model")) != "":
+            # Pipeline 2 configs do not know the expected generator model; compare consistency across rows instead.
+            pass
+    llm_models = {str(row.get("llm_model")) for row in rag_rows if row.get("llm_model")}
+    embedding_models = {str(row.get("embedding_model")) for row in rag_rows if row.get("embedding_model")}
+    retriever_types = {str(row.get("retriever_type")) for row in rag_rows if row.get("retriever_type")}
+    if len(llm_models) > 1:
+        mismatches.append({"field": "llm_model", "values": sorted(llm_models)})
+    if len(embedding_models) > 1:
+        mismatches.append({"field": "embedding_model", "values": sorted(embedding_models)})
+    if len(retriever_types) > 1:
+        mismatches.append({"field": "retriever_type", "values": sorted(retriever_types)})
+    return [
+        _fake_check(
+            "many_generated_answers_identical",
+            len(non_empty_answers) >= 5 and repeated_answer_rate >= 0.8,
+            {"answer": most_common_answer, "count": most_common_count, "rate": repeated_answer_rate},
+        ),
+        _fake_check("all_retrieval_lists_empty", all_retrieval_empty, {"field": retrieval_field}),
+        _fake_check("all_latencies_zero_or_missing", all_latency_missing_or_zero, {}),
+        _fake_check("result_model_fields_mismatch_config", bool(mismatches), mismatches),
+    ]
+
+
+def _pipeline1_manifest_checks(cfg: EvalConfig, rag_paths: list[Path], rag_rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    checks = []
+    for rag_path in rag_paths:
+        manifest_path = rag_path.parent / "run_manifest.json"
+        if not manifest_path.exists():
+            manifest_path = rag_path.parent / "manifest.json"
+        if not manifest_path.exists():
+            checks.append(_fake_check("pipeline1_manifest_missing", True, {"result_path": str(rag_path)}))
+            continue
+        try:
+            manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+        except Exception as ex:
+            checks.append(_fake_check("pipeline1_manifest_unreadable", True, {"path": str(manifest_path), "error": str(ex)}))
+            continue
+        expected_hash = (
+            manifest.get("artifacts", {}).get("results.jsonl", {}).get("sha256")
+            or manifest.get("output_artifacts", {}).get("results.jsonl", {}).get("sha256")
+        )
+        actual_hash = file_sha256(rag_path) if rag_path.exists() else None
+        checks.append(
+            _fake_check(
+                "hash_mismatch_between_manifest_and_evaluated_file",
+                bool(expected_hash and actual_hash and expected_hash != actual_hash),
+                {"manifest_path": str(manifest_path), "expected": expected_hash, "actual": actual_hash},
+            )
+        )
+        stats = manifest.get("run_stats", {})
+        manifest_questions = stats.get("n_queries")
+        if manifest_questions is not None:
+            result_row_count = _jsonl_row_count(rag_path) if rag_path.exists() else len(rag_rows)
+            checks.append(
+                _fake_check(
+                    "pipeline1_manifest_question_count_mismatch",
+                    int(manifest_questions) != result_row_count,
+                    {"manifest_n_queries": manifest_questions, "result_rows": result_row_count},
+                )
+            )
+        checks.append(
+            _fake_check(
+                "timestamps_impossible_or_missing",
+                _timestamps_invalid(manifest.get("start_timestamp_utc"), manifest.get("end_timestamp_utc")),
+                {
+                    "manifest_path": str(manifest_path),
+                    "start": manifest.get("start_timestamp_utc"),
+                    "end": manifest.get("end_timestamp_utc"),
+                },
+            )
+        )
+    return checks
+
+
+def _jsonl_row_count(path: Path) -> int:
+    try:
+        with path.open("r", encoding="utf-8") as f:
+            return sum(1 for line in f if line.strip())
+    except OSError:
+        return 0
+
+
+def _timestamps_invalid(start: str | None, end: str | None) -> bool:
+    if not start or not end:
+        return True
+    try:
+        from datetime import datetime
+
+        start_dt = datetime.fromisoformat(str(start).replace("Z", "+00:00"))
+        end_dt = datetime.fromisoformat(str(end).replace("Z", "+00:00"))
+    except Exception:
+        return True
+    return end_dt < start_dt
+
+
+def _fake_check(name: str, suspicious: bool, details: Any) -> dict[str, Any]:
+    return {"name": name, "suspicious": bool(suspicious), "details": details}
+
+
+def _artifact_hashes(paths: list[Path]) -> dict[str, dict[str, str | int | None]]:
+    return {str(path): _artifact_hash(path) for path in paths}
+
+
+def _artifact_hash(path: Path) -> dict[str, str | int | None]:
+    if not path.exists():
+        return {"sha256": None, "size_bytes": None, "exists": False}
+    return {"sha256": file_sha256(path), "size_bytes": path.stat().st_size, "exists": True}
+
+
+def _skipped_real_run_audit(config_path: str, cfg: EvalConfig, rag_paths: list[Path], start_time: float) -> dict[str, Any]:
+    from datetime import datetime, timezone
+
+    return {
+        "final_verdict": "partially_valid",
+        "strict_audit_pass": False,
+        "audit_status": "skipped",
+        "message": "Real-run audit skipped: Pipeline 1 outputs not found on this machine.",
+        "config_path": str(Path(config_path).resolve()),
+        "config_hash": file_sha256(config_path),
+        "evaluation_run_id": cfg.evaluation.eval_run_id,
+        "input_result_paths": [str(path) for path in rag_paths],
+        "linked_pipeline1_runs": _linked_pipeline1_runs(rag_paths),
+        "input_artifact_hashes": _artifact_hashes(rag_paths),
+        "fake_run_detection": {
+            "suspicious": True,
+            "suspicious_count": 1,
+            "checks": [_fake_check("pipeline1_result_file_missing", True, [str(path) for path in rag_paths])],
+            "suspicious_examples": [_fake_check("pipeline1_result_file_missing", True, [str(path) for path in rag_paths])],
+        },
+        "start_timestamp_utc": datetime.fromtimestamp(start_time, timezone.utc).isoformat(),
+        "end_timestamp_utc": datetime.now(timezone.utc).isoformat(),
+    }
+
+
+def _linked_pipeline1_runs(rag_paths: list[Path]) -> list[dict[str, Any]]:
+    runs = []
+    for path in rag_paths:
+        manifest_path = path.parent / "run_manifest.json"
+        if not manifest_path.exists():
+            manifest_path = path.parent / "manifest.json"
+        manifest = {}
+        if manifest_path.exists():
+            try:
+                manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+            except Exception:
+                manifest = {}
+        runs.append(
+            {
+                "result_path": str(path),
+                "result_sha256": file_sha256(path) if path.exists() else None,
+                "manifest_path": str(manifest_path) if manifest_path.exists() else None,
+                "manifest_sha256": file_sha256(manifest_path) if manifest_path.exists() else None,
+                "pipeline1_run_id": manifest.get("run_id")
+                or manifest.get("resolved_config", {}).get("experiment", {}).get("experiment_id")
+                or manifest.get("config", {}).get("experiment", {}).get("experiment_id"),
+                "manifest_recorded_result_sha256": (
+                    manifest.get("artifacts", {}).get("results.jsonl", {}).get("sha256")
+                    or manifest.get("output_artifacts", {}).get("results.jsonl", {}).get("sha256")
+                ),
+            }
+        )
+    return runs
+
+
+def _write_audit_reports(run_dir: Path, audit_report: dict[str, Any]) -> None:
+    run_dir.mkdir(parents=True, exist_ok=True)
+    (run_dir / "audit_report.json").write_text(
+        json.dumps(audit_report, indent=2, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    (run_dir / "audit_report.md").write_text(_audit_report_markdown(audit_report), encoding="utf-8")
+
+
+def _leaderboard_markdown(rows: list[dict[str, Any]], fields: list[str]) -> str:
+    if not rows:
+        return "| rank |\n|---|\n"
+    visible_fields = [field for field in fields if any(row.get(field) is not None for row in rows)]
+    header = "| " + " | ".join(visible_fields) + " |"
+    separator = "| " + " | ".join("---" for _ in visible_fields) + " |"
+    body = []
+    for row in rows:
+        body.append("| " + " | ".join(_markdown_cell(row.get(field)) for field in visible_fields) + " |")
+    return "\n".join([header, separator, *body]) + "\n"
+
+
+def _markdown_cell(value: Any) -> str:
+    if value is None:
+        return ""
+    text = str(value)
+    return text.replace("|", "\\|").replace("\n", " ")
+
+
+def _audit_report_markdown(report: dict[str, Any]) -> str:
+    lines = [
+        "# RAG Benchmark Audit Report",
+        "",
+        f"- Final verdict: `{report.get('final_verdict')}`",
+        f"- Strict audit pass: `{report.get('strict_audit_pass')}`",
+        f"- Total questions: `{report.get('total_questions', 'n/a')}`",
+        f"- Aligned ID count: `{report.get('aligned_id_count', 'n/a')}`",
+        f"- Message: {report.get('message') or 'n/a'}",
+        "",
+        "## Fake-Run Detection",
+    ]
+    fake = report.get("fake_run_detection") or {}
+    lines.append(f"- Suspicious: `{fake.get('suspicious')}`")
+    for check in fake.get("checks", []):
+        if check.get("suspicious"):
+            lines.append(f"- `{check.get('name')}`: {check.get('details')}")
+    lines.extend([
+        "",
+        "## Metric Comparison",
+        f"- Reported-vs-recomputed failures: `{(report.get('reported_vs_recomputed_comparison') or {}).get('failure_count', 'n/a')}`",
+        "",
+        "## Leakage Audit",
+        f"- Result: `{(report.get('leakage_audit_result') or {}).get('result', 'n/a')}`",
+        f"- Message: {(report.get('leakage_audit_result') or {}).get('message') or 'n/a'}",
+    ])
+    return "\n".join(lines) + "\n"
+
+
+def _verdict_from_audit(report: dict[str, Any]) -> str:
+    fake = report.get("fake_run_detection") or {}
+    if fake.get("suspicious") or (report.get("reported_vs_recomputed_comparison") or {}).get("failure_count", 0) > 0:
+        return "invalid"
+    if report.get("strict_audit_pass"):
+        return "valid"
+    return "partially_valid"
 
 
 def _difficulty_summary_fields(ks: list[int]) -> list[str]:
@@ -716,9 +1446,40 @@ def _difficulty_summary_fields(ks: list[int]) -> list[str]:
         "mean_strict_numeric_accuracy",
         "mean_tolerant_numeric_accuracy",
         "mean_hallucination_rate",
+        "mean_rouge_l",
+        "mean_embedding_similarity",
         "mean_total_latency_ms",
         "mean_total_tokens",
         "mean_generation_failed",
+    ]
+
+
+def _category_summary_fields(ks: list[int]) -> list[str]:
+    metric_fields = []
+    for k in ks:
+        metric_fields.extend(
+            [
+                f"mean_hit_at_{k}",
+                f"mean_recall_at_{k}",
+                f"mean_mrr_at_{k}",
+                f"mean_context_precision_at_{k}",
+                f"mean_ndcg_at_{k}",
+            ]
+        )
+    return [
+        "category",
+        "n_questions",
+        "pipeline_success_rate",
+        *metric_fields,
+        "mean_category_accuracy",
+        "mean_exact_match",
+        "mean_literal_exact_match",
+        "mean_canonical_exact_match",
+        "mean_numeric_accuracy",
+        "mean_rouge_l",
+        "mean_embedding_similarity",
+        "mean_total_latency_ms",
+        "mean_total_tokens",
     ]
 
 
@@ -749,6 +1510,10 @@ def _summary_fields(ks: list[int]) -> list[str]:
         *metric_fields,
         "mean_duplicate_context_rate",
         "mean_raw_duplicate_rate",
+        "mean_raw_retrieved_count",
+        "mean_unique_retrieved_document_count",
+        "mean_duplicate_document_count",
+        "mean_duplicate_document_rate",
         "mean_metadata_match_rate",
         "mean_company_match_rate",
         "mean_year_match_rate",
@@ -767,7 +1532,11 @@ def _summary_fields(ks: list[int]) -> list[str]:
         "mean_answer_coverage_rate",
         "mean_abstention_rate",
         "mean_answer_relevancy",
+        "mean_rouge_l",
+        "mean_embedding_similarity",
+        "mean_category_accuracy",
         "mean_retrieval_time_ms",
+        "mean_rerank_time_ms",
         "mean_generation_time_ms",
         "mean_total_latency_ms",
         "mean_input_tokens",
@@ -790,6 +1559,7 @@ def _eval_manifest(
     qa_path: Path,
     gold_path: Path,
     rag_rows: list[dict[str, Any]],
+    questions_rows: list[dict[str, Any]],
     qa_rows: list[dict[str, Any]],
     gold_rows: list[dict[str, Any]],
     per_question: list[dict[str, Any]],
@@ -797,6 +1567,9 @@ def _eval_manifest(
     difficulty_summary: list[dict[str, Any]],
     run_validity: dict[str, dict[str, Any]],
     input_diagnostics: dict[str, Any],
+    strict_alignment: dict[str, Any],
+    leakage_audit: dict[str, Any],
+    reported_metric_comparison: dict[str, Any],
     start_time: float,
     end_time: float,
 ) -> dict[str, Any]:
@@ -808,17 +1581,88 @@ def _eval_manifest(
         for experiment_id, stats in run_validity.items()
         if not stats.get("run_valid", True)
     }
+    comparison_pass = reported_metric_comparison.get("failure_count", 0) == 0
+    blocking_audit_pass = (
+        strict_alignment.get("exact_set_equality") is True
+        and not any(strict_alignment.get("duplicate_id_summary", {}).values())
+        and not leakage_audit.get("critical_leakage_found")
+        and comparison_pass
+    )
+    strict_pass = (
+        blocking_audit_pass
+        and not invalid_experiments
+    )
+    final_verdict = "valid" if strict_pass else ("partially_valid" if blocking_audit_pass else "invalid")
+    all_summary = next((row for row in difficulty_summary if row.get("difficulty") == "all"), {})
     return {
+        "final_verdict": final_verdict,
+        "strict_audit_pass": strict_pass,
+        "total_questions": len(per_question),
+        "aligned_id_count": strict_alignment.get("aligned_id_count"),
+        "duplicate_id_summary": strict_alignment.get("duplicate_id_summary"),
+        "missing_extra_id_summary": {
+            "missing_from_questions": strict_alignment.get("missing_from_questions", [])[:100],
+            "missing_from_qa_ground_truth": strict_alignment.get("missing_from_qa_ground_truth", [])[:100],
+            "missing_from_retrieval_evidence": strict_alignment.get("missing_from_retrieval_evidence", [])[:100],
+            "extra_in_questions": strict_alignment.get("extra_in_questions", [])[:100],
+            "extra_in_qa_ground_truth": strict_alignment.get("extra_in_qa_ground_truth", [])[:100],
+            "extra_in_retrieval_evidence": strict_alignment.get("extra_in_retrieval_evidence", [])[:100],
+            "exact_set_equality": strict_alignment.get("exact_set_equality"),
+        },
+        "recomputed_retrieval_metrics": {
+            key: value
+            for key, value in all_summary.items()
+            if key.startswith((
+                "mean_hit_at_",
+                "mean_recall_at_",
+                "mean_mrr_at_",
+                "mean_context_precision_at_",
+                "mean_ndcg_at_",
+            ))
+        },
+        "recomputed_answer_metrics": {
+            key: all_summary.get(key)
+            for key in (
+                "mean_exact_match",
+                "mean_literal_exact_match",
+                "mean_canonical_exact_match",
+                "mean_numeric_accuracy",
+                "mean_strict_numeric_accuracy",
+                "mean_tolerant_numeric_accuracy",
+                "numeric_parse_success_rate",
+                "mean_non_empty_answer_rate",
+                "mean_abstention_rate",
+                "mean_rouge_l",
+                "mean_embedding_similarity",
+            )
+            if key in all_summary
+        },
+        "reported_vs_recomputed_comparison": reported_metric_comparison,
+        "duplicate_retrieval_statistics": {
+            "mean_raw_retrieved_count": _mean([row.get("raw_retrieved_count") for row in per_question]),
+            "mean_unique_retrieved_document_count": _mean([row.get("unique_retrieved_document_count") for row in per_question]),
+            "mean_duplicate_document_count": _mean([row.get("duplicate_document_count") for row in per_question]),
+            "mean_duplicate_document_rate": _mean([row.get("duplicate_document_rate") for row in per_question]),
+        },
+        "leakage_audit_result": leakage_audit,
+        "suspicious_examples": {
+            "missing_generated_answer_examples": input_diagnostics.get("missing_generated_answer_examples", []),
+            "missing_retrieved_field_examples": input_diagnostics.get("missing_retrieved_field_examples", []),
+            "reported_metric_mismatch_examples": reported_metric_comparison.get("failed_examples", []),
+            "leakage_examples": leakage_audit.get("findings", [])[:20],
+        },
         "config_path": str(Path(config_path).resolve()),
         "config_hash": file_sha256(config_path),
         "input_result_paths": [str(path) for path in rag_paths],
         "input_result_hashes": {str(path): file_sha256(path) for path in rag_paths},
+        "questions_path": str(_resolve(Path(__file__).resolve().parents[2], cfg.inputs.questions_path)),
         "qa_path": str(qa_path),
         "qa_hash": file_sha256(qa_path),
         "gold_contexts_path": str(gold_path),
         "gold_contexts_hash": file_sha256(gold_path) if gold_path.exists() else None,
         "row_counts": {
             "pipeline1_results": len(rag_rows),
+            "questions_rows": len(questions_rows),
             "qa_rows": len(qa_rows),
             "gold_context_rows": len(gold_rows),
             "evaluated_rows": len(per_question),
@@ -867,7 +1711,10 @@ def _eval_manifest(
             "answer_coverage_rate",
             "abstention_rate",
             "answer_relevancy_score",
+            "rouge_l",
+            "embedding_similarity",
             "retrieval_time_ms",
+            "rerank_time_ms",
             "generation_time_ms",
             "total_latency_ms",
             "input_tokens",

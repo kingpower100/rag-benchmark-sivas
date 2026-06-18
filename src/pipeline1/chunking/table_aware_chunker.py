@@ -7,8 +7,8 @@ from tqdm.auto import tqdm
 from src.pipeline1.chunking.base import BaseChunker
 from src.pipeline1.schemas.chunk import ChunkRecord
 from src.pipeline1.schemas.document import DocumentRecord
-from src.pipeline1.metadata import canonical_chunk_metadata
-from src.pipeline1.utils.ids import make_configured_chunk_id
+from src.pipeline1.metadata import chunk_metadata
+from src.pipeline1.utils.ids import make_configured_chunk_id_for_document
 
 
 TABLE_AWARE_CHUNKER_VERSION = "table_aware_v3_oversized_guard"
@@ -67,25 +67,16 @@ class TableAwareChunker(BaseChunker):
                 continue
             contains_table = any(block.kind == "table" for block in group)
             oversized_table = any(block.kind == "table" and _word_count(block.text) > self.chunk_size for block in group)
-            chunk_id = make_configured_chunk_id(doc.document_id, chunk_index, text, self.strategy_config)
-            base_metadata = {
-                **dict(doc.metadata),
-                **canonical_chunk_metadata(doc.metadata, doc.original_context_id),
-                "doc_id": doc.document_id,
-                "original_context_id": doc.original_context_id,
-                "source_file": doc.metadata.get("source_file") or doc.metadata.get("file_name"),
-                "source_id": doc.metadata.get("source_id"),
-                "year": doc.metadata.get("year"),
-                "month": doc.metadata.get("month"),
-                "subset": doc.metadata.get("subset"),
-                "split": doc.metadata.get("split") or doc.metadata.get("source_split"),
-                "chunk_strategy": "table_aware",
-                "chunk_unit": "table_or_text_block",
-                "contains_table": contains_table,
-                "oversized_table": oversized_table,
-            }
             records.extend(
-                self._records_for_text(doc, text, group[0].start_line, group[-1].end_line, chunk_index, base_metadata)
+                self._records_for_text(
+                    doc,
+                    text,
+                    group[0].start_line,
+                    group[-1].end_line,
+                    chunk_index,
+                    contains_table,
+                    oversized_table,
+                )
             )
         return records
 
@@ -96,7 +87,8 @@ class TableAwareChunker(BaseChunker):
         start_line: int,
         end_line: int,
         chunk_index: int,
-        base_metadata: dict,
+        contains_table: bool,
+        oversized_table: bool,
     ) -> list[ChunkRecord]:
         pieces = [text]
         oversized = len(text) > self.max_chunk_chars or _word_count(text) > self.max_chunk_tokens
@@ -109,15 +101,29 @@ class TableAwareChunker(BaseChunker):
             if not piece.strip():
                 continue
             local_index = chunk_index if len(pieces) == 1 else int(f"{chunk_index}{piece_index:03d}")
-            chunk_id = make_configured_chunk_id(doc.document_id, local_index, piece, self.strategy_config)
-            metadata = {
-                **base_metadata,
-                "chunk_id": chunk_id,
-                "chunk_index": chunk_index,
-                "oversized_split": oversized and len(pieces) > 1,
-                "oversized_split_index": piece_index if len(pieces) > 1 else None,
-                "oversized_split_count": len(pieces) if len(pieces) > 1 else None,
-            }
+            chunk_id = make_configured_chunk_id_for_document(
+                doc.document_id,
+                local_index,
+                piece,
+                self.strategy_config,
+                doc.metadata,
+            )
+            metadata = chunk_metadata(
+                doc.metadata,
+                doc.document_id,
+                doc.original_context_id,
+                chunk_id,
+                "table_aware",
+                "table_or_text_block",
+                subset=doc.metadata.get("subset"),
+                split=doc.metadata.get("split") or doc.metadata.get("source_split"),
+                contains_table=contains_table,
+                oversized_table=oversized_table,
+                chunk_index=chunk_index,
+                oversized_split=oversized and len(pieces) > 1,
+                oversized_split_index=piece_index if len(pieces) > 1 else None,
+                oversized_split_count=len(pieces) if len(pieces) > 1 else None,
+            )
             records.append(
                 ChunkRecord(
                     chunk_id=chunk_id,

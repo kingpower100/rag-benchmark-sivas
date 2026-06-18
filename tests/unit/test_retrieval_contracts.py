@@ -146,14 +146,14 @@ def test_dedupe_none_preserves_duplicates():
 
 def test_pipeline2_retrieval_metrics_accept_adapter_outputs():
     results = [
-        _result("chunk-1", "treasury_bulletin_1944_01.txt", "treasury_bulletin_1944_01.txt", 1.0),
-        _result("chunk-2", "treasury_bulletin_1945_01.txt", "treasury_bulletin_1945_01.txt", 0.5),
+        _result("chunk-1", "doc-key-1", "doc-key-1", 1.0),
+        _result("chunk-2", "doc-key-2", "doc-key-2", 0.5),
     ]
     items = search_results_to_retrieval_items(results)
 
     metrics = compute_retrieval_metrics_for_ks(
         [item.original_context_id for item in items],
-        ["treasury_bulletin_1944_01.txt"],
+        ["doc-key-1"],
         [1, 2],
     )
 

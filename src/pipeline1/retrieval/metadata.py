@@ -142,9 +142,9 @@ def metadata_boost_components(
     company = normalize_text(metadata.get("company_name"))
     symbol = normalize_text(metadata.get("company_symbol"))
     file_name = normalize_text(metadata.get("file_name"))
-    year = safe_int(metadata.get("treasury_year")) or safe_int(metadata.get("report_year"))
-    month = safe_int(metadata.get("treasury_month"))
-    year_month = str(metadata.get("year_month") or metadata.get("treasury_year_month") or "")
+    year = safe_int(metadata.get("report_year"))
+    month = safe_int(metadata.get("month"))
+    year_month = str(metadata.get("year_month") or "")
     year_signals = query.years | query.fiscal_years
     if company and company in query.company_names:
         components["company"] = company_weight
@@ -165,9 +165,9 @@ def metadata_boost_components(
 
 def metadata_matches(metadata: dict[str, Any], query: QueryMetadata) -> dict[str, bool | None]:
     company = normalize_text(metadata.get("company_name"))
-    year = safe_int(metadata.get("treasury_year")) or safe_int(metadata.get("report_year"))
-    month = safe_int(metadata.get("treasury_month"))
-    year_month = metadata.get("year_month") or metadata.get("treasury_year_month")
+    year = safe_int(metadata.get("report_year"))
+    month = safe_int(metadata.get("month"))
+    year_month = metadata.get("year_month")
     year_signals = query.years | query.fiscal_years
     company_match = None if not query.company_names else bool(company and company in query.company_names)
     year_match = None if not year_signals else bool(year is not None and year in year_signals)
@@ -244,8 +244,8 @@ def _item_matches_filter(
     company = normalize_text(metadata.get("company_name"))
     symbol = normalize_text(metadata.get("company_symbol"))
     dataset = normalize_text(metadata.get("source_dataset"))
-    year = safe_int(metadata.get("treasury_year")) or safe_int(metadata.get("report_year"))
-    year_month = metadata.get("treasury_year_month")
+    year = safe_int(metadata.get("report_year"))
+    year_month = metadata.get("year_month")
     year_signals = query.years | query.fiscal_years
     if strict_year_month_match and query.year_months:
         return bool(year_month and year_month in query.year_months)

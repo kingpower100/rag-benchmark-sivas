@@ -4,8 +4,8 @@ import re
 from typing import Any
 
 
-TREASURY_METADATA_SCHEMA_VERSION = "treasury_v2_filename_dates"
-_TREASURY_FILENAME_RE = re.compile(r"^(treasury_bulletin_(?P<year>\d{4})(?:_(?P<month>\d{2}))?)\.txt$", re.IGNORECASE)
+SIVAS_METADATA_SCHEMA_VERSION = "sivas_v1"
+METADATA_SCHEMA_VERSION = SIVAS_METADATA_SCHEMA_VERSION
 
 CANONICAL_METADATA_FIELDS = (
     "company_name",
@@ -19,50 +19,18 @@ CANONICAL_METADATA_FIELDS = (
     "source_dataset",
     "original_context_id",
     "year_month",
-    "treasury_year",
-    "treasury_month",
-    "treasury_year_month",
 )
 
-
-def parse_treasury_filename(filename: str) -> dict[str, Any]:
-    """Extract stable Treasury Bulletin metadata from a source filename."""
-    name = str(filename)
-    stem = name.rsplit(".", 1)[0] if "." in name else name
-    metadata: dict[str, Any] = {
-        "source_file": name,
-        "file_name": name,
-        "source_id": stem,
-        "year": None,
-        "month": None,
-        "report_year": None,
-        "year_month": None,
-        "treasury_year": None,
-        "treasury_month": None,
-        "treasury_year_month": None,
-        "source_dataset": "officeqa",
-        "metadata_schema_version": TREASURY_METADATA_SCHEMA_VERSION,
-    }
-    match = _TREASURY_FILENAME_RE.fullmatch(name)
-    if not match:
-        return metadata
-    year = int(match.group("year"))
-    month_text = match.group("month")
-    month = int(month_text) if month_text is not None else None
-    year_month = f"{year}_{month:02d}" if month is not None else None
-    metadata.update(
-        {
-            "source_id": match.group(1),
-            "year": year,
-            "month": f"{month:02d}" if month is not None else None,
-            "report_year": year,
-            "year_month": year_month,
-            "treasury_year": year,
-            "treasury_month": month,
-            "treasury_year_month": year_month,
-        }
-    )
-    return metadata
+SIVAS_METADATA_FIELDS = (
+    "doc_id",
+    "doc_key",
+    "doc_name",
+    "kategorie",
+    "wissensart",
+    "titel",
+    "quellpfad",
+    "sprache",
+)
 
 
 def normalize_text(value: Any) -> str | None:
@@ -99,10 +67,7 @@ def normalize_metadata(raw: dict[str, Any] | None, original_context_id: str | No
     for field in ("company_name", "company_symbol", "report_period", "sector", "industry", "file_name", "source_dataset"):
         normalized[field] = normalize_optional_string(source.get(field))
     normalized["report_year"] = safe_int(source.get("report_year"))
-    normalized["year_month"] = normalize_optional_string(source.get("year_month", source.get("treasury_year_month")))
-    normalized["treasury_year"] = safe_int(source.get("treasury_year"))
-    normalized["treasury_month"] = safe_int(source.get("treasury_month"))
-    normalized["treasury_year_month"] = normalize_optional_string(source.get("treasury_year_month"))
+    normalized["year_month"] = normalize_optional_string(source.get("year_month"))
     normalized["page_number"] = safe_int(source.get("page_number"))
     normalized["original_context_id"] = normalize_optional_string(
         source.get("original_context_id", original_context_id)
@@ -113,3 +78,37 @@ def normalize_metadata(raw: dict[str, Any] | None, original_context_id: str | No
 def canonical_chunk_metadata(raw: dict[str, Any] | None, original_context_id: str | None = None) -> dict[str, Any]:
     normalized = normalize_metadata(raw, original_context_id)
     return {field: normalized.get(field) for field in CANONICAL_METADATA_FIELDS}
+
+
+def chunk_metadata(
+    doc_metadata: dict[str, Any] | None,
+    document_id: str,
+    original_context_id: str | None,
+    chunk_id: str,
+    chunk_strategy: str,
+    chunk_unit: str,
+    **extra: Any,
+) -> dict[str, Any]:
+    metadata = {
+        **dict(doc_metadata or {}),
+        **canonical_chunk_metadata(doc_metadata, original_context_id),
+    }
+    for field in SIVAS_METADATA_FIELDS:
+        if field in (doc_metadata or {}):
+            metadata[field] = (doc_metadata or {}).get(field)
+    metadata.update(
+        {
+            "doc_id": (doc_metadata or {}).get("doc_id", document_id),
+            "doc_key": (doc_metadata or {}).get("doc_key"),
+            "original_context_id": original_context_id,
+            "source_file": (doc_metadata or {}).get("source_file") or (doc_metadata or {}).get("file_name"),
+            "source_id": (doc_metadata or {}).get("source_id"),
+            "year": (doc_metadata or {}).get("year"),
+            "month": (doc_metadata or {}).get("month"),
+            "chunk_id": chunk_id,
+            "chunk_unit": chunk_unit,
+            "chunk_strategy": chunk_strategy,
+        }
+    )
+    metadata.update(extra)
+    return metadata

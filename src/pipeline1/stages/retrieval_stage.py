@@ -12,6 +12,7 @@ from src.pipeline1.retrieval.factory import build_retriever
 from src.pipeline1.schemas.config_schema import PipelineConfig
 from src.pipeline1.schemas.query import QueryRecord
 from src.pipeline1.stages.base import BaseStage, StageInput, StageOutput
+from src.pipeline1.utils.ids import stable_retrieved_document_id
 
 
 @dataclass(frozen=True)
@@ -126,9 +127,11 @@ class RetrievalStage(BaseStage):
                         "rerank_top_k": rerank_top_k,
                         "fetch_k": self.cfg.retrieval.fetch_k,
                     },
-                )
+            )
+            if hasattr(retriever, "set_active_category"):
+                retriever.set_active_category(query.detected_category)
             raw_retrieved, retrieved, retrieval_warnings, reranker_used = retrieve_top_k_unique_contexts(
-                query.question,
+                query.retrieval_question,
                 retriever,
                 reranker,
                 rerank_top_k,
@@ -146,6 +149,19 @@ class RetrievalStage(BaseStage):
                 {
                     "final_top_k": final_top_k,
                     "rerank_top_k": rerank_top_k,
+                    "cleaned_question": query.cleaned_question,
+                    "detected_category": query.detected_category,
+                    "category_confidence": query.category_confidence,
+                    "retrieved_chunks": [item.chunk_id for item in retrieved],
+                    "retrieved_documents": [
+                        stable_retrieved_document_id(item.metadata, item.original_context_id)
+                        for item in retrieved
+                    ],
+                    "retrieval_scores": [item.score for item in retrieved],
+                    "retrieved_categories": [
+                        item.metadata.get(self.cfg.retrieval.category_field)
+                        for item in retrieved
+                    ],
                     "reranked_candidate_ids": [item.chunk_id for item in reranked_candidates],
                     "final_candidate_ids": [item.chunk_id for item in retrieved],
                 }

@@ -1,19 +1,26 @@
-FROM python:3.11-slim
+FROM nvidia/cuda:12.1.1-cudnn8-runtime-ubuntu22.04
 
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
+ENV HF_HOME=/models/huggingface
+ENV SENTENCE_TRANSFORMERS_HOME=/models/sentence-transformers
+ENV TRANSFORMERS_CACHE=/models/huggingface
+ENV PIP_NO_CACHE_DIR=1
 
 WORKDIR /app
 
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends build-essential \
+    && apt-get install -y --no-install-recommends python3.11 python3.11-venv python3-pip build-essential curl ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
-COPY pyproject.toml README.md ./
+RUN mkdir -p /models/huggingface /models/sentence-transformers /app/logs
+
+COPY pyproject.toml README.md requirements-lock.txt ./
 COPY src ./src
 COPY configs ./configs
 
-RUN pip install --no-cache-dir --upgrade pip \
-    && pip install --no-cache-dir -e .
+RUN python3.11 -m pip install --upgrade pip \
+    && python3.11 -m pip install --requirement requirements-lock.txt \
+    && python3.11 -m pip install --no-deps -e .
 
-CMD ["python", "-m", "src.pipeline1.main", "--config", "configs/pipeline1/experiments/exp_001_fixed512_bge_qwen25_7b.yaml"]
+CMD ["python3.11", "-m", "src.pipeline1.main", "--config", "configs/pipeline1/experiments/11_sivas_fixed512_faiss_dense_qwen25.yaml"]

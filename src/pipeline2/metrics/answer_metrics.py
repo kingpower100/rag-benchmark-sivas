@@ -31,44 +31,35 @@ DEFAULT_ABSTENTION_PATTERNS = (
     "can't determine",
     "insufficient information",
 )
-_TOKEN_RE = re.compile(r"[a-z0-9]+")
+_TOKEN_RE = re.compile(r"[a-zA-ZäöüßÄÖÜ0-9]+", re.UNICODE)
 _RELEVANCY_STOPWORDS = {
-    "a",
-    "an",
-    "and",
-    "are",
-    "as",
-    "at",
-    "be",
-    "by",
-    "did",
-    "do",
-    "does",
-    "for",
-    "from",
-    "how",
-    "in",
-    "is",
-    "of",
-    "on",
-    "the",
-    "to",
-    "was",
-    "were",
-    "what",
-    "when",
-    "where",
-    "which",
-    "who",
-    "why",
-    "with",
+    # English
+    "a", "an", "and", "are", "as", "at", "be", "by", "did", "do", "does",
+    "for", "from", "how", "in", "is", "of", "on", "the", "to", "was",
+    "were", "what", "when", "where", "which", "who", "why", "with",
+    # German
+    "und", "oder", "der", "die", "das", "dem", "den", "des", "ein", "eine",
+    "einen", "einem", "eines", "ist", "sind", "war", "wurden", "wird",
+    "werden", "hat", "haben", "hatte", "hatten", "wird", "wurde", "auch",
+    "als", "auf", "mit", "für", "von", "bei", "aus", "nach", "zu", "in",
+    "im", "an", "am", "es", "er", "sie", "wir", "ihr", "wie", "was",
+    "wenn", "ob", "da", "hier", "so", "nicht", "noch", "aber", "nur",
+    "kann", "muss", "soll", "über",
 }
 
 
 def resolve_ground_truth_answer(row: dict[str, Any], qa_by_id: dict[str, dict[str, Any]]) -> str:
     qid = str(row.get("question_id", ""))
     qa = qa_by_id.get(qid, {})
-    for key in ("ground_truth_answer", "answer", "gold_answer", "expected_answer", "program_answer", "original_answer"):
+    for key in (
+        "ground_truth_answer",
+        "answer",
+        "gold_answer",
+        "expected_answer",
+        "program_answer",
+        "original_answer",
+        "referenzantwort",
+    ):
         if key in qa and qa[key] is not None:
             return str(qa[key])
     return ""
@@ -79,15 +70,18 @@ def compute_answer_metrics(
     ground_truth_answer: str,
     question: str = "",
     abstention_patterns: Iterable[str] | None = None,
+    numeric_tolerance_abs: float = 0.0001,
+    numeric_tolerance_rel: float = 0.001,
 ) -> dict[str, Any]:
     generated = generated_answer or ""
     truth = ground_truth_answer or ""
-    match = _compare_answers(generated, truth)
+    match = _compare_answers(generated, truth, numeric_tolerance_abs, numeric_tolerance_rel)
     non_empty = 1.0 if generated.strip() else 0.0
     abstained = 1.0 if is_abstention(generated, abstention_patterns) else 0.0
     parse_success = 1.0 if _best_value(generated) is not None else 0.0
     literal_exact_match = 1.0 if _literal_exact_text(generated) == _literal_exact_text(truth) and truth.strip() else 0.0
     canonical_exact_match = 1.0 if _normalized_exact_text(generated) == _normalized_exact_text(truth) and truth.strip() else 0.0
+    rouge_l = compute_rouge_l(generated, truth)
     return {
         "numeric_accuracy": match["numeric_accuracy"],
         "strict_numeric_accuracy": match["strict_numeric_accuracy"],
@@ -109,11 +103,22 @@ def compute_answer_metrics(
         "answer_coverage_rate": non_empty,  # Backward-compatible alias; canonical name is non_empty_answer_rate.
         "abstention_rate": abstained,
         "answer_relevancy_score": answer_relevancy_score(question, generated),
+        "rouge_l": rouge_l,
     }
 
 
-def compute_numeric_accuracy(generated_answer: str, ground_truth_answer: str) -> float | None:
-    return _compare_answers(generated_answer, ground_truth_answer)["numeric_accuracy"]
+def compute_numeric_accuracy(
+    generated_answer: str,
+    ground_truth_answer: str,
+    numeric_tolerance_abs: float = 0.0001,
+    numeric_tolerance_rel: float = 0.001,
+) -> float | None:
+    return _compare_answers(
+        generated_answer,
+        ground_truth_answer,
+        numeric_tolerance_abs,
+        numeric_tolerance_rel,
+    )["numeric_accuracy"]
 
 
 def compute_number_match(generated_answer: str, ground_truth_answer: str) -> float | None:
@@ -136,6 +141,19 @@ def answer_relevancy_score(question: str, generated_answer: str) -> float:
     if not question_tokens or not answer_tokens:
         return 0.0
     return len(question_tokens & answer_tokens) / len(answer_tokens)
+
+
+def compute_rouge_l(generated_answer: str, ground_truth_answer: str) -> float:
+    prediction_tokens = _rouge_tokens(generated_answer)
+    reference_tokens = _rouge_tokens(ground_truth_answer)
+    if not prediction_tokens or not reference_tokens:
+        return 0.0
+    lcs = _lcs_length(prediction_tokens, reference_tokens)
+    if lcs == 0:
+        return 0.0
+    precision = lcs / len(prediction_tokens)
+    recall = lcs / len(reference_tokens)
+    return (2 * precision * recall) / (precision + recall)
 
 
 def _extract_numbers(text: str) -> list[Decimal]:
@@ -164,14 +182,22 @@ def _extract_number_records(text: str) -> list[dict[str, Any]]:
     return values
 
 
-def _close(left: Decimal, right: Decimal) -> bool:
+def _close(left: Decimal, right: Decimal, numeric_tolerance_abs: float, numeric_tolerance_rel: float) -> bool:
     if left == right:
         return True
-    tolerance = max(abs(right) * Decimal("0.001"), Decimal("0.0001"))
+    tolerance = max(
+        abs(right) * Decimal(str(numeric_tolerance_rel)),
+        Decimal(str(numeric_tolerance_abs)),
+    )
     return abs(left - right) <= tolerance
 
 
-def _compare_answers(generated_answer: str, ground_truth_answer: str) -> dict[str, Any]:
+def _compare_answers(
+    generated_answer: str,
+    ground_truth_answer: str,
+    numeric_tolerance_abs: float = 0.0001,
+    numeric_tolerance_rel: float = 0.001,
+) -> dict[str, Any]:
     truth_value = _best_value(ground_truth_answer)
     generated_value = _best_value(generated_answer)
     normalized_truth = _normalized_text(ground_truth_answer)
@@ -205,9 +231,9 @@ def _compare_answers(generated_answer: str, ground_truth_answer: str) -> dict[st
     absolute_error = abs(generated_value - truth_value)
     relative_error = absolute_error / abs(truth_value) if truth_value != 0 else None
     strict_matched = generated_value == truth_value
-    tolerant_matched = _close(generated_value, truth_value)
+    tolerant_matched = _close(generated_value, truth_value, numeric_tolerance_abs, numeric_tolerance_rel)
     return {
-        "numeric_accuracy": 1.0 if strict_matched else 0.0,
+        "numeric_accuracy": 1.0 if tolerant_matched else 0.0,
         "strict_numeric_accuracy": 1.0 if strict_matched else 0.0,
         "tolerant_numeric_accuracy": 1.0 if tolerant_matched else 0.0,
         "normalized_generated_answer": normalized_generated,
@@ -216,7 +242,7 @@ def _compare_answers(generated_answer: str, ground_truth_answer: str) -> dict[st
         "gold_number": truth_value,
         "absolute_error": absolute_error,
         "relative_error": relative_error,
-        "answer_match_status": "match" if strict_matched else "mismatch",
+        "answer_match_status": "match" if tolerant_matched else "mismatch",
     }
 
 
@@ -268,3 +294,20 @@ def _decimal_to_float(value: Decimal | None) -> float | None:
 
 def _content_tokens(text: str) -> set[str]:
     return {token for token in _TOKEN_RE.findall((text or "").lower()) if token not in _RELEVANCY_STOPWORDS}
+
+
+def _rouge_tokens(text: str) -> list[str]:
+    return _TOKEN_RE.findall((text or "").lower())
+
+
+def _lcs_length(left: list[str], right: list[str]) -> int:
+    previous = [0] * (len(right) + 1)
+    for left_token in left:
+        current = [0]
+        for index, right_token in enumerate(right, start=1):
+            if left_token == right_token:
+                current.append(previous[index - 1] + 1)
+            else:
+                current.append(max(previous[index], current[-1]))
+        previous = current
+    return previous[-1]

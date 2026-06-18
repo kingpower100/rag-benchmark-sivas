@@ -4,7 +4,7 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from src.pipeline1.io.jsonl_reader import JsonlReader
-from src.pipeline1.metadata import TREASURY_METADATA_SCHEMA_VERSION
+from src.pipeline1.metadata import METADATA_SCHEMA_VERSION
 from src.pipeline1.schemas.config_schema import PipelineConfig
 from src.pipeline1.schemas.document import DocumentRecord
 from src.pipeline1.stages.base import BaseStage, StageInput, StageOutput
@@ -47,18 +47,19 @@ class DocumentStage(BaseStage):
                 "file_glob": self.cfg.data.documents_file_glob,
                 "recursive": self.cfg.data.documents_recursive,
                 "txt_files_loaded": len(docs),
-                "metadata_schema_version": TREASURY_METADATA_SCHEMA_VERSION,
+                "metadata_schema_version": METADATA_SCHEMA_VERSION,
             }
         docs = JsonlReader.read_documents(
             str(self.docs_path),
-            require_context_id=True,
+            require_context_id=self.cfg.data.dataset_schema != "sivas",
             text_field=self.cfg.data.document_text_field,
             allow_text_fallback=self.cfg.data.allow_document_text_fallback,
+            dataset_schema=self.cfg.data.dataset_schema,
         )
         return docs, {
             "source_type": "jsonl",
             "path": str(self.docs_path),
             "file_glob": None,
             "txt_files_loaded": None,
-            "metadata_schema_version": TREASURY_METADATA_SCHEMA_VERSION,
+            "metadata_schema_version": METADATA_SCHEMA_VERSION,
         }

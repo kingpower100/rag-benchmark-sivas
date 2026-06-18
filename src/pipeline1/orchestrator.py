@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import os
+import platform
 import shutil
 import time
 import subprocess
@@ -19,16 +20,18 @@ from src.pipeline1.indexing.factory import build_index
 from src.pipeline1.io.jsonl_reader import JsonlReader, list_txt_files
 from src.pipeline1.io.manifest_writer import write_manifest
 from src.pipeline1.io.result_writer import ResultWriter
-from src.pipeline1.metadata import TREASURY_METADATA_SCHEMA_VERSION
+from src.pipeline1.metadata import METADATA_SCHEMA_VERSION
 from src.pipeline1.observability.events import EventType, EventWriter
 from src.pipeline1.preflight import run_preflight_checks
 from src.pipeline1.schemas.chunk import ChunkRecord
 from src.pipeline1.schemas.config_schema import PipelineConfig
+from src.pipeline1.schemas.output_record import OutputRecord
 from src.pipeline1.stages.base import StageInput
 from src.pipeline1.stages.chunking_stage import ChunkingStage
 from src.pipeline1.stages.document_stage import DocumentStage
 from src.pipeline1.stages.embedding_stage import EmbeddingStage
 from src.pipeline1.stages.generation_stage import GenerationStage
+from src.pipeline1.stages.orchestration_stage import OrchestrationStage
 from src.pipeline1.stages.retrieval_stage import (
     RetrievalStage,
     dedupe_retrieval_by_chunk_id,
@@ -54,7 +57,7 @@ def run_pipeline(config_path: str) -> Path:
 
     _prepare_run_dir(run_dir, cfg.runtime.resume, cfg.runtime.overwrite)
     run_dir.mkdir(parents=True, exist_ok=True)
-    logger = build_logger(run_dir / "logs.txt", cfg.runtime.log_level)
+    logger = build_logger(run_dir / "logs" / "pipeline1.log", cfg.runtime.log_level, extra_log_paths=[run_dir / "logs.txt"])
     event_writer = EventWriter(run_dir / "events.jsonl", cfg.experiment.experiment_id, run_id=cfg.experiment.experiment_id)
     event_writer.write(
         stage="pipeline",
@@ -153,11 +156,12 @@ def run_pipeline(config_path: str) -> Path:
     embeddings_path = embedding_output.embeddings_path
     cache_validation["embeddings"] = embedding_output.cache_status
     _print_embedding_runtime_state(cfg, embedder)
+    embedding_duration_s = time.perf_counter() - embedding_start
     event_writer.write(
         stage="embedding",
         event_type=EventType.EMBEDDING_END,
         message="Embedding stage completed.",
-        duration_ms=(time.perf_counter() - embedding_start) * 1000,
+        duration_ms=embedding_duration_s * 1000,
         metrics={
             "embedding_rows": int(embeddings.shape[0]) if len(embeddings.shape) > 0 else 0,
             "embedding_dim": int(embeddings.shape[1]) if len(embeddings.shape) > 1 else None,
@@ -240,6 +244,7 @@ def run_pipeline(config_path: str) -> Path:
             cfg.data.question_field,
             logger,
             cfg.data.allow_unsafe_query_fields,
+            dataset_schema=cfg.data.dataset_schema,
         )
     )
     _log_run_info(logger, cfg, docs_count=len(docs), chunk_count=len(chunks), question_count=len(queries), questions_path=questions_path)
@@ -250,33 +255,65 @@ def run_pipeline(config_path: str) -> Path:
     existing_ids = run_writer_output.existing_question_ids
     pending_queries = [query for query in queries if query.question_id not in existing_ids]
 
+    print("[8/11] Processing questions with incremental checkpointing")
+    orchestration_stage = OrchestrationStage(
+        cfg,
+        chunks,
+        event_writer=event_writer,
+        logger=logger,
+        generator_factory=build_generator,
+    )
+
     attempted = 0
     written = 0
+    retrieval_total_ms = 0.0
+    generation_total_ms = 0.0
     try:
-        print("[8/10] Retrieving contexts")
-        retrieval_output = RetrievalStage(
-            cfg,
-            embedder,
-            index,
-            chunks,
-            event_writer=event_writer,
-            logger=logger,
-        ).run(StageInput({"queries": pending_queries}))
-        retriever = retrieval_output.retriever
-        final_top_k = retrieval_output.final_top_k
-        attempted = retrieval_output.attempted
-        retrieval_rows = [row.as_generation_tuple() for row in retrieval_output.retrieval_rows]
+        for row_index, query in enumerate(pending_queries, start=1):
+            logger.info(
+                "checkpoint_row_start question_id=%s row=%s/%s existing_completed=%s",
+                query.question_id,
+                row_index,
+                len(pending_queries),
+                len(existing_ids),
+            )
+            attempted += 1
+            try:
+                orchestration_output = orchestration_stage.run(StageInput({"queries": [query]}))
+                orchestrated_query = orchestration_output.queries[0]
 
-        print("[9/10] Generating answers")
-        generation_output = GenerationStage(
-            cfg,
-            retriever,
-            event_writer=event_writer,
-            logger=logger,
-            generator_factory=build_generator,
-        ).run(StageInput({"retrieval_rows": retrieval_output.retrieval_rows, "final_top_k": final_top_k}))
-        for generation_row in generation_output.generation_rows:
-            record = generation_row.output_record
+                print(f"[9/11] Retrieving contexts for {row_index}/{len(pending_queries)}")
+                retrieval_output = RetrievalStage(
+                    cfg,
+                    embedder,
+                    index,
+                    chunks,
+                    event_writer=event_writer,
+                    logger=logger,
+                ).run(StageInput({"queries": [orchestrated_query]}))
+                retriever = retrieval_output.retriever
+                final_top_k = retrieval_output.final_top_k
+
+                print(f"[10/11] Generating answer for {row_index}/{len(pending_queries)}")
+                generation_output = GenerationStage(
+                    cfg,
+                    retriever,
+                    event_writer=event_writer,
+                    logger=logger,
+                    generator_factory=build_generator,
+                ).run(StageInput({"retrieval_rows": retrieval_output.retrieval_rows, "final_top_k": final_top_k}))
+                generation_row = generation_output.generation_rows[0]
+                record = generation_row.output_record
+            except Exception as ex:
+                logger.exception("checkpoint_row_failed question_id=%s row=%s/%s", query.question_id, row_index, len(pending_queries))
+                event_writer.write(
+                    stage="pipeline",
+                    event_type=EventType.PIPELINE_ERROR,
+                    message="Question failed; writing fallback error row and continuing.",
+                    question_id=query.question_id,
+                    diagnostics={"error": str(ex), "row": row_index, "total_rows": len(pending_queries)},
+                )
+                record = _fallback_error_record(cfg, query, str(ex))
             output_write_start = time.perf_counter()
             event_writer.write(
                 stage="output",
@@ -285,6 +322,7 @@ def run_pipeline(config_path: str) -> Path:
                 question_id=record.question_id,
             )
             run_writer_stage.write(record)
+            existing_ids.add(record.question_id)
             event_writer.write(
                 stage="output",
                 event_type=EventType.OUTPUT_WRITE_END,
@@ -294,6 +332,8 @@ def run_pipeline(config_path: str) -> Path:
                 metrics={"results_jsonl": str(writer.jsonl_path), "save_csv": cfg.runtime.save_csv},
             )
             written += 1
+            retrieval_total_ms += record.retrieval_time_ms
+            generation_total_ms += record.generation_time_ms
             logger.info(
                 "row_written question_id=%s answer_chars=%s input_tokens=%s output_tokens=%s total_latency_ms=%.2f error=%s",
                 record.question_id,
@@ -304,7 +344,7 @@ def run_pipeline(config_path: str) -> Path:
                 record.error,
             )
 
-        print("[10/10] Writing outputs")
+        print("[11/11] Writing outputs")
     finally:
         run_writer_stage.close()
 
@@ -312,13 +352,33 @@ def run_pipeline(config_path: str) -> Path:
     resolved_config["generation"]["base_url"] = os.getenv("OLLAMA_BASE_URL", cfg.generation.base_url)
     end_time = time.time()
     output_counts = RunWriterStage.output_row_counts(run_dir)
+    performance_metrics = _performance_metrics(
+        run_dir=run_dir,
+        chunk_count=len(chunks),
+        embedding_duration_s=max(embedding_duration_s, 1e-9),
+        attempted=attempted,
+        start_time=start_time,
+        retrieval_total_ms=retrieval_total_ms,
+        generation_total_ms=generation_total_ms,
+    )
+    event_writer.write(
+        stage="pipeline",
+        event_type=EventType.PIPELINE_END,
+        message="Pipeline 1 run completed.",
+        duration_ms=(end_time - start_time) * 1000,
+        metrics={"attempted": attempted, "written": written, **output_counts, **performance_metrics},
+    )
+    event_writer.close()
+    output_artifacts = _pipeline1_output_artifacts(run_dir)
     write_manifest(
         run_dir,
         {
+            "run_id": cfg.experiment.experiment_id,
             "config_path": str(Path(config_path).resolve()),
             "config_hash": file_sha256(config_path),
             "config": cfg.model_dump(),
             "resolved_config": resolved_config,
+            "machine": _machine_info(cfg),
             "data_hashes": {
                 "documents_path": str(docs_path),
                 "documents_sha256": documents_fingerprint if cfg.data.documents_source_type == "jsonl" else None,
@@ -340,25 +400,37 @@ def run_pipeline(config_path: str) -> Path:
                 "index": str(index_path),
             },
             "chunker_versions": chunker_versions,
-            "metadata_schema_version": TREASURY_METADATA_SCHEMA_VERSION,
+            "metadata_schema_version": METADATA_SCHEMA_VERSION,
             "chunk_units": _chunk_unit_counts(chunks),
             "chunk_diagnostics": chunk_diagnostics,
             "output_row_counts": output_counts,
-            "run_stats": {"n_documents": len(docs), "n_queries": len(queries), "attempted": attempted, "written": written},
+            "models": {
+                "embedding_model": cfg.embedding.model_name,
+                "embedding_provider": cfg.embedding.provider,
+                "embedding_device": cfg.embedding.device,
+                "retriever_type": cfg.retrieval.retriever_type,
+                "index_type": cfg.index.type,
+                "reranker_enabled": cfg.reranker.enabled,
+                "reranker_model": cfg.reranker.model_name if cfg.reranker.enabled else None,
+                "generator_provider": cfg.generation.provider,
+                "generator_model": cfg.generation.model_name,
+            },
+            "run_stats": {
+                "n_documents": len(docs),
+                "n_chunks": len(chunks),
+                "n_queries": len(queries),
+                "attempted": attempted,
+                "written": written,
+                "failed_questions": max(0, attempted - written),
+                **performance_metrics,
+            },
+            "artifacts": output_artifacts,
             "pipeline_version": "0.1.0",
             "git_commit": _git_commit(project_root),
             "start_timestamp_utc": _iso_utc(start_time),
             "end_timestamp_utc": _iso_utc(end_time),
         },
     )
-    event_writer.write(
-        stage="pipeline",
-        event_type=EventType.PIPELINE_END,
-        message="Pipeline 1 run completed.",
-        duration_ms=(end_time - start_time) * 1000,
-        metrics={"attempted": attempted, "written": written, **output_counts},
-    )
-    event_writer.close()
     return run_dir
 
 
@@ -371,7 +443,7 @@ def _load_documents(cfg: PipelineConfig, docs_path: Path) -> tuple[list, dict]:
             "file_glob": cfg.data.documents_file_glob,
             "recursive": cfg.data.documents_recursive,
             "txt_files_loaded": len(docs),
-            "metadata_schema_version": TREASURY_METADATA_SCHEMA_VERSION,
+            "metadata_schema_version": METADATA_SCHEMA_VERSION,
         }
     docs = JsonlReader.read_documents(
         str(docs_path),
@@ -384,7 +456,7 @@ def _load_documents(cfg: PipelineConfig, docs_path: Path) -> tuple[list, dict]:
         "path": str(docs_path),
         "file_glob": None,
         "txt_files_loaded": None,
-        "metadata_schema_version": TREASURY_METADATA_SCHEMA_VERSION,
+            "metadata_schema_version": METADATA_SCHEMA_VERSION,
     }
 
 
@@ -513,11 +585,21 @@ def _print_cuda_startup_state(cfg: PipelineConfig) -> None:
         cuda_available = torch.cuda.is_available()
         cuda_count = torch.cuda.device_count()
         gpu_name = torch.cuda.get_device_name(0) if cuda_available and cuda_count > 0 else "<none>"
+        cuda_version = torch.version.cuda
+        pytorch_version = torch.__version__
+        vram_gb = (
+            round(torch.cuda.get_device_properties(0).total_memory / (1024**3), 2)
+            if cuda_available and cuda_count > 0
+            else 0
+        )
         current_device = f"cuda:{torch.cuda.current_device()}" if cuda_available and cuda_count > 0 else "cpu"
     except Exception as ex:
         cuda_available = False
         cuda_count = 0
         gpu_name = f"<unavailable: {ex}>"
+        cuda_version = None
+        pytorch_version = None
+        vram_gb = 0
         current_device = "cpu"
 
     print(
@@ -525,6 +607,9 @@ def _print_cuda_startup_state(cfg: PipelineConfig) -> None:
         f"torch_cuda_available={cuda_available} "
         f"cuda_device_count={cuda_count} "
         f"gpu_name={gpu_name} "
+        f"cuda_version={cuda_version} "
+        f"vram_gb={vram_gb} "
+        f"pytorch_version={pytorch_version} "
         f"current_torch_device={current_device} "
         f"embedding_requested_device={cfg.embedding.device} "
         f"embedding_require_cuda={cfg.embedding.require_cuda} "
@@ -658,6 +743,7 @@ def _run_compatibility_payload(
         "documents_fingerprint": documents_fingerprint,
         "cache_keys": {"chunks": chunks_key, "embeddings": embeddings_key, "index": index_key},
         "generation": cfg.generation.model_dump(),
+        "orchestration": cfg.orchestration.model_dump(),
         "prompt_template_version": PROMPT_TEMPLATE_VERSION,
     }
 
@@ -687,7 +773,7 @@ def _validate_resume_compatible(run_dir: Path, current: dict) -> None:
         "prompt_template_version": manifest.get("config", {}).get("prompt_template_version"),
     }
     mismatches = []
-    for key in ("experiment_id", "config_hash", "documents_fingerprint", "cache_keys", "generation", "prompt_template_version"):
+    for key in ("experiment_id", "config_hash", "documents_fingerprint", "cache_keys", "generation", "orchestration", "prompt_template_version"):
         if previous.get(key) != current.get(key):
             mismatches.append(key)
     if mismatches:
@@ -762,6 +848,152 @@ def _git_commit(project_root: Path) -> str | None:
     except Exception:
         return None
     return result.stdout.strip() or None
+
+
+def _machine_info(cfg: PipelineConfig) -> dict:
+    info = {
+        "hostname": platform.node(),
+        "platform": platform.platform(),
+        "python_version": platform.python_version(),
+        "processor": platform.processor(),
+        "embedding_requested_device": cfg.embedding.device,
+        "reranker_requested_device": cfg.reranker.device,
+    }
+    try:
+        import torch
+
+        cuda_available = torch.cuda.is_available()
+        info.update(
+            {
+                "torch_cuda_available": cuda_available,
+                "cuda_device_count": torch.cuda.device_count(),
+                "current_torch_device": f"cuda:{torch.cuda.current_device()}" if cuda_available else "cpu",
+                "gpu_name": torch.cuda.get_device_name(0) if cuda_available and torch.cuda.device_count() > 0 else None,
+                "cuda_version": torch.version.cuda,
+                "pytorch_version": torch.__version__,
+                "gpu_vram_gb": (
+                    round(torch.cuda.get_device_properties(0).total_memory / (1024**3), 2)
+                    if cuda_available and torch.cuda.device_count() > 0
+                    else 0
+                ),
+                "gpu_peak_vram_gb": (
+                    round(torch.cuda.max_memory_allocated(0) / (1024**3), 2)
+                    if cuda_available and torch.cuda.device_count() > 0
+                    else 0
+                ),
+            }
+        )
+    except Exception as ex:
+        info.update(
+            {
+                "torch_cuda_available": False,
+                "cuda_device_count": 0,
+                "current_torch_device": "unknown",
+                "gpu_name": None,
+                "torch_error": str(ex),
+            }
+        )
+    return info
+
+
+def _pipeline1_output_artifacts(run_dir: Path) -> dict[str, dict[str, str | int | None]]:
+    artifacts: dict[str, dict[str, str | int | None]] = {}
+    for name in ("results.jsonl", "results.csv", "logs.txt", "logs/pipeline1.log", "events.jsonl"):
+        path = run_dir / name
+        artifacts[name] = _artifact_record(path)
+    return artifacts
+
+
+def _fallback_error_record(cfg: PipelineConfig, query, error: str) -> OutputRecord:
+    final_top_k = (
+        cfg.reranker.final_top_k
+        if cfg.reranker.enabled and cfg.reranker.final_top_k
+        else cfg.retrieval.top_k
+    )
+    return OutputRecord(
+        experiment_id=cfg.experiment.experiment_id,
+        question_id=query.question_id,
+        uid=query.question_id,
+        question=query.question,
+        cleaned_question=query.cleaned_question,
+        detected_category=query.detected_category,
+        category_confidence=query.category_confidence,
+        orchestration_error=query.orchestration_error,
+        generated_answer="",
+        retrieved_chunks=[],
+        retrieved_chunk_ids=[],
+        retrieved_original_context_ids=[],
+        retrieved_context_ids=[],
+        retrieved_document_ids=[],
+        retrieved_documents=[],
+        retrieved_categories=[],
+        retrieved_files=[],
+        retrieved_file_names=[],
+        retrieved_chunk_units=[],
+        retrieved_chunk_texts=[],
+        retrieved_chunk_metadata=[],
+        retrieved_context_texts=[],
+        retrieval_scores=[],
+        dense_scores=[],
+        bm25_scores=[],
+        rrf_scores=[],
+        rerank_scores=[],
+        retrieval_warnings=["Question failed before a complete retrieval/generation record could be produced."],
+        retrieval_diagnostics={"error": error},
+        top_k=final_top_k,
+        chunking_strategy=cfg.chunking.strategy,
+        chunk_size=cfg.chunking.chunk_size,
+        chunk_overlap=cfg.chunking.chunk_overlap,
+        embedding_model=cfg.embedding.model_name,
+        retriever_type=cfg.retrieval.retriever_type,
+        reranker_used=False,
+        llm_model=cfg.generation.model_name,
+        retrieval_time_ms=0.0,
+        generation_time_ms=0.0,
+        total_latency_ms=0.0,
+        latency_ms=0.0,
+        input_tokens=0,
+        output_tokens=0,
+        total_tokens=0,
+        token_usage={"input_tokens": 0, "output_tokens": 0, "total_tokens": 0},
+        estimated_cost=0.0,
+        prompt_template_version=PROMPT_TEMPLATE_VERSION,
+        error=error,
+    )
+
+
+def _performance_metrics(
+    run_dir: Path,
+    chunk_count: int,
+    embedding_duration_s: float,
+    attempted: int,
+    start_time: float,
+    retrieval_total_ms: float,
+    generation_total_ms: float,
+) -> dict[str, float | int | None]:
+    elapsed_s = max(time.time() - start_time, 1e-9)
+    peak_vram_gb = None
+    try:
+        import torch
+
+        if torch.cuda.is_available() and torch.cuda.device_count() > 0:
+            peak_vram_gb = round(torch.cuda.max_memory_allocated(0) / (1024**3), 2)
+    except Exception:
+        peak_vram_gb = None
+    return {
+        "embedding_throughput_chunks_per_sec": round(chunk_count / embedding_duration_s, 3) if chunk_count else 0.0,
+        "questions_per_sec": round(attempted / elapsed_s, 3) if attempted else 0.0,
+        "avg_retrieval_ms": round(retrieval_total_ms / attempted, 3) if attempted else None,
+        "avg_generation_ms": round(generation_total_ms / attempted, 3) if attempted else None,
+        "gpu_peak_vram_gb": peak_vram_gb,
+        "resume_completed_rows": RunWriterStage.output_row_counts(run_dir).get("results.jsonl") or 0,
+    }
+
+
+def _artifact_record(path: Path) -> dict[str, str | int | None]:
+    if not path.exists():
+        return {"path": str(path), "sha256": None, "size_bytes": None}
+    return {"path": str(path), "sha256": file_sha256(path), "size_bytes": path.stat().st_size}
 
 
 def _iso_utc(timestamp: float) -> str:

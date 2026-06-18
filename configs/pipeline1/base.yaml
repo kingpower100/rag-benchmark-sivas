@@ -4,16 +4,15 @@ experiment:
   output_dir: "data/runs/pipeline1"
 
 data:
-  documents_path: "data/raw/treasury_bulletins_1939_1963.jsonl"
+  dataset_schema: "sivas"
+  documents_path: "data/raw/kb_documents_fixed.jsonl"
   documents_recursive: true
-  questions_path: "data/raw/questions_only.jsonl"
-  question_id_field: "uid"
-  question_field: "question"
-  document_text_field: "cleaned_context"
+  questions_path: "data/raw/questions_fixed.jsonl"
+  question_id_field: "question_id"
+  question_field: "frage"
+  document_text_field: "text"
   allow_document_text_fallback: false
   allow_unsafe_query_fields: false
-  use_ground_truth_contexts: false
-  use_gold_answers: false
 
 chunking:
   strategy: "fixed_token"
@@ -30,18 +29,21 @@ embedding:
   provider: "sentence_transformers"
   model_name: "BAAI/bge-small-en-v1.5"
   normalize_embeddings: true
-  batch_size: 32
+  batch_size: 64
   device: "cuda"
   require_cuda: false
+  cache_dir: "/models/sentence-transformers"
 
 index:
   type: "faiss"
   metric: "cosine"
 
 retrieval:
-  retriever_type: "dense"
-  top_k: 3
-  fetch_k: 10
+  retriever_type: "category_aware_dense"
+  top_k: 5
+  fetch_k: 20
+  category_field: "kategorie"
+  fallback_to_global: true
   metadata_boosting:
     enabled: false
     company_weight: 0.3
@@ -68,7 +70,7 @@ generation:
   temperature: 0.0
   max_tokens: 16
   timeout_s: 300
-  include_metadata_headers: false
+  include_metadata_headers: true
   max_prompt_tokens: 8192
   max_context_tokens: 6000
   max_chunk_tokens: 1800
@@ -77,18 +79,15 @@ generation:
   context_truncation_strategy: "ranked_budget"
   log_prompt_stats: true
   system_prompt: |
-    You are a financial QA system specialized in numeric extraction.
+    Du bist ein QA-System fuer interne SIVAS/ERP-Wissensdokumente.
 
-    Use ONLY the retrieved context to answer the question.
+    Beantworte die Frage ausschliesslich anhand des abgerufenen Kontexts.
 
-    Rules:
-    - Return ONLY the final answer.
-    - Do NOT explain your reasoning.
-    - Do NOT output full sentences.
-    - Do NOT use markdown.
-    - If the answer is numeric, return only the number.
-    - Preserve decimals and negative signs.
-    - If the answer cannot be found in the context, return EXACTLY: UNKNOWN
+    Regeln:
+    - Gib nur die finale Antwort aus.
+    - Erfinde keine Details.
+    - Nutze Deutsch, sofern die Frage auf Deutsch gestellt ist.
+    - Wenn die Antwort im Kontext nicht enthalten ist, antworte exakt: UNKNOWN
 
 
 telemetry:

@@ -4,6 +4,8 @@ from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator
 
 from src.pipeline1.config_loader import load_pipeline_config_payload
 
+FIXED_ORCHESTRATION_MODEL = "mistral-small"
+
 
 class StrictConfigModel(BaseModel):
     model_config = ConfigDict(extra="forbid", validate_by_alias=True, validate_by_name=True)
@@ -17,24 +19,16 @@ class ExperimentConfig(StrictConfigModel):
 
 class DataConfig(StrictConfigModel):
     documents_path: str
+    dataset_schema: Literal["sivas"] = "sivas"
     documents_source_type: Literal["jsonl", "txt_folder"] = "jsonl"
     documents_file_glob: str = "*.txt"
     documents_recursive: bool = True
-    questions_path: str = Field(validation_alias=AliasChoices("questions_path", "qa_test_path"))
-    question_field: str = "question"
+    questions_path: str
+    question_field: str = "frage"
     question_id_field: str = "question_id"
-    document_text_field: str = "cleaned_context"
+    document_text_field: str = "text"
     allow_document_text_fallback: bool = False
     allow_unsafe_query_fields: bool = False
-    use_ground_truth_contexts: bool = False
-    use_gold_answers: bool = False
-
-    @field_validator("use_ground_truth_contexts", "use_gold_answers")
-    @classmethod
-    def ensure_disabled(cls, value: bool) -> bool:
-        if value:
-            raise ValueError("Pipeline 1 forbids gold answers and ground-truth contexts.")
-        return value
 
 
 class ChunkingConfig(StrictConfigModel):
@@ -56,13 +50,14 @@ class EmbeddingConfig(StrictConfigModel):
     batch_size: int = 32
     device: str = "cpu"
     require_cuda: bool = False
+    cache_dir: Optional[str] = None
 
 
 class IndexConfig(StrictConfigModel):
     type: Literal["faiss", "elasticsearch"]
     metric: Literal["cosine", "l2"] = "cosine"
     host: str = "http://localhost:9200"
-    index_name: str = "officeqa_fixed512_bge_small"
+    index_name: str = "sivas_fixed512_bge_small"
     index_alias: Optional[str] = None
     index_version: Optional[str] = None
     dense_dim: int = Field(default=384, gt=0)
@@ -118,12 +113,14 @@ class HybridConfig(StrictConfigModel):
 
 
 class RetrievalConfig(StrictConfigModel):
-    retriever_type: Literal["dense", "bm25", "hybrid_rrf", "elasticsearch_dense"] = Field(
+    retriever_type: Literal["dense", "bm25", "hybrid_rrf", "elasticsearch_dense", "category_aware_dense"] = Field(
         default="dense",
         validation_alias=AliasChoices("retriever_type", "type"),
     )
     top_k: int = Field(gt=0)
     fetch_k: int = Field(gt=0)
+    category_field: str = "kategorie"
+    fallback_to_global: bool = True
     metadata_boosting: MetadataBoostingConfig = Field(default_factory=MetadataBoostingConfig)
     metadata_filtering: MetadataFilteringConfig = Field(default_factory=MetadataFilteringConfig)
     bm25: BM25Config = Field(default_factory=BM25Config)
@@ -145,7 +142,43 @@ class RerankerConfig(StrictConfigModel):
         return value
 
 
+class OrchestrationConfig(StrictConfigModel):
+    provider: Literal["ollama"] = "ollama"
+    model_name: str = Field(default=FIXED_ORCHESTRATION_MODEL, validation_alias=AliasChoices("model_name", "model"))
+    base_url: str = "http://localhost:11434"
+    fixed: bool = True
+    tasks: list[Literal["clean_question", "detect_category"]] = Field(
+        default_factory=lambda: ["clean_question", "detect_category"]
+    )
+    temperature: float = 0.0
+    max_tokens: int = Field(default=256, gt=0)
+    timeout_s: int = Field(default=60, gt=0)
+
+    @field_validator("fixed")
+    @classmethod
+    def ensure_fixed(cls, value: bool) -> bool:
+        if not value:
+            raise ValueError("Pipeline 1 requires orchestration.fixed=true for benchmark comparability.")
+        return value
+
+    @field_validator("model_name")
+    @classmethod
+    def ensure_fixed_model(cls, value: str) -> str:
+        if value != FIXED_ORCHESTRATION_MODEL:
+            raise ValueError(f"Orchestration model is fixed across experiments: {FIXED_ORCHESTRATION_MODEL}")
+        return value
+
+    @field_validator("tasks")
+    @classmethod
+    def ensure_limited_tasks(cls, value: list[str]) -> list[str]:
+        expected = {"clean_question", "detect_category"}
+        if set(value) != expected:
+            raise ValueError("Orchestration LLM may only perform clean_question and detect_category.")
+        return value
+
+
 class GenerationConfig(StrictConfigModel):
+    configurable: bool = False
     provider: Literal["ollama"]
     model_name: str
     base_url: str = "http://localhost:11434"
@@ -189,6 +222,7 @@ class PipelineConfig(StrictConfigModel):
     index: IndexConfig
     retrieval: RetrievalConfig
     reranker: RerankerConfig
+    orchestration: OrchestrationConfig = Field(default_factory=OrchestrationConfig)
     generation: GenerationConfig
     telemetry: TelemetryConfig
     runtime: RuntimeConfig

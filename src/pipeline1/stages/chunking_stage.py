@@ -8,7 +8,7 @@ from src.pipeline1.chunking.fixed_word_chunker import FIXED_WORD_CHUNKER_VERSION
 from src.pipeline1.chunking.sentence_chunker import SENTENCE_CHUNKER_VERSION, SENTENCE_SPLITTER_VERSION, SentenceChunker
 from src.pipeline1.chunking.table_aware_chunker import TABLE_AWARE_CHUNKER_VERSION, TableAwareChunker
 from src.pipeline1.io.jsonl_reader import list_txt_files
-from src.pipeline1.metadata import TREASURY_METADATA_SCHEMA_VERSION
+from src.pipeline1.metadata import METADATA_SCHEMA_VERSION
 from src.pipeline1.schemas.chunk import ChunkRecord
 from src.pipeline1.schemas.config_schema import PipelineConfig
 from src.pipeline1.schemas.document import DocumentRecord
@@ -56,7 +56,7 @@ class ChunkingStage(BaseStage):
                 "documents_recursive": self.cfg.data.documents_recursive,
                 "document_text_field": self.cfg.data.document_text_field,
                 "allow_document_text_fallback": self.cfg.data.allow_document_text_fallback,
-                "metadata_schema_version": TREASURY_METADATA_SCHEMA_VERSION,
+                "metadata_schema_version": METADATA_SCHEMA_VERSION,
                 "chunking": self.cfg.chunking.model_dump(),
                 "chunker_versions": chunker_versions,
             }

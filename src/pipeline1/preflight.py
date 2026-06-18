@@ -1,5 +1,6 @@
-import os
 import json
+import os
+import subprocess
 from pathlib import Path
 
 import requests
@@ -37,12 +38,12 @@ def run_preflight_checks(cfg, base_dir: Path | None = None) -> list[str]:
         errors.append(f"chunking.chunk_overlap ({cfg.chunking.chunk_overlap}) must be < chunking.chunk_size ({cfg.chunking.chunk_size})")
     if cfg.index.metric == "cosine" and not cfg.embedding.normalize_embeddings:
         errors.append("embedding.normalize_embeddings must be true when index.metric is cosine")
-    if cfg.embedding.require_cuda or cfg.embedding.device == "cuda":
+    if cfg.embedding.require_cuda or str(cfg.embedding.device).startswith("cuda"):
         try:
             import torch
 
-            if cfg.embedding.require_cuda and cfg.embedding.device != "cuda":
-                errors.append("embedding.require_cuda=true requires embedding.device to be set to cuda")
+            if cfg.embedding.require_cuda and not str(cfg.embedding.device).startswith("cuda"):
+                errors.append("embedding.require_cuda=true requires embedding.device to be set to cuda or cuda:N")
             if not torch.cuda.is_available():
                 errors.append("embedding.device is cuda or embedding.require_cuda=true but CUDA is not available to torch")
             elif cfg.embedding.require_cuda and torch.cuda.device_count() == 0:
@@ -58,17 +59,25 @@ def run_preflight_checks(cfg, base_dir: Path | None = None) -> list[str]:
         except Exception as ex:
             errors.append(f"reranker.device is cuda but torch/CUDA could not be checked: {ex}")
     if questions_path.exists() and questions_path.is_file():
-        errors.extend(_validate_question_ids(questions_path, cfg.data.question_id_field))
+        question_field = "frage" if cfg.data.dataset_schema == "sivas" else cfg.data.question_field
+        errors.extend(_validate_questions_file(questions_path, cfg.data.question_id_field, question_field))
         errors.extend(_validate_safe_query_file(questions_path, cfg.data.allow_unsafe_query_fields))
     if os.getenv("PIPELINE1_SKIP_OLLAMA_PREFLIGHT", "0") != "1":
         base_url = os.getenv("OLLAMA_BASE_URL", cfg.generation.base_url).rstrip("/")
+        cli_models = _ollama_list_models()
         try:
             response = requests.get(f"{base_url}/api/tags", timeout=min(cfg.generation.timeout_s, 10))
             response.raise_for_status()
-            available_models = _ollama_model_names(response.json())
-            if cfg.generation.model_name not in available_models:
+            available_models = _ollama_model_names(response.json()) | cli_models
+            required_models = {cfg.generation.model_name, cfg.orchestration.model_name}
+            missing_models = sorted(model for model in required_models if model not in available_models)
+            if missing_models:
                 available = ", ".join(sorted(available_models)) or "<none>"
-                errors.append(f"Ollama model '{cfg.generation.model_name}' not found at {base_url}/api/tags. Available: {available}")
+                errors.append(
+                    f"Ollama model(s) not found via `ollama list` or {base_url}/api/tags: {', '.join(missing_models)}. "
+                    f"Available: {available}. Install with: "
+                    + " ; ".join(f"ollama pull {model}" for model in missing_models)
+                )
         except requests.RequestException as ex:
             errors.append(f"Unable to reach Ollama at {base_url}/api/tags: {ex}")
     return errors
@@ -97,10 +106,11 @@ def _validate_documents_input(cfg, docs_path: Path) -> list[str]:
     return errors
 
 
-def _validate_question_ids(path: Path, question_id_field: str) -> list[str]:
+def _validate_questions_file(path: Path, question_id_field: str, question_field: str) -> list[str]:
     errors: list[str] = []
     seen: set[str] = set()
     duplicates: set[str] = set()
+    loaded = 0
     with path.open("r", encoding="utf-8") as f:
         for line_number, line in enumerate(f, start=1):
             if not line.strip():
@@ -111,15 +121,23 @@ def _validate_question_ids(path: Path, question_id_field: str) -> list[str]:
                 errors.append(f"questions file has invalid JSON on line {line_number}: {ex}")
                 continue
             question_id = row.get(question_id_field)
-            if question_id is None:
+            question = row.get(question_field)
+            if question_id is None or str(question_id).strip() == "":
+                errors.append(f"questions file row {line_number} is missing non-empty field '{question_id_field}'")
+                continue
+            if question is None or str(question).strip() == "":
+                errors.append(f"questions file row {line_number} is missing non-empty field '{question_field}'")
                 continue
             question_id = str(question_id)
             if question_id in seen:
                 duplicates.add(question_id)
             seen.add(question_id)
+            loaded += 1
     if duplicates:
         sample = ", ".join(sorted(duplicates)[:10])
         errors.append(f"questions file contains duplicate question IDs in field '{question_id_field}': {sample}")
+    if loaded == 0 and not errors:
+        errors.append(f"no questions loaded from questions_path: {path}")
     return errors
 
 
@@ -149,7 +167,7 @@ def _validate_safe_query_file(path: Path, allow_unsafe_fields: bool) -> list[str
             if unsafe:
                 fields = ", ".join(sorted(unsafe))
                 errors.append(
-                    f"Pipeline 1 query file must be questions_only.jsonl-style and may not contain "
+                    f"Pipeline 1 query file must contain questions only and may not contain "
                     f"answer/gold-bearing fields. Found on line {line_number}: {fields}"
                 )
                 break
@@ -166,4 +184,23 @@ def _ollama_model_names(payload: dict) -> set[str]:
             value = model.get(key)
             if value:
                 names.add(str(value))
+    return names
+
+
+def _ollama_list_models() -> set[str]:
+    try:
+        result = subprocess.run(
+            ["ollama", "list"],
+            text=True,
+            capture_output=True,
+            check=True,
+            timeout=10,
+        )
+    except Exception:
+        return set()
+    names: set[str] = set()
+    for line in result.stdout.splitlines()[1:]:
+        columns = line.split()
+        if columns:
+            names.add(columns[0])
     return names
