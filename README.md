@@ -73,16 +73,4 @@ Expected Pipeline 2 output:
 
 `qa_ground_truth_fixed.jsonl` is evaluation-only and must not be used by Pipeline 1.
 
-## Generated Artifacts
 
-Generated artifacts are ignored by git and can be removed before a clean local run:
-
-- `__pycache__/`
-- `*.pyc`
-- `.pytest_cache/`
-- `data/processed/`
-- `data/runs/`
-- `data/eval/`
-- `.project_tmp/`
-
-Do not remove the active raw dataset files, the active Pipeline 1 config, `src/`, or dependency definitions.
