@@ -49,11 +49,11 @@ retrieval:
 reranker:
   enabled: false
   model_name: null
-  device: "cpu"
+  device: "cuda"
 
 orchestration:
   fixed: true
-  model_name: "mistral-small"
+  model_name: "mistral-small:latest"
   base_url: "http://localhost:11434"
   temperature: 0.0
   max_tokens: 256
