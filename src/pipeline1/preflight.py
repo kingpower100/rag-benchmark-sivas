@@ -70,7 +70,7 @@ def run_preflight_checks(cfg, base_dir: Path | None = None) -> list[str]:
             response.raise_for_status()
             available_models = _ollama_model_names(response.json()) | cli_models
             required_models = {cfg.generation.model_name, cfg.orchestration.model_name}
-            missing_models = sorted(model for model in required_models if model not in available_models)
+            missing_models = sorted(model for model in required_models if not _ollama_model_available(model, available_models))
             if missing_models:
                 available = ", ".join(sorted(available_models)) or "<none>"
                 errors.append(
@@ -172,6 +172,15 @@ def _validate_safe_query_file(path: Path, allow_unsafe_fields: bool) -> list[str
                 )
                 break
     return errors
+
+
+def _ollama_model_available(required: str, available: set[str]) -> bool:
+    if required in available:
+        return True
+    # "model" matches "model:latest" but "model:tag" only matches "model:tag"
+    if ":" not in required and f"{required}:latest" in available:
+        return True
+    return False
 
 
 def _ollama_model_names(payload: dict) -> set[str]:
