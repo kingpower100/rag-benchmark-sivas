@@ -90,7 +90,7 @@ def test_orchestration_model_is_fixed_across_experiments():
 
 class _FakeOrchestrationGenerator:
     def generate(self, prompt):
-        assert "Do not answer the question" in prompt
+        assert "CategoryNames" in prompt
         assert "Einkauf" in prompt
         return GenerationResult(
             answer='{"cleaned_question":"Wie bestelle ich?","detected_category":"Einkauf","category_confidence":0.91}',

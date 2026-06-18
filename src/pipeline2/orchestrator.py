@@ -7,17 +7,19 @@ from collections import Counter
 from pathlib import Path
 from typing import Any
 
-from src.pipeline2.aggregation.summarizer import build_leaderboard, summarize_by_category, summarize_by_experiment
+from src.pipeline2.aggregation.summarizer import summarize_by_category, summarize_by_experiment
 from src.pipeline2.io.jsonl import read_jsonl, write_jsonl
 from src.pipeline2.io.tabular import write_csv
 from src.pipeline2.metrics.answer_metrics import compute_answer_metrics, resolve_ground_truth_answer
-from src.pipeline2.metrics.category_metrics import compute_category_metrics
+from src.pipeline2.metrics.category_metrics import compute_category_metrics, compute_category_routing_report
 from src.pipeline2.metrics.embedding_similarity import build_answer_embedder, compute_embedding_similarity
 from src.pipeline2.metrics.efficiency_metrics import compute_efficiency_metrics
-from src.pipeline2.metrics.retrieval_metrics import compute_metadata_match_metrics, compute_retrieval_metrics_for_ks
+from src.pipeline2.metrics.retrieval_metrics import compute_retrieval_metrics_for_ks
 from src.pipeline2.schemas.eval_config_schema import EvalConfig
 from src.pipeline1.utils.hashing import file_sha256
 from tqdm.auto import tqdm
+
+_SIVAS_CATEGORIES = ["Technik", "Vertrieb", "Materialwirtschaft", "Einkauf", "Service"]
 
 
 class EvaluationOrchestrator:
@@ -35,13 +37,8 @@ class EvaluationOrchestrator:
                 "per_question_metrics.jsonl",
                 "per_question.csv",
                 "summary_metrics.json",
-                "summary_by_experiment.csv",
-                "summary_by_difficulty.csv",
-                "summary_by_difficulty.json",
                 "summary_by_category.csv",
                 "summary_by_category.json",
-                "leaderboard.csv",
-                "leaderboard.md",
                 "eval_manifest.json",
             ):
                 path = run_dir / name
@@ -104,13 +101,12 @@ class EvaluationOrchestrator:
         _attach_run_validity(summary, run_validity)
         if cfg.evaluation.strict_failure_threshold:
             _raise_on_failure_threshold(run_validity, cfg.evaluation.max_generation_failure_rate)
-        difficulty_summary = summarize_by_difficulty(per_question)
         category_summary = summarize_by_category(per_question)
-        leaderboard = build_leaderboard(summary, cfg.leaderboard.sort_metric, cfg.leaderboard.sort_ascending)
+        category_routing_report = compute_category_routing_report(per_question, _SIVAS_CATEGORIES)
         ks = _metric_ks(cfg)
         per_fields = _per_question_fields(ks)
         summary_fields = _summary_fields(ks)
-        leaderboard_fields = ["rank", "sort_metric", *summary_fields]
+        validity_report = _benchmark_validity_report(per_question, input_diagnostics, strict_alignment, ks)
         print("[6/6] Writing evaluation outputs")
         write_jsonl(run_dir / "per_question.jsonl", per_question)
         write_jsonl(run_dir / "per_question_metrics.jsonl", per_question)
@@ -118,9 +114,10 @@ class EvaluationOrchestrator:
             json.dumps(
                 {
                     "summary_by_experiment": summary,
-                    "summary_by_difficulty": difficulty_summary,
                     "summary_by_category": category_summary,
                     "run_validity": run_validity,
+                    "category_routing": category_routing_report,
+                    "benchmark_validity": validity_report,
                 },
                 indent=2,
                 ensure_ascii=False,
@@ -129,15 +126,7 @@ class EvaluationOrchestrator:
         )
         if cfg.runtime.save_csv:
             write_csv(run_dir / "per_question.csv", per_question, per_fields)
-            write_csv(run_dir / "summary_by_experiment.csv", summary, summary_fields)
-            write_csv(run_dir / "summary_by_difficulty.csv", difficulty_summary, _difficulty_summary_fields(ks))
             write_csv(run_dir / "summary_by_category.csv", category_summary, _category_summary_fields(ks))
-            write_csv(run_dir / "leaderboard.csv", leaderboard, leaderboard_fields)
-        (run_dir / "leaderboard.md").write_text(_leaderboard_markdown(leaderboard, leaderboard_fields), encoding="utf-8")
-        (run_dir / "summary_by_difficulty.json").write_text(
-            json.dumps(difficulty_summary, indent=2, ensure_ascii=False),
-            encoding="utf-8",
-        )
         (run_dir / "summary_by_category.json").write_text(
             json.dumps(category_summary, indent=2, ensure_ascii=False),
             encoding="utf-8",
@@ -155,13 +144,14 @@ class EvaluationOrchestrator:
                     qa_rows,
                     gold_rows,
                     per_question,
-                    leaderboard,
-                    difficulty_summary,
+                    summary,
                     run_validity,
                     input_diagnostics,
                     strict_alignment,
                     leakage_audit,
                     reported_metric_comparison,
+                    category_routing_report,
+                    validity_report,
                     start_time,
                     time.time(),
                 ),
@@ -181,13 +171,14 @@ class EvaluationOrchestrator:
             qa_rows,
             gold_rows,
             per_question,
-            leaderboard,
-            difficulty_summary,
+            summary,
             run_validity,
             input_diagnostics,
             strict_alignment,
             leakage_audit,
             reported_metric_comparison,
+            category_routing_report,
+            validity_report,
             start_time,
             time.time(),
         )
@@ -211,13 +202,8 @@ class EvaluationOrchestrator:
                 run_dir / "per_question_metrics.jsonl",
                 run_dir / "summary_metrics.json",
                 run_dir / "per_question.csv",
-                run_dir / "summary_by_experiment.csv",
-                run_dir / "summary_by_difficulty.csv",
-                run_dir / "summary_by_difficulty.json",
                 run_dir / "summary_by_category.csv",
                 run_dir / "summary_by_category.json",
-                run_dir / "leaderboard.csv",
-                run_dir / "leaderboard.md",
                 run_dir / "eval_manifest.json",
             ]
         )
@@ -278,10 +264,6 @@ class EvaluationOrchestrator:
                 raw_retrieved_ids = []
                 errors.append("raw_retrieved_original_context_ids must be a list")
             raw_retrieval_eval_ids = _configured_raw_retrieval_eval_ids(row, cfg.evaluation.retrieval_eval_field)
-            retrieved_metadata = row.get("retrieved_chunk_metadata") or []
-            if not isinstance(retrieved_metadata, list):
-                retrieved_metadata = []
-                errors.append("retrieved_chunk_metadata must be a list")
             if cfg.evaluation.retrieval_only:
                 answer_metrics = _null_answer_metrics()
             else:
@@ -290,42 +272,45 @@ class EvaluationOrchestrator:
                     ground_truth,
                     question=str(row.get("question", "")),
                     abstention_patterns=cfg.answer_quality.abstention_patterns,
-                    numeric_tolerance_abs=cfg.answer_quality.numeric_tolerance_abs,
-                    numeric_tolerance_rel=cfg.answer_quality.numeric_tolerance_rel,
                 )
-                answer_metrics["embedding_similarity"] = (
+                _emb_value = (
                     compute_embedding_similarity(str(row.get("generated_answer", "")), ground_truth, embedder)
                     if embedder is not None
                     else None
                 )
-                if not cfg.answer_quality.enable_numeric_accuracy:
-                    answer_metrics["numeric_accuracy"] = None
-                    answer_metrics["strict_numeric_accuracy"] = None
-                    answer_metrics["tolerant_numeric_accuracy"] = None
+                _emb_metric = embedder.metric_name if embedder is not None else "embedding_similarity"
+                answer_metrics["embedding_similarity"] = _emb_value if _emb_metric == "embedding_similarity" else None
+                answer_metrics["bow_token_overlap_similarity"] = _emb_value if _emb_metric == "bow_token_overlap_similarity" else None
             if generation_failed and not cfg.evaluation.retrieval_only:
                 failure_status = "pipeline1_error" if pipeline1_error else "generation_failure"
+                _fail_emb_metric = embedder.metric_name if embedder is not None else "embedding_similarity"
                 answer_metrics.update(
                     {
-                        "numeric_accuracy": 0.0,
-                        "strict_numeric_accuracy": 0.0,
-                        "tolerant_numeric_accuracy": 0.0,
                         "exact_match": 0.0,
                         "literal_exact_match": 0.0,
                         "canonical_exact_match": 0.0,
-                        "numeric_parse_success": 0.0,
+                        "german_canonical_exact_match": 0.0,
+                        "umlaut_expanded_exact_match": 0.0,
                         "non_empty_answer_rate": 0.0,
                         "answer_coverage_rate": 0.0,
                         "abstention_rate": 0.0,
                         "answer_relevancy_score": 0.0,
                         "rouge_l": 0.0,
-                        "embedding_similarity": 0.0,
+                        "rouge_1": 0.0,
+                        "embedding_similarity": 0.0 if _fail_emb_metric == "embedding_similarity" else None,
+                        "bow_token_overlap_similarity": 0.0 if _fail_emb_metric == "bow_token_overlap_similarity" else None,
                         "normalized_generated_answer": "",
-                        "generated_number": None,
-                        "absolute_error": None,
-                        "relative_error": None,
                         "answer_match_status": failure_status,
                     }
                 )
+            # UNKNOWN-specific flag (distinct from general abstention)
+            # Covers English "UNKNOWN" and German "UNBEKANNT" as the canonical unknown sentinel.
+            generated_str = str(row.get("generated_answer", ""))
+            _unknown_sentinels = {"unknown", "unbekannt"}
+            is_unknown = 1.0 if generated_str.strip().lower() in _unknown_sentinels else 0.0
+
+            retrieval_metrics = compute_retrieval_metrics_for_ks(retrieval_eval_ids, gold_ids, ks, raw_retrieval_eval_ids)
+
             output = {
                 "question_id": qid,
                 "uid": qid,
@@ -339,31 +324,23 @@ class EvaluationOrchestrator:
                 "raw_retrieval_eval_ids": raw_retrieval_eval_ids,
                 "gold_context_ids": gold_ids,
                 "id_alignment_ok": id_alignment_ok,
-                **compute_retrieval_metrics_for_ks(retrieval_eval_ids, gold_ids, ks, raw_retrieval_eval_ids),
-                **compute_metadata_match_metrics(
-                    str(row.get("question", "")),
-                    retrieved_metadata,
-                    row.get("query_metadata") if isinstance(row.get("query_metadata"), dict) else None,
-                ),
-                "numeric_accuracy": answer_metrics["numeric_accuracy"],
-                "strict_numeric_accuracy": answer_metrics["strict_numeric_accuracy"],
-                "tolerant_numeric_accuracy": answer_metrics["tolerant_numeric_accuracy"],
+                **retrieval_metrics,
                 "exact_match": answer_metrics["exact_match"],
                 "literal_exact_match": answer_metrics["literal_exact_match"],
                 "canonical_exact_match": answer_metrics["canonical_exact_match"],
-                "numeric_parse_success": answer_metrics["numeric_parse_success"],
+                "german_canonical_exact_match": answer_metrics.get("german_canonical_exact_match"),
+                "umlaut_expanded_exact_match": answer_metrics.get("umlaut_expanded_exact_match"),
                 "non_empty_answer_rate": answer_metrics["non_empty_answer_rate"],
                 "answer_coverage_rate": answer_metrics["answer_coverage_rate"],
                 "abstention_rate": answer_metrics["abstention_rate"],
+                "is_unknown": is_unknown,
                 "answer_relevancy_score": answer_metrics["answer_relevancy_score"],
                 "rouge_l": answer_metrics["rouge_l"],
+                "rouge_1": answer_metrics.get("rouge_1"),
                 "embedding_similarity": answer_metrics["embedding_similarity"],
+                "bow_token_overlap_similarity": answer_metrics.get("bow_token_overlap_similarity"),
                 "normalized_generated_answer": answer_metrics["normalized_generated_answer"],
                 "normalized_gold_answer": answer_metrics["normalized_gold_answer"],
-                "generated_number": answer_metrics["generated_number"],
-                "gold_number": answer_metrics["gold_number"],
-                "absolute_error": answer_metrics["absolute_error"],
-                "relative_error": answer_metrics["relative_error"],
                 "answer_match_status": answer_metrics["answer_match_status"],
                 "category_correct": category_metrics["category_correct"],
                 "category_predicted": category_metrics["category_predicted"],
@@ -644,6 +621,8 @@ def build_eval_diagnostics(
         "missing_generated_answer_examples": missing_generated_ids[:5],
         "missing_retrieved_field_examples": missing_retrieved_ids[:5],
         "strict_alignment": strict_alignment,
+        "retrieval_level": "document",
+        "chunk_level_metrics": "not_computed_no_chunk_gold_available",
     }
 
 
@@ -731,25 +710,21 @@ def _merge_gold_with_qa_fallback(gold_by_id: dict[str, list[str]], qa_by_id: dic
 
 def _null_answer_metrics() -> dict[str, Any]:
     return {
-        "numeric_accuracy": None,
-        "strict_numeric_accuracy": None,
-        "tolerant_numeric_accuracy": None,
         "exact_match": None,
         "literal_exact_match": None,
         "canonical_exact_match": None,
-        "numeric_parse_success": None,
+        "german_canonical_exact_match": None,
+        "umlaut_expanded_exact_match": None,
         "non_empty_answer_rate": None,
         "answer_coverage_rate": None,
         "abstention_rate": None,
         "answer_relevancy_score": None,
         "rouge_l": None,
+        "rouge_1": None,
         "embedding_similarity": None,
+        "bow_token_overlap_similarity": None,
         "normalized_generated_answer": "",
         "normalized_gold_answer": "",
-        "generated_number": None,
-        "gold_number": None,
-        "absolute_error": None,
-        "relative_error": None,
         "answer_match_status": "skipped_retrieval_only",
     }
 
@@ -880,30 +855,22 @@ def _per_question_fields(ks: list[int]) -> list[str]:
         "unique_retrieved_document_count",
         "duplicate_document_count",
         "duplicate_document_rate",
-        "metadata_match_rate",
-        "company_match_rate",
-        "year_match_rate",
-        "month_match_rate",
-        "exact_year_month_match_rate",
-        "numeric_accuracy",
-        "strict_numeric_accuracy",
-        "tolerant_numeric_accuracy",
         "exact_match",
         "literal_exact_match",
         "canonical_exact_match",
-        "numeric_parse_success",
+        "german_canonical_exact_match",
+        "umlaut_expanded_exact_match",
         "non_empty_answer_rate",
         "answer_coverage_rate",
         "abstention_rate",
+        "is_unknown",
         "answer_relevancy_score",
         "rouge_l",
+        "rouge_1",
         "embedding_similarity",
+        "bow_token_overlap_similarity",
         "normalized_generated_answer",
         "normalized_gold_answer",
-        "generated_number",
-        "gold_number",
-        "absolute_error",
-        "relative_error",
         "answer_match_status",
         "category_correct",
         "category_predicted",
@@ -924,54 +891,58 @@ def _per_question_fields(ks: list[int]) -> list[str]:
     ]
 
 
-def summarize_by_difficulty(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
-    groups: dict[str, list[dict[str, Any]]] = {"all": list(rows)}
-    for row in rows:
-        difficulty = str(row.get("difficulty") or "unknown")
-        groups.setdefault(difficulty, []).append(row)
-    output = []
-    for difficulty in ["all", *sorted(key for key in groups if key != "all")]:
-        group = groups[difficulty]
-        summary: dict[str, Any] = {"difficulty": difficulty, "n_questions": len(group)}
-        metric_cols = sorted(
-            {
-                key
-                for row in group
-                for key in row
-                if key.startswith((
-                    "hit_at_",
-                    "recall_at_",
-                    "mrr_at_",
-                    "context_precision_at_",
-                    "ndcg_at_",
-                    "duplicate_count_at_",
-                    "duplicate_rate_at_",
-                    "deduped_hit_at_",
-                    "deduped_recall_at_",
-                    "deduped_mrr_at_",
-                    "deduped_ndcg_at_",
-                ))
-            }
-        )
-        for col in metric_cols:
-            summary[f"mean_{col}"] = _mean([row.get(col) for row in group if row.get(col) is not None])
-        for col in (
-            "exact_match",
-            "literal_exact_match",
-            "canonical_exact_match",
-            "numeric_accuracy",
-            "strict_numeric_accuracy",
-            "tolerant_numeric_accuracy",
-            "hallucination_rate",
-            "rouge_l",
-            "embedding_similarity",
-            "total_latency_ms",
-            "total_tokens",
-            "generation_failed",
-        ):
-            summary[f"mean_{col}"] = _mean([row.get(col) for row in group if row.get(col) is not None])
-        output.append(summary)
-    return output
+def _benchmark_validity_report(
+    per_question: list[dict[str, Any]],
+    input_diagnostics: dict[str, Any],
+    strict_alignment: dict[str, Any],
+    ks: list[int],
+) -> dict[str, Any]:
+    """Produce a benchmark_validity_status of VALID, WARNING, or INVALID."""
+    blocking_issues: list[str] = []
+    warnings_list: list[str] = []
+
+    # Hard check: NDCG must be in [0, 1]
+    for row in per_question:
+        qid = row.get("question_id", "?")
+        for k in ks:
+            for prefix in (f"ndcg_at_{k}", f"deduped_ndcg_at_{k}"):
+                val = row.get(prefix)
+                if val is not None and val > 1.0 + 1e-9:
+                    blocking_issues.append(f"{prefix}={val:.6f} > 1.0 for question_id={qid}")
+
+    # Hard check: duplicate gold IDs
+    dup_summary = strict_alignment.get("duplicate_id_summary", {})
+    for src, dups in dup_summary.items():
+        if dups:
+            blocking_issues.append(f"Duplicate IDs in {src}: {dups[:5]}")
+
+    # Hard check: missing question IDs
+    if strict_alignment.get("missing_from_questions"):
+        blocking_issues.append(f"IDs missing from questions: {strict_alignment['missing_from_questions'][:5]}")
+    if strict_alignment.get("missing_from_qa_ground_truth"):
+        blocking_issues.append(f"IDs missing from qa_ground_truth: {strict_alignment['missing_from_qa_ground_truth'][:5]}")
+
+    # Soft check: answer and retrieval coverage
+    answer_coverage = input_diagnostics.get("generated_answer_coverage", 1.0)
+    if answer_coverage < 1.0:
+        warnings_list.append(f"answer_coverage={answer_coverage:.3f} < 1.0")
+
+    retrieval_coverage = input_diagnostics.get("retrieved_field_coverage", 1.0)
+    if retrieval_coverage < 1.0:
+        warnings_list.append(f"retrieval_coverage={retrieval_coverage:.3f} < 1.0")
+
+    if blocking_issues:
+        status = "INVALID"
+    elif warnings_list:
+        status = "WARNING"
+    else:
+        status = "VALID"
+
+    return {
+        "benchmark_validity_status": status,
+        "blocking_issues": blocking_issues,
+        "warnings": warnings_list,
+    }
 
 
 def compare_reported_vs_recomputed_metrics(
@@ -990,24 +961,24 @@ def compare_reported_vs_recomputed_metrics(
             f"context_precision_at_{k}",
         )],
         "exact_match",
-        "numeric_accuracy",
-        "numeric_parse_success",
-        "numeric_parse_success_rate",
+        "german_canonical_exact_match",
+        "umlaut_expanded_exact_match",
         "non_empty_answer_rate",
         "abstention_rate",
         "rouge_l",
+        "rouge_1",
         "embedding_similarity",
+        "bow_token_overlap_similarity",
     ]
     comparisons = []
     for reported in reported_rows:
-        qid = str(reported.get("question_id", ""))
         recomputed = by_id.get(_experiment_question_key(reported))
         if recomputed is None:
             continue
         for name in metric_names:
             if name not in reported:
                 continue
-            recomputed_name = "numeric_parse_success" if name == "numeric_parse_success_rate" else name
+            recomputed_name = name
             if recomputed_name not in recomputed:
                 continue
             reported_value = _as_float_or_none(reported.get(name))
@@ -1017,7 +988,7 @@ def compare_reported_vs_recomputed_metrics(
             difference = abs(reported_value - recomputed_value)
             comparisons.append(
                 {
-                    "question_id": qid,
+                    "question_id": str(reported.get("question_id", "")),
                     "metric": name,
                     "reported_value": reported_value,
                     "recomputed_value": recomputed_value,
@@ -1191,10 +1162,6 @@ def _fake_run_row_checks(cfg: EvalConfig, rag_rows: list[dict[str, Any]]) -> lis
     ]
     all_latency_missing_or_zero = all(value is None or value == 0.0 for value in latencies)
     mismatches = []
-    for row in rag_rows[:1000]:
-        if row.get("llm_model") and str(row.get("llm_model")) != "":
-            # Pipeline 2 configs do not know the expected generator model; compare consistency across rows instead.
-            pass
     llm_models = {str(row.get("llm_model")) for row in rag_rows if row.get("llm_model")}
     embedding_models = {str(row.get("embedding_model")) for row in rag_rows if row.get("embedding_model")}
     retriever_types = {str(row.get("retriever_type")) for row in rag_rows if row.get("retriever_type")}
@@ -1366,37 +1333,30 @@ def _write_audit_reports(run_dir: Path, audit_report: dict[str, Any]) -> None:
     (run_dir / "audit_report.md").write_text(_audit_report_markdown(audit_report), encoding="utf-8")
 
 
-def _leaderboard_markdown(rows: list[dict[str, Any]], fields: list[str]) -> str:
-    if not rows:
-        return "| rank |\n|---|\n"
-    visible_fields = [field for field in fields if any(row.get(field) is not None for row in rows)]
-    header = "| " + " | ".join(visible_fields) + " |"
-    separator = "| " + " | ".join("---" for _ in visible_fields) + " |"
-    body = []
-    for row in rows:
-        body.append("| " + " | ".join(_markdown_cell(row.get(field)) for field in visible_fields) + " |")
-    return "\n".join([header, separator, *body]) + "\n"
-
-
-def _markdown_cell(value: Any) -> str:
-    if value is None:
-        return ""
-    text = str(value)
-    return text.replace("|", "\\|").replace("\n", " ")
-
-
 def _audit_report_markdown(report: dict[str, Any]) -> str:
+    validity = report.get("benchmark_validity") or {}
     lines = [
         "# RAG Benchmark Audit Report",
         "",
         f"- Final verdict: `{report.get('final_verdict')}`",
         f"- Strict audit pass: `{report.get('strict_audit_pass')}`",
+        f"- Benchmark validity status: `{validity.get('benchmark_validity_status', 'n/a')}`",
         f"- Total questions: `{report.get('total_questions', 'n/a')}`",
         f"- Aligned ID count: `{report.get('aligned_id_count', 'n/a')}`",
         f"- Message: {report.get('message') or 'n/a'}",
         "",
-        "## Fake-Run Detection",
     ]
+    if validity.get("blocking_issues"):
+        lines.append("## Blocking Issues")
+        for issue in validity["blocking_issues"]:
+            lines.append(f"- {issue}")
+        lines.append("")
+    if validity.get("warnings"):
+        lines.append("## Warnings")
+        for w in validity["warnings"]:
+            lines.append(f"- {w}")
+        lines.append("")
+    lines.append("## Fake-Run Detection")
     fake = report.get("fake_run_detection") or {}
     lines.append(f"- Suspicious: `{fake.get('suspicious')}`")
     for check in fake.get("checks", []):
@@ -1410,48 +1370,33 @@ def _audit_report_markdown(report: dict[str, Any]) -> str:
         "## Leakage Audit",
         f"- Result: `{(report.get('leakage_audit_result') or {}).get('result', 'n/a')}`",
         f"- Message: {(report.get('leakage_audit_result') or {}).get('message') or 'n/a'}",
+        "",
+        "## Category Routing",
     ])
+    routing = report.get("category_routing") or {}
+    lines.append(f"- Active: `{routing.get('category_routing_active', 'n/a')}`")
+    if routing.get("category_routing_active"):
+        lines.append(f"- Coverage: `{routing.get('category_routing_coverage', 'n/a')}`")
+        lines.append(f"- Accuracy: `{routing.get('category_accuracy', 'n/a')}`")
+        lines.append(f"- Macro Precision: `{routing.get('category_precision_macro', 'n/a')}`")
+        lines.append(f"- Macro Recall: `{routing.get('category_recall_macro', 'n/a')}`")
+    else:
+        lines.append(f"- {routing.get('message', 'Category routing inactive.')}")
     return "\n".join(lines) + "\n"
 
 
 def _verdict_from_audit(report: dict[str, Any]) -> str:
     fake = report.get("fake_run_detection") or {}
-    if fake.get("suspicious") or (report.get("reported_vs_recomputed_comparison") or {}).get("failure_count", 0) > 0:
+    validity = report.get("benchmark_validity") or {}
+    if (
+        fake.get("suspicious")
+        or (report.get("reported_vs_recomputed_comparison") or {}).get("failure_count", 0) > 0
+        or validity.get("benchmark_validity_status") == "INVALID"
+    ):
         return "invalid"
     if report.get("strict_audit_pass"):
         return "valid"
     return "partially_valid"
-
-
-def _difficulty_summary_fields(ks: list[int]) -> list[str]:
-    metric_fields = []
-    for k in ks:
-        metric_fields.extend(
-            [
-                f"mean_hit_at_{k}",
-                f"mean_recall_at_{k}",
-                f"mean_mrr_at_{k}",
-                f"mean_context_precision_at_{k}",
-                f"mean_ndcg_at_{k}",
-            ]
-        )
-    return [
-        "difficulty",
-        "n_questions",
-        *metric_fields,
-        "mean_exact_match",
-        "mean_literal_exact_match",
-        "mean_canonical_exact_match",
-        "mean_numeric_accuracy",
-        "mean_strict_numeric_accuracy",
-        "mean_tolerant_numeric_accuracy",
-        "mean_hallucination_rate",
-        "mean_rouge_l",
-        "mean_embedding_similarity",
-        "mean_total_latency_ms",
-        "mean_total_tokens",
-        "mean_generation_failed",
-    ]
 
 
 def _category_summary_fields(ks: list[int]) -> list[str]:
@@ -1475,9 +1420,15 @@ def _category_summary_fields(ks: list[int]) -> list[str]:
         "mean_exact_match",
         "mean_literal_exact_match",
         "mean_canonical_exact_match",
-        "mean_numeric_accuracy",
+        "mean_german_canonical_exact_match",
+        "mean_umlaut_expanded_exact_match",
         "mean_rouge_l",
+        "mean_rouge_1",
         "mean_embedding_similarity",
+        "mean_bow_token_overlap_similarity",
+        "mean_abstention_rate",
+        "unknown_count",
+        "unknown_rate",
         "mean_total_latency_ms",
         "mean_total_tokens",
     ]
@@ -1514,26 +1465,22 @@ def _summary_fields(ks: list[int]) -> list[str]:
         "mean_unique_retrieved_document_count",
         "mean_duplicate_document_count",
         "mean_duplicate_document_rate",
-        "mean_metadata_match_rate",
-        "mean_company_match_rate",
-        "mean_year_match_rate",
-        "mean_month_match_rate",
-        "mean_exact_year_month_match_rate",
-        "mean_numeric_accuracy",
-        "mean_strict_numeric_accuracy",
-        "mean_tolerant_numeric_accuracy",
         "mean_exact_match",
         "mean_literal_exact_match",
         "mean_canonical_exact_match",
-        "mean_relative_error",
-        "median_relative_error",
-        "numeric_parse_success_rate",
+        "mean_german_canonical_exact_match",
+        "mean_umlaut_expanded_exact_match",
         "mean_non_empty_answer_rate",
         "mean_answer_coverage_rate",
         "mean_abstention_rate",
-        "mean_answer_relevancy",
+        "unknown_count",
+        "unknown_rate",
         "mean_rouge_l",
+        "mean_rouge_1",
         "mean_embedding_similarity",
+        "mean_bow_token_overlap_similarity",
+        # diagnostic — lexical overlap between question and answer tokens, not a quality score
+        "diagnostic_mean_answer_relevancy",
         "mean_category_accuracy",
         "mean_retrieval_time_ms",
         "mean_rerank_time_ms",
@@ -1563,13 +1510,14 @@ def _eval_manifest(
     qa_rows: list[dict[str, Any]],
     gold_rows: list[dict[str, Any]],
     per_question: list[dict[str, Any]],
-    leaderboard: list[dict[str, Any]],
-    difficulty_summary: list[dict[str, Any]],
+    summary: list[dict[str, Any]],
     run_validity: dict[str, dict[str, Any]],
     input_diagnostics: dict[str, Any],
     strict_alignment: dict[str, Any],
     leakage_audit: dict[str, Any],
     reported_metric_comparison: dict[str, Any],
+    category_routing_report: dict[str, Any],
+    validity_report: dict[str, Any],
     start_time: float,
     end_time: float,
 ) -> dict[str, Any]:
@@ -1588,12 +1536,12 @@ def _eval_manifest(
         and not leakage_audit.get("critical_leakage_found")
         and comparison_pass
     )
-    strict_pass = (
-        blocking_audit_pass
-        and not invalid_experiments
-    )
+    strict_pass = blocking_audit_pass and not invalid_experiments
     final_verdict = "valid" if strict_pass else ("partially_valid" if blocking_audit_pass else "invalid")
-    all_summary = next((row for row in difficulty_summary if row.get("difficulty") == "all"), {})
+
+    # Use experiment-level summary for aggregate metric reporting
+    all_summary = summary[0] if summary else {}
+
     return {
         "final_verdict": final_verdict,
         "strict_audit_pass": strict_pass,
@@ -1626,14 +1574,16 @@ def _eval_manifest(
                 "mean_exact_match",
                 "mean_literal_exact_match",
                 "mean_canonical_exact_match",
-                "mean_numeric_accuracy",
-                "mean_strict_numeric_accuracy",
-                "mean_tolerant_numeric_accuracy",
-                "numeric_parse_success_rate",
+                "mean_german_canonical_exact_match",
+                "mean_umlaut_expanded_exact_match",
                 "mean_non_empty_answer_rate",
                 "mean_abstention_rate",
+                "unknown_count",
+                "unknown_rate",
                 "mean_rouge_l",
+                "mean_rouge_1",
                 "mean_embedding_similarity",
+                "mean_bow_token_overlap_similarity",
             )
             if key in all_summary
         },
@@ -1645,6 +1595,8 @@ def _eval_manifest(
             "mean_duplicate_document_rate": _mean([row.get("duplicate_document_rate") for row in per_question]),
         },
         "leakage_audit_result": leakage_audit,
+        "category_routing": category_routing_report,
+        "benchmark_validity": validity_report,
         "suspicious_examples": {
             "missing_generated_answer_examples": input_diagnostics.get("missing_generated_answer_examples", []),
             "missing_retrieved_field_examples": input_diagnostics.get("missing_retrieved_field_examples", []),
@@ -1667,13 +1619,13 @@ def _eval_manifest(
             "gold_context_rows": len(gold_rows),
             "evaluated_rows": len(per_question),
             "pipeline1_failed_rows": sum(1 for row in per_question if row.get("pipeline1_error")),
-            "leaderboard_rows": len(leaderboard),
-            "difficulty_summary_rows": len(difficulty_summary),
             "generation_failure_count": sum(int(stats["generation_failure_count"]) for stats in run_validity.values()),
         },
         "input_diagnostics": input_diagnostics,
         "retrieval_only": cfg.evaluation.retrieval_only,
         "retrieval_eval_field": cfg.evaluation.retrieval_eval_field,
+        "retrieval_level": "document",
+        "chunk_level_metrics": "not_computed_no_chunk_gold_available",
         "generation_failure_threshold": {
             "max_generation_failure_rate": cfg.evaluation.max_generation_failure_rate,
             "strict_failure_threshold": cfg.evaluation.strict_failure_threshold,
@@ -1685,34 +1637,27 @@ def _eval_manifest(
                 else None
             ),
         },
-        "leaderboard": {
-            "sort_metric": cfg.leaderboard.sort_metric,
-            "sort_ascending": cfg.leaderboard.sort_ascending,
-        },
         "metrics_used": [
             *[name for k in ks for name in (f"hit_at_{k}", f"recall_at_{k}", f"mrr_at_{k}", f"context_precision_at_{k}")],
             *[f"ndcg_at_{k}" for k in ks],
             "duplicate_context_rate",
             "raw_duplicate_rate",
-            "metadata_match_rate",
-            "company_match_rate",
-            "year_match_rate",
-            "month_match_rate",
-            "exact_year_month_match_rate",
-            "numeric_accuracy",
-            "strict_numeric_accuracy",
-            "tolerant_numeric_accuracy",
+            "duplicate_document_rate",
+            "unique_retrieved_document_count",
             "exact_match",
             "literal_exact_match",
             "canonical_exact_match",
-            "relative_error",
-            "numeric_parse_success",
+            "german_canonical_exact_match",
+            "umlaut_expanded_exact_match",
             "non_empty_answer_rate",
             "answer_coverage_rate",
             "abstention_rate",
+            "is_unknown",
             "answer_relevancy_score",
             "rouge_l",
+            "rouge_1",
             "embedding_similarity",
+            "bow_token_overlap_similarity",
             "retrieval_time_ms",
             "rerank_time_ms",
             "generation_time_ms",
@@ -1725,6 +1670,25 @@ def _eval_manifest(
             "eval_success_rate",
             "generation_failure_rate",
             "run_valid",
+        ],
+        "category_routing_behavior": (
+            "category_accuracy, category_precision_macro, category_recall_macro, and per_class_metrics "
+            "are only emitted when Pipeline 1 produces at least one detected_category prediction. "
+            "When category_routing_active=false all category metrics are suppressed to avoid null entries."
+        ),
+        "embedding_similarity_behavior": (
+            "embedding_similarity contains values only when provider=sentence_transformers. "
+            "bow_token_overlap_similarity contains values only when provider=deterministic_hash. "
+            "The two columns are mutually exclusive; exactly one is non-null per row."
+        ),
+        "deprecated_metrics": [
+            "company_match_rate",
+            "year_match_rate",
+            "month_match_rate",
+            "exact_year_month_match_rate",
+            "metadata_match_rate",
+            "leaderboard",
+            "summary_by_difficulty",
         ],
         "summary_behavior": (
             "mean retrieval and answer metrics use all evaluated rows; generation failures are retained, "

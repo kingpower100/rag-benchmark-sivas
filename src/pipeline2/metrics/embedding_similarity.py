@@ -11,11 +11,19 @@ _TOKEN_RE = re.compile(r"[a-zA-ZäöüßÄÖÜ0-9]+", re.UNICODE)
 
 
 class AnswerEmbedder(Protocol):
+    metric_name: str
+    is_semantic: bool
+
     def encode(self, text: str) -> list[float]:
         ...
 
 
 class DeterministicHashEmbedder:
+    # Not a semantic model — produces a bag-of-words random projection.
+    # Results are reported under bow_token_overlap_similarity, not embedding_similarity.
+    metric_name: str = "bow_token_overlap_similarity"
+    is_semantic: bool = False
+
     def __init__(self, model_name: str = "hashing-bow-v1", dimensions: int = 256) -> None:
         self.model_name = model_name
         self.dimensions = dimensions
@@ -31,13 +39,17 @@ class DeterministicHashEmbedder:
 
 
 class SentenceTransformerAnswerEmbedder:
+    metric_name: str = "embedding_similarity"
+    is_semantic: bool = True
+
     def __init__(self, model_name: str) -> None:
         from sentence_transformers import SentenceTransformer
 
         self.model = SentenceTransformer(model_name)
 
     def encode(self, text: str) -> list[float]:
-        return self.model.encode([text or ""], normalize_embeddings=False)[0].tolist()
+        # normalize_embeddings=True is required for cosine similarity to be in [-1, 1]
+        return self.model.encode([text or ""], normalize_embeddings=True)[0].tolist()
 
 
 @lru_cache(maxsize=8)

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from statistics import mean, median
+from statistics import mean
 from typing import Any
 
 SIVAS_CATEGORIES = ["Technik", "Vertrieb", "Materialwirtschaft", "Einkauf", "Service"]
@@ -23,34 +23,32 @@ def summarize_by_experiment(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
         for col in metric_cols:
             summary[f"mean_{col}"] = _mean([row.get(col) for row in group if row.get(col) is not None])
         for col in (
-            "numeric_accuracy",
-            "strict_numeric_accuracy",
-            "tolerant_numeric_accuracy",
             "exact_match",
             "literal_exact_match",
             "canonical_exact_match",
+            "german_canonical_exact_match",
+            "umlaut_expanded_exact_match",
             "non_empty_answer_rate",
             "answer_coverage_rate",
             "abstention_rate",
             "rouge_l",
+            "rouge_1",
             "embedding_similarity",
+            "bow_token_overlap_similarity",
         ):
             summary[f"mean_{col}"] = _mean([row.get(col) for row in group if row.get(col) is not None])
-        summary["mean_relative_error"] = _mean(
-            [row.get("relative_error") for row in group if row.get("relative_error") is not None]
-        )
-        summary["median_relative_error"] = _median(
-            [row.get("relative_error") for row in group if row.get("relative_error") is not None]
-        )
-        summary["numeric_parse_success_rate"] = _mean(
-            [row.get("numeric_parse_success") for row in group if row.get("numeric_parse_success") is not None]
-        )
-        summary["mean_answer_relevancy"] = _mean(
+        # answer_relevancy_score is a lexical diagnostic, not a quality metric.
+        # It is retained here for diagnostic inspection but not promoted to a headline number.
+        summary["diagnostic_mean_answer_relevancy"] = _mean(
             [row.get("answer_relevancy_score") for row in group if row.get("answer_relevancy_score") is not None]
         )
         summary["mean_category_accuracy"] = _mean(
             [row.get("category_correct") for row in group if row.get("category_correct") is not None]
         )
+        # UNKNOWN-specific tracking (separate from general abstention)
+        unknown_count = sum(1 for row in group if row.get("is_unknown") == 1.0)
+        summary["unknown_count"] = unknown_count
+        summary["unknown_rate"] = unknown_count / len(group) if group else 0.0
         for col in (
             "duplicate_context_rate",
             "raw_duplicate_rate",
@@ -58,11 +56,6 @@ def summarize_by_experiment(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
             "unique_retrieved_document_count",
             "duplicate_document_count",
             "duplicate_document_rate",
-            "metadata_match_rate",
-            "company_match_rate",
-            "year_match_rate",
-            "month_match_rate",
-            "exact_year_month_match_rate",
             "retrieval_time_ms",
             "rerank_time_ms",
             "generation_time_ms",
@@ -75,23 +68,6 @@ def summarize_by_experiment(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
             summary[f"mean_{col}"] = _mean([row.get(col) for row in group if row.get(col) is not None])
         summaries.append(summary)
     return summaries
-
-
-def build_leaderboard(summary_rows: list[dict[str, Any]], sort_metric: str, sort_ascending: bool = False) -> list[dict[str, Any]]:
-    present = [row for row in summary_rows if row.get(sort_metric) is not None]
-    missing = [row for row in summary_rows if row.get(sort_metric) is None]
-    sorted_rows = sorted(
-        present,
-        key=lambda row: (float(row[sort_metric]), str(row.get("experiment_id", ""))),
-        reverse=not sort_ascending,
-    )
-    if not sort_ascending:
-        sorted_rows = sorted(
-            present,
-            key=lambda row: (-float(row[sort_metric]), str(row.get("experiment_id", ""))),
-        )
-    sorted_rows.extend(sorted(missing, key=lambda row: str(row.get("experiment_id", ""))))
-    return [{"rank": index, "sort_metric": sort_metric, **row} for index, row in enumerate(sorted_rows, start=1)]
 
 
 def _dynamic_metric_columns(rows: list[dict[str, Any]]) -> list[str]:
@@ -120,13 +96,6 @@ def _mean(values: list[Any]) -> float | None:
     if not numeric:
         return None
     return mean(numeric)
-
-
-def _median(values: list[Any]) -> float | None:
-    numeric = [float(value) for value in values if value is not None]
-    if not numeric:
-        return None
-    return median(numeric)
 
 
 def summarize_by_category(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
@@ -166,13 +135,14 @@ def summarize_by_category(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
             "exact_match",
             "literal_exact_match",
             "canonical_exact_match",
-            "numeric_accuracy",
-            "strict_numeric_accuracy",
-            "tolerant_numeric_accuracy",
+            "german_canonical_exact_match",
+            "umlaut_expanded_exact_match",
             "non_empty_answer_rate",
             "abstention_rate",
             "rouge_l",
+            "rouge_1",
             "embedding_similarity",
+            "bow_token_overlap_similarity",
             "total_latency_ms",
             "total_tokens",
         ):
@@ -182,5 +152,8 @@ def summarize_by_category(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
         summary["pipeline_success_rate"] = _mean(
             [1.0 if not row.get("generation_failed") else 0.0 for row in group]
         )
+        unknown_count = sum(1 for row in group if row.get("is_unknown") == 1.0)
+        summary["unknown_count"] = unknown_count
+        summary["unknown_rate"] = unknown_count / len(group) if group else 0.0
         output.append(summary)
     return output

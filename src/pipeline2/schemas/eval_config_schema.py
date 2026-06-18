@@ -45,15 +45,21 @@ class RetrievalEvalConfig(StrictEvalConfigModel):
 
 
 class AnswerQualityConfig(StrictEvalConfigModel):
-    enable_numeric_accuracy: bool = True
-    numeric_tolerance_abs: float = Field(default=0.0001, ge=0.0)
-    numeric_tolerance_rel: float = Field(default=0.001, ge=0.0)
     abstention_patterns: list[str] = Field(
-        default_factory=lambda: ["UNKNOWN", "NOT FOUND", "N/A", "CANNOT DETERMINE"]
+        default_factory=lambda: [
+            # English
+            "UNKNOWN", "NOT FOUND", "N/A", "CANNOT DETERMINE",
+            # German
+            "UNBEKANNT", "NICHT GEFUNDEN", "NICHT VERFÜGBAR", "NICHT BEKANNT",
+            "KEINE INFORMATION", "KANN NICHT BESTIMMT WERDEN", "NICHT BESTIMMBAR",
+            "KEINE ANGABE", "K.A.",
+        ]
     )
 
 
 class EmbeddingSimilarityConfig(StrictEvalConfigModel):
+    # Default is deterministic_hash so configs that omit this section remain offline-safe.
+    # Production SIVAS runs must explicitly set provider=sentence_transformers in the yaml.
     provider: Literal["deterministic_hash", "sentence_transformers"] = "deterministic_hash"
     model_name: str = "hashing-bow-v1"
     dimensions: int = Field(default=256, gt=0)
@@ -65,18 +71,12 @@ class RuntimeConfig(StrictEvalConfigModel):
     save_csv: bool = True
 
 
-class LeaderboardConfig(StrictEvalConfigModel):
-    sort_metric: str = "mean_recall_at_5"
-    sort_ascending: bool = False
-
-
 class EvalConfig(StrictEvalConfigModel):
     evaluation: EvaluationConfig
     inputs: InputsConfig
     retrieval: RetrievalEvalConfig = RetrievalEvalConfig()
     answer_quality: AnswerQualityConfig = AnswerQualityConfig()
     embedding_similarity: EmbeddingSimilarityConfig = EmbeddingSimilarityConfig()
-    leaderboard: LeaderboardConfig = LeaderboardConfig()
     runtime: RuntimeConfig = RuntimeConfig()
 
     @classmethod

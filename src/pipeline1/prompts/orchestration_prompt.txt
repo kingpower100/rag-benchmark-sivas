@@ -84,3 +84,17 @@
 | Wareneingang                     | WE              | Goods Receipt, Gütereingang,  Materialeingang                | Buchung des Zugangs von bestellten Teilen ins  ERP, Auslöser für Transportbelege und ggf.  QS-Vorgänge. |
 | Wechselkurs                      |                 | Währungskurs                                                 | Ein Währungskurs (auch Wechselkurs genannt) ist der Preis, zu  dem eine Währung in eine andere umgetauscht werden kann. |
 | Workflow-Meldung                 | WF-Meldung      | Automatisierte Nachricht, Prozessbenachrichtigung,  Arbeitsfluss-Mitteilung, Systemevent, Prozess-Alert, Workflow-Event | Eine Workflow-Meldung ist eine Mitteilung oder  Benachrichtigung, die im Rahmen eines automatisierten Workflows innerhalb  eines IT-Systems oder einer Software ausgelöst wird. Sie informiert  Beteiligte über den Status, eine Aktion oder einen nächsten Schritt in einem  definierten Arbeitsablauf. |
+
+# Kategorien
+CategoryNames: {{categories_json}}
+
+# Anfrage
+{"Frage": {{question_json}}}
+
+# Ausgabe
+Antworte ausschließlich mit einem gültigen JSON-Objekt. Kein Text vor oder nach dem JSON.
+{
+  "cleaned_question": "<bereinigte Frage auf Deutsch>",
+  "detected_category": "<exakter Wert aus CategoryNames, oder leerer String wenn unklar>",
+  "category_confidence": <Zahl zwischen 0.0 und 1.0>
+}

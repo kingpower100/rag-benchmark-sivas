@@ -66,7 +66,6 @@ def test_orchestrator_emits_generation_metrics_for_edge_cases():
             "evaluation": {"eval_run_id": "eval", "retrieval_eval_field": "retrieved_original_context_ids"},
             "inputs": {"rag_outputs": []},
             "retrieval": {"k": 2, "ks": [1, 2]},
-            "answer_quality": {"enable_numeric_accuracy": True, "numeric_tolerance_abs": 0.01},
             "embedding_similarity": {"provider": "deterministic_hash", "model_name": "unit-test", "dimensions": 64},
         }
     )
@@ -117,21 +116,22 @@ def test_orchestrator_emits_generation_metrics_for_edge_cases():
         cfg,
     )
 
-    assert evaluated[0]["numeric_accuracy"] == 1.0
     assert evaluated[0]["rouge_l"] > 0.0
-    assert evaluated[0]["embedding_similarity"] > 0.0
+    # provider=deterministic_hash routes value to bow_token_overlap_similarity, not embedding_similarity
+    assert evaluated[0]["bow_token_overlap_similarity"] > 0.0
+    assert evaluated[0]["embedding_similarity"] is None
     assert evaluated[0]["hit_at_2"] == 1.0
     assert evaluated[0]["recall_at_2"] == 0.5
     assert evaluated[0]["context_precision_at_2"] == 0.5
     assert evaluated[0]["duplicate_count_at_2"] == 0
     assert evaluated[0]["total_latency_ms"] == 6
-    assert evaluated[1]["numeric_accuracy"] == 0.0
-    assert evaluated[1]["numeric_parse_success"] == 0.0
     assert evaluated[1]["abstention_rate"] == 1.0
+    assert evaluated[1]["is_unknown"] == 1.0
     assert evaluated[2]["generation_failed"] is True
-    assert evaluated[2]["numeric_accuracy"] == 0.0
     assert evaluated[2]["rouge_l"] == 0.0
-    assert evaluated[2]["embedding_similarity"] == 0.0
+    # failed row: bow_token_overlap_similarity zeroed, embedding_similarity remains None
+    assert evaluated[2]["bow_token_overlap_similarity"] == 0.0
+    assert evaluated[2]["embedding_similarity"] is None
     assert evaluated[3]["id_alignment_ok"] is True
 
 
@@ -179,8 +179,6 @@ inputs:
   gold_contexts_path: "{gold_path.as_posix()}"
 retrieval:
   ks: [1]
-leaderboard:
-  sort_metric: "mean_numeric_accuracy"
 embedding_similarity:
   provider: "deterministic_hash"
   model_name: "unit-test"
@@ -193,16 +191,27 @@ embedding_similarity:
 
         assert (run_dir / "per_question_metrics.jsonl").exists()
         assert (run_dir / "summary_metrics.json").exists()
-        assert (run_dir / "leaderboard.csv").exists()
-        assert (run_dir / "leaderboard.md").exists()
+        assert (run_dir / "summary_by_category.csv").exists()
+        assert (run_dir / "summary_by_category.json").exists()
+        assert (run_dir / "eval_manifest.json").exists()
+        assert (run_dir / "audit_report.json").exists()
+        assert (run_dir / "audit_report.md").exists()
+        # Deprecated outputs must NOT be written
+        assert not (run_dir / "leaderboard.csv").exists()
+        assert not (run_dir / "leaderboard.md").exists()
+        assert not (run_dir / "summary_by_difficulty.csv").exists()
+        assert not (run_dir / "summary_by_difficulty.json").exists()
         row = read_jsonl(run_dir / "per_question_metrics.jsonl")[0]
         summary = json.loads((run_dir / "summary_metrics.json").read_text(encoding="utf-8"))
-        leaderboard_md = (run_dir / "leaderboard.md").read_text(encoding="utf-8")
         assert row["rouge_l"] == 1.0
-        assert row["embedding_similarity"] == pytest.approx(1.0)
+        # provider=deterministic_hash routes value to bow_token_overlap_similarity
+        assert row["bow_token_overlap_similarity"] == pytest.approx(1.0)
+        assert row["embedding_similarity"] is None
         assert row["total_latency_ms"] == 6
         assert summary["summary_by_experiment"][0]["mean_rouge_l"] == 1.0
-        assert "| rank |" in leaderboard_md
+        # Benchmark validity must be present
+        assert "benchmark_validity" in summary
+        assert summary["benchmark_validity"]["benchmark_validity_status"] in ("VALID", "WARNING", "INVALID")
     finally:
         if workspace.exists():
             shutil.rmtree(workspace)

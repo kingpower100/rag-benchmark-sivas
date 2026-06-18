@@ -10,18 +10,16 @@ from src.pipeline2.orchestrator import (
     _validate_pipeline1_questions_have_qa,
     _validate_pipeline1_questions_have_gold_contexts,
     _validate_no_duplicate_pipeline1_question_ids,
-    summarize_by_difficulty,
 )
 from src.pipeline2.schemas.eval_config_schema import EvalConfig
 
 
-def test_numeric_accuracy_flag_is_respected():
+def test_answer_metrics_are_computed():
     cfg = EvalConfig.model_validate(
         {
             "evaluation": {"eval_run_id": "eval", "retrieval_eval_field": "retrieved_original_context_ids"},
             "inputs": {"rag_outputs": []},
             "retrieval": {"k": 2},
-            "answer_quality": {"enable_numeric_accuracy": False},
         }
     )
     rows = [
@@ -49,7 +47,6 @@ def test_numeric_accuracy_flag_is_respected():
         cfg,
     )
 
-    assert evaluated[0]["numeric_accuracy"] is None
     assert evaluated[0]["hit_at_1"] == 1.0
     assert evaluated[0]["hit_at_3"] == 1.0
     assert evaluated[0]["context_precision_at_3"] == 1.0
@@ -58,7 +55,6 @@ def test_numeric_accuracy_flag_is_respected():
     assert evaluated[0]["non_empty_answer_rate"] == 1.0
     assert evaluated[0]["answer_coverage_rate"] == 1.0
     assert evaluated[0]["exact_match"] == 1.0
-    assert evaluated[0]["numeric_parse_success"] == 1.0
     assert evaluated[0]["abstention_rate"] == 0.0
     assert evaluated[0]["answer_relevancy_score"] == 0.0
     assert evaluated[0]["retrieval_time_ms"] == 4
@@ -74,7 +70,6 @@ def test_missing_configured_retrieval_eval_field_raises_clear_error():
             "evaluation": {"eval_run_id": "eval", "retrieval_eval_field": "retrieved_original_context_ids"},
             "inputs": {"rag_outputs": []},
             "retrieval": {"k": 2},
-            "answer_quality": {"enable_numeric_accuracy": True},
         }
     )
     rows = [
@@ -106,7 +101,6 @@ def test_retrieval_metrics_can_use_file_names_for_sivas_gold_ids():
             "evaluation": {"eval_run_id": "eval", "retrieval_eval_field": "retrieved_file_names"},
             "inputs": {"rag_outputs": []},
             "retrieval": {"k": 2, "ks": [1, 2]},
-            "answer_quality": {"enable_numeric_accuracy": True},
         }
     )
     rows = [
@@ -149,7 +143,6 @@ def test_retrieval_evaluation_does_not_switch_fields_based_on_gold_overlap():
             "evaluation": {"eval_run_id": "eval", "retrieval_eval_field": "retrieved_file_names"},
             "inputs": {"rag_outputs": []},
             "retrieval": {"k": 1, "ks": [1]},
-            "answer_quality": {"enable_numeric_accuracy": True},
         }
     )
     rows = [
@@ -180,7 +173,6 @@ def test_missing_gold_contexts_fail_evaluation():
             "evaluation": {"eval_run_id": "eval", "retrieval_eval_field": "retrieved_original_context_ids"},
             "inputs": {"rag_outputs": []},
             "retrieval": {"k": 2},
-            "answer_quality": {"enable_numeric_accuracy": True},
         }
     )
     rows = [{"question_id": "q_missing", "experiment_id": "exp", "generated_answer": "100", "retrieved_original_context_ids": ["c1"]}]
@@ -221,7 +213,6 @@ def test_pipeline1_error_row_is_retained_and_scores_zero_for_answer_metrics():
             "evaluation": {"eval_run_id": "eval", "retrieval_eval_field": "retrieved_original_context_ids"},
             "inputs": {"rag_outputs": []},
             "retrieval": {"k": 2, "ks": [1, 2]},
-            "answer_quality": {"enable_numeric_accuracy": True},
         }
     )
     rows = [
@@ -245,17 +236,15 @@ def test_pipeline1_error_row_is_retained_and_scores_zero_for_answer_metrics():
     assert len(evaluated) == 1
     assert evaluated[0]["pipeline_success"] == 0.0
     assert evaluated[0]["pipeline1_error"] == "generation failed"
-    assert evaluated[0]["numeric_accuracy"] == 0.0
     assert evaluated[0]["exact_match"] == 0.0
     assert evaluated[0]["non_empty_answer_rate"] == 0.0
-    assert evaluated[0]["numeric_parse_success"] == 0.0
     assert evaluated[0]["answer_match_status"] == "pipeline1_error"
     assert evaluated[0]["hit_at_1"] == 0.0
     assert evaluated[0]["recall_at_1"] == 0.0
     assert evaluated[0]["mrr_at_1"] == 0.0
 
 
-def test_qa_index_supports_uid_only_rows_and_numeric_answer_resolution():
+def test_qa_index_supports_uid_only_rows():
     qa_by_id = _index_by_id(
         [
             {
@@ -271,7 +260,6 @@ def test_qa_index_supports_uid_only_rows_and_numeric_answer_resolution():
             "evaluation": {"eval_run_id": "eval", "retrieval_eval_field": "retrieved_original_context_ids"},
             "inputs": {"rag_outputs": []},
             "retrieval": {"k": 1, "ks": [1]},
-            "answer_quality": {"enable_numeric_accuracy": True},
         }
     )
     rows = [
@@ -292,7 +280,6 @@ def test_qa_index_supports_uid_only_rows_and_numeric_answer_resolution():
     )
 
     assert evaluated[0]["ground_truth_answer"] == "507"
-    assert evaluated[0]["numeric_accuracy"] == 1.0
     assert evaluated[0]["exact_match"] == 1.0
     assert evaluated[0]["answer_match_status"] == "match"
 
@@ -354,7 +341,6 @@ def test_pipeline2_joins_difficulty():
             "evaluation": {"eval_run_id": "eval", "retrieval_eval_field": "retrieved_original_context_ids"},
             "inputs": {"rag_outputs": []},
             "retrieval": {"k": 1, "ks": [1]},
-            "answer_quality": {"enable_numeric_accuracy": True},
         }
     )
     rows = [
@@ -403,7 +389,6 @@ def test_retrieval_only_mode_skips_answer_metrics_without_generated_answer():
     )
 
     assert evaluated[0]["hit_at_1"] == 1.0
-    assert evaluated[0]["numeric_accuracy"] is None
     assert evaluated[0]["exact_match"] is None
     assert evaluated[0]["answer_match_status"] == "skipped_retrieval_only"
 
@@ -424,19 +409,6 @@ def test_gold_context_index_supports_uid_and_rejects_duplicates():
             {"id": "UID0001", "context_id": ["doc.txt"]},
             {"uid": "UID0001", "context_id": ["other.txt"]},
         ])
-
-
-def test_difficulty_summary_includes_all_and_each_difficulty():
-    rows = [
-        {"difficulty": "easy", "hit_at_1": 1.0, "recall_at_1": 1.0, "mrr_at_1": 1.0, "ndcg_at_1": 1.0, "exact_match": 1.0, "numeric_accuracy": 1.0, "total_latency_ms": 10, "total_tokens": 5},
-        {"difficulty": "hard", "hit_at_1": 0.0, "recall_at_1": 0.0, "mrr_at_1": 0.0, "ndcg_at_1": 0.0, "exact_match": 0.0, "numeric_accuracy": 0.0, "total_latency_ms": 20, "total_tokens": 7},
-    ]
-
-    summary = summarize_by_difficulty(rows)
-
-    assert [row["difficulty"] for row in summary] == ["all", "easy", "hard"]
-    assert summary[0]["n_questions"] == 2
-    assert summary[0]["mean_hit_at_1"] == 0.5
 
 
 def test_generation_failure_threshold_validity_counts_failures():
@@ -484,3 +456,39 @@ def test_missing_pipeline1_question_ids_in_qa_fail():
 
     with pytest.raises(ValueError, match="missing answers"):
         _validate_pipeline1_questions_have_qa(rows, {"q1": {"answer": "1"}})
+
+
+def test_is_unknown_flag_set_for_unknown_answers():
+    cfg = EvalConfig.model_validate(
+        {
+            "evaluation": {"eval_run_id": "eval", "retrieval_eval_field": "retrieved_original_context_ids"},
+            "inputs": {"rag_outputs": []},
+            "retrieval": {"k": 1, "ks": [1]},
+        }
+    )
+    rows = [
+        {
+            "question_id": "q1",
+            "experiment_id": "exp",
+            "generated_answer": "UNKNOWN",
+            "question": "Q?",
+            "retrieved_original_context_ids": ["c1"],
+        },
+        {
+            "question_id": "q2",
+            "experiment_id": "exp",
+            "generated_answer": "some answer",
+            "question": "Q?",
+            "retrieved_original_context_ids": ["c1"],
+        },
+    ]
+
+    evaluated = EvaluationOrchestrator()._evaluate_rows(
+        rows,
+        {"q1": {"id": "q1", "answer": "x"}, "q2": {"id": "q2", "answer": "x"}},
+        {"q1": ["c1"], "q2": ["c1"]},
+        cfg,
+    )
+
+    assert evaluated[0]["is_unknown"] == 1.0
+    assert evaluated[1]["is_unknown"] == 0.0

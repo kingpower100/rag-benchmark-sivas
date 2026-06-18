@@ -16,11 +16,27 @@ retrieval:
   k: 5
   ks: [1, 3, 5]
 answer_quality:
-  enable_numeric_accuracy: true
-  abstention_patterns: ["UNKNOWN", "NOT FOUND", "N/A", "CANNOT DETERMINE"]
-leaderboard:
-  sort_metric: "mean_recall_at_5"
-  sort_ascending: false
+  abstention_patterns:
+    # English forms
+    - "UNKNOWN"
+    - "NOT FOUND"
+    - "N/A"
+    - "CANNOT DETERMINE"
+    # German forms
+    - "UNBEKANNT"
+    - "NICHT GEFUNDEN"
+    - "NICHT VERFÜGBAR"
+    - "NICHT BEKANNT"
+    - "KEINE INFORMATION"
+    - "KANN NICHT BESTIMMT WERDEN"
+    - "NICHT BESTIMMBAR"
+    - "KEINE ANGABE"
+    - "K.A."
+embedding_similarity:
+  provider: sentence_transformers
+  model_name: intfloat/multilingual-e5-large
+  dimensions: 1024
+  enabled: true
 runtime:
   overwrite: true
   save_csv: true

@@ -2,10 +2,13 @@ from __future__ import annotations
 
 import math
 from pathlib import Path
-from src.pipeline1.retrieval.metadata import QueryMetadata, extract_query_metadata, metadata_matches
 
 
 DEFAULT_RETRIEVAL_KS = [1, 3, 5]
+
+
+class EvaluationError(ValueError):
+    """Raised when a computed metric violates an invariant (e.g. NDCG > 1)."""
 
 
 def compute_retrieval_metrics(
@@ -25,6 +28,10 @@ def compute_retrieval_metrics_for_ks(
 ) -> dict[str, float | None]:
     normalized = _normalize_and_dedupe_documents(retrieved_ids)
     raw_normalized = [normalize_source_id(str(item)) for item in retrieved_ids if item is not None and str(item).strip()]
+    # Deduplicate gold IDs before computing any metrics
+    gold_ids_deduped = _dedupe_preserving_order(
+        [normalize_source_id(str(g)) for g in gold_ids if g is not None and str(g).strip()]
+    )
     duplicate_count = len(raw_normalized) - len(set(raw_normalized))
     output: dict[str, float | None] = {
         "raw_retrieved_count": len(raw_normalized),
@@ -37,8 +44,8 @@ def compute_retrieval_metrics_for_ks(
     for k in ks or DEFAULT_RETRIEVAL_KS:
         raw_ranked_at_k = raw_normalized[:k]
         duplicate_count_at_k = len(raw_ranked_at_k) - len(set(raw_ranked_at_k))
-        metrics = _metrics_at_k(raw_normalized, gold_ids, k, already_normalized=True)
-        deduped_metrics = _metrics_at_k(normalized, gold_ids, k, already_normalized=True)
+        metrics = _metrics_at_k(raw_normalized, gold_ids_deduped, k, already_normalized=True)
+        deduped_metrics = _metrics_at_k(normalized, gold_ids_deduped, k, already_normalized=True)
         metrics[f"duplicate_count_at_{k}"] = duplicate_count_at_k
         metrics[f"duplicate_rate_at_{k}"] = duplicate_count_at_k / len(raw_ranked_at_k) if raw_ranked_at_k else 0.0
         metrics[f"deduped_hit_at_{k}"] = deduped_metrics[f"hit_at_{k}"]
@@ -46,6 +53,19 @@ def compute_retrieval_metrics_for_ks(
         metrics[f"deduped_mrr_at_{k}"] = deduped_metrics[f"mrr_at_{k}"]
         metrics[f"deduped_ndcg_at_{k}"] = deduped_metrics[f"ndcg_at_{k}"]
         output.update(metrics)
+        # Hard invariant: NDCG must be in [0, 1]
+        ndcg_val = output.get(f"ndcg_at_{k}")
+        if ndcg_val is not None and ndcg_val > 1.0 + 1e-9:
+            raise EvaluationError(
+                f"ndcg_at_{k}={ndcg_val:.6f} > 1.0. "
+                f"Retrieved (first 10): {retrieved_ids[:10]}. "
+                f"Gold (first 10): {gold_ids[:10]}."
+            )
+        deduped_ndcg_val = output.get(f"deduped_ndcg_at_{k}")
+        if deduped_ndcg_val is not None and deduped_ndcg_val > 1.0 + 1e-9:
+            raise EvaluationError(
+                f"deduped_ndcg_at_{k}={deduped_ndcg_val:.6f} > 1.0."
+            )
     return output
 
 
@@ -61,7 +81,7 @@ def _metrics_at_k(
         else _normalize_documents(retrieved_ids)
     )
     ranked = normalized[:k]
-    gold_set = {normalize_source_id(str(item)) for item in gold_ids if item is not None}
+    gold_set = set(gold_ids) if already_normalized else {normalize_source_id(str(item)) for item in gold_ids if item is not None}
     overlap = len(set(ranked) & gold_set)
 
     hit = 1.0 if overlap > 0 else 0.0
@@ -95,56 +115,17 @@ def duplicate_context_rate(retrieved_ids: list[str]) -> float:
     return (len(ids) - len(set(ids))) / len(ids)
 
 
-def compute_metadata_match_metrics(
-    question: str,
-    retrieved_metadata: list[dict],
-    query_metadata: dict | None = None,
-) -> dict[str, float | None]:
-    query = _query_metadata_from_payload(query_metadata) if query_metadata else extract_query_metadata(question, retrieved_metadata)
-    company_values = []
-    year_values = []
-    month_values = []
-    year_month_values = []
-    metadata_values = []
-    for metadata in retrieved_metadata:
-        matches = metadata_matches(metadata or {}, query)
-        if matches["company_match"] is not None:
-            company_values.append(float(bool(matches["company_match"])))
-        if matches["year_match"] is not None:
-            year_values.append(float(bool(matches["year_match"])))
-        if matches["month_match"] is not None:
-            month_values.append(float(bool(matches["month_match"])))
-        if matches["year_month_match"] is not None:
-            year_month_values.append(float(bool(matches["year_month_match"])))
-        if matches["metadata_match"] is not None:
-            metadata_values.append(float(bool(matches["metadata_match"])))
-    return {
-        "metadata_match_rate": None if not metadata_values else sum(metadata_values) / len(metadata_values),
-        "company_match_rate": None if not company_values else sum(company_values) / len(company_values),
-        "year_match_rate": None if not year_values else sum(year_values) / len(year_values),
-        "month_match_rate": None if not month_values else sum(month_values) / len(month_values),
-        "exact_year_month_match_rate": None if not year_month_values else sum(year_month_values) / len(year_month_values),
-    }
-
-
-def _query_metadata_from_payload(payload: dict) -> QueryMetadata:
-    return QueryMetadata(
-        company_names=frozenset(payload.get("company_names") or []),
-        company_symbols=frozenset(payload.get("company_symbols") or []),
-        years=frozenset(int(value) for value in (payload.get("years") or [])),
-        months=frozenset(int(value) for value in (payload.get("months") or [])),
-        year_months=frozenset(str(value) for value in (payload.get("year_months") or [])),
-        fiscal_years=frozenset(int(value) for value in (payload.get("fiscal_years") or [])),
-        report_periods=frozenset(payload.get("report_periods") or []),
-        file_names=frozenset(payload.get("file_names") or []),
-        source_datasets=frozenset(payload.get("source_datasets") or []),
-    )
-
-
 def _ndcg_at_k(ranked: list[str], gold_set: set[str], k: int) -> float:
     if not gold_set:
         return 0.0
-    dcg = sum((1.0 / math.log2(rank + 1)) for rank, item in enumerate(ranked[:k], start=1) if item in gold_set)
+    # Deduplicate ranked list before DCG to prevent duplicate gold hits inflating DCG > IDCG
+    seen: set[str] = set()
+    deduped: list[str] = []
+    for item in ranked[:k]:
+        if item not in seen:
+            seen.add(item)
+            deduped.append(item)
+    dcg = sum((1.0 / math.log2(rank + 1)) for rank, item in enumerate(deduped, start=1) if item in gold_set)
     ideal_hits = min(len(gold_set), k)
     idcg = sum(1.0 / math.log2(rank + 1) for rank in range(1, ideal_hits + 1))
     return dcg / idcg if idcg else 0.0
