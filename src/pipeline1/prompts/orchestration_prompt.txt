@@ -1,256 +1,99 @@
 # Deine Aufgaben
-
 1. Bereinigen der gestellten Frage.
-2. Ermitteln der passenden Kategorie.
-
----
+2. Ermitteln der Kategorie.
 
 # Workflow
-
-## 1. Bereinigen der gestellten Frage
-
+## 1. Bereinigen der gestellten Frage.
 - Nutze ausschließlich die Property `Frage` aus der Anfrage.
-- Übersetze die Frage auf Deutsch, wenn sie in einer anderen Sprache gestellt wurde.
-- Korrigiere ausschließlich:
-  - Rechtschreibung
-  - Grammatik
-  - Groß- und Kleinschreibung
+- Übersetze die Frage auf Deutsch, wenn sie in einer anderen Sprache gestellt ist.
+- Korrigiere **ausschließlich** Rechtschreibung, Grammatik und Groß-/Kleinschreibung. Verändere dabei nicht den Inhalt, die Wortwahl oder die Bedeutung der Frage. Füge keine Wörter hinzu und ersetze keine Begriffe durch Synonyme oder fachliche Bezeichnungen.
+- Gebe das Ergebnis als `cleaned_question` zurück.
+- Gebe **nur dann** einen leeren String zurück, wenn die Frage bereits auf Deutsch ist **und** Rechtschreibung, Grammatik **und** Groß-/Kleinschreibung vollständig korrekt sind.
 
-- Verändere NICHT:
-  - die Bedeutung
-  - die Wortwahl
-  - die Reihenfolge der Informationen
+## 2. Ermitteln der Kategorie.
+- Nutze ausschließlich die Properties `ModuleName`, `ProgramName`, `Role`, `RoleDescription`, `Frage` aus der Anfrage.
+- Die folgende Tabelle hilft dir, Begriffe aus der Anfrage semantisch einzuordnen. Sie dient **nur zur Orientierung**.
+- Wähle anhand dieser Informationen genau einen Wert aus der Liste `CategoryNames` und gebe ihn als name zurück.
+- Der zurückgegebene Wert muss exakt so geschrieben sein wie in CategoryNames. Jede andere Ausgabe ist ungültig.
+- Wenn du keinen eindeutigen Treffer findest, gebe einen leeren String zurück.
 
-- Ergänze keine Informationen.
-- Ersetze keine Begriffe durch Synonyme.
-- Erfinde keine zusätzlichen Details.
-
-- Ist die Frage bereits korrekt formuliert, gib sie unverändert zurück.
-
----
-
-## 2. Kategorie bestimmen
-
-Nutze ausschließlich:
-
-- ModuleName
-- ProgramName
-- Role
-- RoleDescription
-- Frage
-
-Bestimme zuerst das Hauptthema der Frage.
-
-Ordne die Frage anschließend GENAU EINER Kategorie aus CategoryNames zu.
-
-Die Kategorie muss das Hauptthema der Frage beschreiben.
-
-Falls mehrere Kategorien möglich erscheinen:
-
-→ Wähle die Kategorie,
-welche die eigentliche Benutzerabsicht am besten beschreibt.
-
-Bevorzuge niemals einen leeren String.
-
-Gib nur dann einen leeren String zurück,
-wenn die Frage keinerlei Bezug zu einer der verfügbaren Kategorien besitzt.
-
----
+| Korrekter Begriff            | Abkürzungen | Synonyme                                                 | Beschreibung                                             |
+| -------------------------------- | --------------- | ------------------------------------------------------------ | ------------------------------------------------------------ |
+| Arbeitsgang                      | AG              | Operation, Fertigungsschritt                                 | Einzelner Schritt innerhalb eines Arbeitsplans,  der  an einem bestimmten Arbeitsplatz ausgeführt wird. |
+| Arbeitsplan                      | AP              | Arbeitsfolge, Operationsplan, Fertigungsplan, Ablaufplan     | Definiert die einzelnen Arbeitsgänge (Operationen) zur Fertigung eines Teils inkl. Arbeitsplätzen, Zeiten und Qualifikationen. Technologische Abfolge der  Fertigung |
+| Arbeitsplatz                     | APZ             | Kostenstelle, Ressource                                      | Physischer oder organisatorischer Ort  der Leistungserbringung (Maschine, Montageplatz, Mitarbeitergruppe). |
+| Auftragsbestätigung              | AB              |                                                              | Ein Dokument, mit dem ein Unternehmen den Eingang und die  Annahme eines Kundenauftrags bestätigt. |
+| Ausfassliste                     | -               | Pickliste, Entnahmeliste                                     | Liste aller für einen Auftrag benötigten Teile,  Basis für materialgeführte Entnahmen aus dem Lager per  MDE-Gerät. |
+| Auswärtsarbeitsgang              | AAG             | Fremdfertigungsarbeitsgang, Lohnarbeit, externe Bearbeitung  | Ein  Auswärtsarbeitsgang ist ein einzelner Arbeitsschritt im betrieblichen  Produktions- oder Arbeitsprozess, der nicht in der eigenen Betriebsstätte  ausgeführt, sondern bei einem externen Lieferanten oder Dienstleister in  Auftrag gegeben und dort durchgeführt wird. Dabei stellt das beauftragende  Unternehmen üblicherweise das zu bearbeitende Material oder Halbfabrikat als  Beistellung bereit. |
+| Baugruppe                        | BG              | Assembly, Unterbaugruppe, Funktionseinheit,  Konstruktionsgruppe,  Baueinheit, Modul   Teilsystem, | Zusammengebaute Einheit aus Einzelteilen; kann eigengefertigt oder fremdbezogen  (verlagert) sein. Kann selbst Teil einer übergeordneten Stückliste sein. |
+| Baugruppe einlagern              | -               | Fertigungseinlagerung, Produktionszugang                     | MDE-Funktion zur Buchung fertiger Baugruppen aus der Fertigung ins  Lager inkl. Statuswechsel des technischen Auftrags. |
+| Bestellwunsch                    |                 | Bestellvorschlag, Bestellanforderung, BANF, Bestellanfrage,  Beschaffungsvorschlag | Es handelt sich noch nicht um eine verbindliche Bestellung,  sondern um eine Art Vorschlag oder Anforderung. |
+| Customer Relationship Management | CRM             |                                                              | Ein CRM-Programm (Customer Relationship Management) ist eine  Softwarelösung, die Unternehmen dabei unterstützt, Kundenbeziehungen  systematisch zu verwalten, zu analysieren und zu verbessern. Es bündelt  Informationen zu Kunden, Interaktionen, Verkaufschancen und Serviceanfragen,  um effizientere Prozesse und eine stärkere Kundenbindung zu ermöglichen. |
+| Dokumentenmanagementsystem       | DMS,EDM         | Elektronisches Dokumenten Management                         | Ein DMS steht für Dokumentenmanagementsystem. Es handelt sich  um eine Softwarelösung, die Unternehmen dabei unterstützt, Dokumente digital  zu verwalten, zu speichern, zu organisieren und zu bearbeiten. |
+| Eigenfertigung                   | EF              | Inhouse-Fertigung                                            | Herstellung von Teilen oder Baugruppen im eigenen Unternehmen. |
+| Fehlteil                         | -               | Materialfehlmenge, Fehlmenge, Materialfehlteil               | Teil, dessen Bedarf nicht durch verfügbaren Lagerbestand gedeckt werden kann; wird systemseitig überwacht. |
+| Fehlteilemanagement              | -               | Backorder-Management                                         | Systemfunktion zur Verwaltung, Priorisierung und automatischen Bedienung von Fehlteilen im Projektgeschäft. |
+| Fremdfertigung                   | FF              | Lohnfertigung                                                | Auslagerung von Fertigungsschritten oder kompletten Teilen an  externe Lieferanten. |
+| Geschäftspartner                 | GEPA, Gepa      | Partner                                                      | Kunde, Interessent oder Lieferant mit dem ein Unternehmen eine  Geschäftsbeziehung hat. |
+| Gültigkeit von Preisen           |                 | Gültigkeitsdatum von Preisen                                 |                                                              |
+| Hauptlager                       | -               | Zentrallager                                                 | Zentrales Lager  für lagergeführte Teile ohne direkten Auftragsbezug. |
+| Kaufmännischer Auftrag           |                 | Auftrag, Vertriebsauftrag                                    | Ein kaufmännischer Auftrag umfasst alle administrativen  Tätigkeiten, die mit der Abwicklung eines Geschäfts verbunden sind. Dazu  gehören die Erstellung von Angeboten, die Auftragsbestätigung, die  Rechnungsstellung und die Buchhaltung. |
+| Kommissionslager                 | -               | Auftragslager, Projektlager                                  | Lagerort für auftragsbezogene Teile im Projekt-  und Sondermaschinenbau, reserviert für einen konkreten techn.  Auftrag. |
+| Konfigurationsgruppe             |                 | TOS-Gruppe                                                   |                                                              |
+| Konfigurationsmanagement         |                 | TOS                                                          |                                                              |
+| Konfigurator                     |                 | Merkmalseingabe                                              | Der Konfigurator  ermöglicht es, Produkte über Merkmale und Zuordnung von Merkmalsausprägungen  zu konfigurieren und daraus automatisch Stücklisten, Arbeitspläne, Preise und  technische Dokumente abzuleiten – ohne manuelle Einzelpflege. |
+| Kundenbeistellung                |                 | Kundenlieferung                                              | Ein Kunde liefert Material (z.b ein Muster) für einen Auftrag. |
+| Lagerbewegung                    | -               | Bestandsbewegung, Materialbewegung                           | Jede Zu- oder Abgangsbuchung bzw. Umlagerung eines Teils im Lager; Grundlage für Bestandsführung, Nachverfolgbarkeit und Bewertung. |
+| Lagerbewegungsart                | -               | Bewegungsart, Buchungsart                                    | Klassifizierung einer Lagerbewegung (z. B. Umlagerung, ungeplanter Zugang, Verschrotten) |
+| Lagerort                         | -               | Lagerplatz, Storage Location                                 | Physisch oder logisch definierter Ort im Lager,  auf dem Bestände geführt werden (z. B. Hauptlager,  QS-Lager, Kommissionslager). |
+| Laufkarte                        | -               | Auftragsdokument, Fertigungskarte                            | Physisches oder digitales Dokument mit QR-Code zur Identifikation eines technischen Auftrags in Fertigung und  Lager. |
+| Liegezeit                        | -               | Wartezeit                                                    | Zeit, in der  Material oder Aufträge zwischen Arbeitsgängen auf Weiterbearbeitung warten. |
+| Make-or-Buy                      | MoB             | Eigen- oder Fremdfertigung                                   | Strategische Entscheidung, ob ein Teil  intern gefertigt oder extern beschafft wird. |
+| Material ausfassen               | -               | Material entnehmen, Kommissionieren                          | MDE-gestützte Entnahme von  Material aus dem Lager auf  Basis einer Ausfassliste und Verbuchung auf  den Auftrag. |
+| MDE-App                          | -               | Scanner-App, Lager-App, Mobile ERP-App                       | Android-basierte Applikation zur Durchführung materialwirtschaftlicher Transaktionen (Buchen, Umbuchen, Einlagern, Ausfassen) als Frontend zu SIVAS.ERP. |
+| Merkmal                          |                 | Merkmal, Attribut, Eigenschaft                               | Erkennbare Eigenschaft, die eine Sache (z.B. Teil) oder einen  abstrakten Zusammenhang von anderen unterscheidet. |
+| Merkmalsausprägung               |                 | Merkmalsausprägung, Ausprägung, Merkmalswert                 | Eine Merkmalsausprägung ist ein spezifischer Wert oder eine  Eigenschaft, die ein Merkmal annehmen kann. |
+| Positionsmenge                   |                 | Menge                                                        |                                                              |
+| QS-Lager                         | QS              | Qualitätslager, Prüflager                                    | Spezieller Lagerort für qualitätsprüfpflichtige Teile        |
+| Reservierung                     | -               | Materialreservierung, Bestandssperre                         | Auftragsbezogene Vormerkung von Lagerbestand zur Sicherstellung der Materialverfügbarkeit. |
+| Rüstzeit                         |                 | Einrichtzeit, Setup-Zeit                                     | Zeit,  die benötigt wird,  um einen Arbeitsplatz oder eine Maschine für einen neuen Auftrag vorzubereiten. |
+| Service Mitarbeiter              |                 | Service Manager, Mitarbeiter, Supporter, Support Mitarbeiter | Ein Service Mitarbeiter erfasst Service Tickets. Er bearbeitet  diese und ist für deren Abwicklung verantwortlich. Er kommuniziert mit dem  Kunden und den Verantwortlichen in der Firma. |
+| Serviceeinsatz                   |                 | Montageeinsatz                                               | Ein Serviceeinsatz  ist ein geplanter oder spontaner Außeneinsatz, bei dem Service‑ oder Field‑Service‑Mitarbeiter Leistungen beim Kunden vor  Ort oder an einer bestimmten Anlage erbringen. |
+| Serviceticket                    |                 | Ticket, Supportanfrage, Incident, Fall, Servicefall          | Ein Serviceticket ist eine dokumentierte Anfrage zur  Bearbeitung eines Problems oder Anliegens durch den Service oder Support. Ein  Ticket wird vom Kunden gemeldet und vom Servicemitarbeiter erfasst. |
+| SIVAS                            |                 | SIVAS.ERP, ERP, im SIVAS, in SIVAS                           |                                                              |
+| Sofortabgang                     | -               | Direktentnahme, automatischer Abgang                         | Automatische Entnahmebuchung zur sofortigen Bedarfsdeckung eines Fehlteils bei Lagerzugang. |
+| Sperrlager                       | -               | Quarantänelager                                              | Lagerort für gesperrte oder schlecht geprüfte Teile,  die nicht verwendet werden dürfen. |
+| Stammarbeitsplan                 |                 | Musterarbeitsplan, Referenzarbeitsplan                       |                                                              |
+| Status                           |                 | Zustand, Stadium, Prozessschritt                             |                                                              |
+| Strich-Anfrage                   |                 | angepasste Anfrage, aktualisierte Anfrage, revidierte Anfrage,  überarbeitete Anfrage, modifizierte Anfrage, korrigierte Anfrage,  Revisionsanfrage |                                                              |
+| Strich-Angebot                   |                 | angepasstes Angebot, aktualisiertes Angebot, revidiertes  Angebot, überarbeitetes Angebot modifiziertes Angebot, korrigiertes Angebot,  Revisionsangebot |                                                              |
+| Stückliste                       | ST              | BOM (Bill of Material)                                       | Strukturierte Auflistung aller Teile, Baugruppen und Materialien,  die zur Herstellung eines Produkts benötigt werden. |
+| Stückzeit                        |                 | Laufzeit, Maschinenzeit, Bearbeitungszeit eines Arbeitsgangs | Reine Zeit, in  der ein Arbeitsgang aktiv ausgeführt wird (ohne Rüst-  und Liegezeiten). |
+| technischer Auftrag              |                 | Werkstattauftrag,  Fertigungsauftrag, Produktionsauftrag, Kommisionsauftrag, Auftrag | Innerbetrieblicher Auftrag zur Produktion einer bestimmten  Menge eines Einzelteils, einer Baugruppe oder eines Endprodukts. Er wird in  der Produktionswirtschaft und Produktionstechnik verwendet, um den  Fertigungsprozess zu steuern und zu dokumentieren. Der techn. Auftrag ist  auch der Auftrag, für den Teile auftragsbezogen bestellt werden, die zur  Fertigung benötigt werden. |
+| Teil                             |                 | Artikel, Material,                                           |                                                              |
+| Teile-Bezeichung                 |                 | Artikel-Bezeichnung, Positions-Bezeichnung, Teile-Name,  Artikel-Name |                                                              |
+| Teileetikett                     | -               | Materialetikett, Barcodeetikett                              | Etikett mit QR-Code zur Identifikation von Teilen, Seriennummern oder Attesten in  Lager und Fertigung. |
+| Teilekonto                       | -               | Materialkonto                                                | Historie und aktueller Stand aller Lagerbewegungen und Bestände eines Teils. |
+| Teile-Verkaufspreis              |                 | Artikel-Vertriebspreis, Artikel-Verkaufspreis,  Teile-Vertriebspreis |                                                              |
+| Teilprojekt                      |                 |                                                              | Gliederungsebene unterhalb des Projekt um den Lebenszyklus des  Produkt abbilden zu können. |
+| Transportbeleg                   | -               | Umlagerungsbeleg, Materialtransportbeleg, interner Lieferschein | Systemseitig erzeugtes Begleitdokument für  interne Warenbewegungen zwischen Lagerorten, automatisch generiert nach Wareneingang, Einlagerung oder QS-Vorgängen. |
+| Übergeordnete Position           |                 | Mutterposition                                               |                                                              |
+| Umbuchung                        | -               | Umlagerung, Bestandsverschiebung                             | Lagerinterne Buchung zur Verschiebung von Beständen zwischen Lagerorten oder Lagerbereichen. |
+| Vertrag                          | SLA             | SLA, Service Level Agreement, Servicevertrag, Wartungsvertrag,  Servicevereinbarung, | Der Vertrag beschreibt die Vereinbarung zwischen Kunden und  Hersteller den Service betreffend. |
+| Wachsende Stückliste             | -               | Projektstückliste                                            | Stückliste,  die sich projektbegleitend weiterentwickelt und besonders in  der Einzelfertigung üblich ist. |
+| Wareneingang                     | WE              | Goods Receipt, Gütereingang,  Materialeingang                | Buchung des Zugangs von bestellten Teilen ins  ERP, Auslöser für Transportbelege und ggf.  QS-Vorgänge. |
+| Wechselkurs                      |                 | Währungskurs                                                 | Ein Währungskurs (auch Wechselkurs genannt) ist der Preis, zu  dem eine Währung in eine andere umgetauscht werden kann. |
+| Workflow-Meldung                 | WF-Meldung      | Automatisierte Nachricht, Prozessbenachrichtigung,  Arbeitsfluss-Mitteilung, Systemevent, Prozess-Alert, Workflow-Event | Eine Workflow-Meldung ist eine Mitteilung oder  Benachrichtigung, die im Rahmen eines automatisierten Workflows innerhalb  eines IT-Systems oder einer Software ausgelöst wird. Sie informiert  Beteiligte über den Status, eine Aktion oder einen nächsten Schritt in einem  definierten Arbeitsablauf. |
 
 # Kategorien
-
-## Einkauf / Materialwirtschaft
-
-Diese Kategorie umfasst Fragen zu:
-
-- Einkauf
-- Bestellung
-- Lieferanten
-- Wareneingang
-- Lager
-- Lagerbewegungen
-- Material
-- Materialwirtschaft
-- Bestand
-- Inventur
-- Beschaffung
-- Kommissionierung
-- Umlagerung
-- Fehlteile
-- Reservierung
-
----
-
-## Service
-
-Diese Kategorie umfasst Fragen zu:
-
-- Servicetickets
-- Serviceeinsätze
-- Wartung
-- Support
-- Serviceverträge
-- SLA
-- Kundendienst
-- Außendienst
-- Reklamationen
-
----
-
-## Technik
-
-Diese Kategorie umfasst Fragen zu:
-
-- Arbeitspläne
-- Arbeitsgänge
-- Fertigung
-- Produktion
-- Stücklisten
-- Baugruppen
-- Konfigurator
-- Konfigurationsmanagement
-- Maschinen
-- Arbeitsplätze
-- technische Prozesse
-
----
-
-## Vertrieb
-
-Diese Kategorie umfasst Fragen zu:
-
-- Angebote
-- Aufträge
-- Kunden
-- CRM
-- Verkauf
-- Preise
-- Verträge
-- Vertrieb
-- Rechnungen
-- Geschäftspartner
-
----
-
-# Glossar
-
-(Hier bleibt deine komplette ERP-Begriffstabelle unverändert.)
-
----
-
-# Beispiele
-
-Beispiel 1
-
-Frage:
-Wie buche ich einen Wareneingang?
-
-Kategorie:
-Einkauf / Materialwirtschaft
-
----
-
-Beispiel 2
-
-Frage:
-Wie lege ich einen Lieferanten an?
-
-Kategorie:
-Einkauf / Materialwirtschaft
-
----
-
-Beispiel 3
-
-Frage:
-Wie erstelle ich ein Serviceticket?
-
-Kategorie:
-Service
-
----
-
-Beispiel 4
-
-Frage:
-Wie plane ich einen Serviceeinsatz?
-
-Kategorie:
-Service
-
----
-
-Beispiel 5
-
-Frage:
-Wie ändere ich einen Arbeitsplan?
-
-Kategorie:
-Technik
-
----
-
-Beispiel 6
-
-Frage:
-Wie füge ich einen Arbeitsgang hinzu?
-
-Kategorie:
-Technik
-
----
-
-Beispiel 7
-
-Frage:
-Wie erstelle ich ein Angebot?
-
-Kategorie:
-Vertrieb
-
----
-
-Beispiel 8
-
-Frage:
-Wie bearbeite ich einen Kundenauftrag?
-
-Kategorie:
-Vertrieb
-
----
-
-# Kategorien
-
-CategoryNames:
-
-{{categories_json}}
-
----
+CategoryNames: {{categories_json}}
 
 # Anfrage
-
-{
-    "ModuleName": {{module_json}},
-    "ProgramName": {{program_json}},
-    "Role": {{role_json}},
-    "RoleDescription": {{role_description_json}},
-    "Frage": {{question_json}}
-}
-
----
+{"Frage": {{question_json}}}
 
 # Ausgabe
-
-Antworte ausschließlich mit einem gültigen JSON.
-
-Keine Erklärung.
-
-Kein Markdown.
-
-Kein Text vor oder nach dem JSON.
-
+Antworte ausschließlich mit einem gültigen JSON-Objekt. Kein Text vor oder nach dem JSON.
 {
-    "cleaned_question": "<bereinigte Frage>",
-    "detected_category": "<exakter Wert aus CategoryNames>"
+  "cleaned_question": "<bereinigte Frage auf Deutsch>",
+  "detected_category": "<exakter Wert aus CategoryNames, oder leerer String wenn unklar>"
 }
