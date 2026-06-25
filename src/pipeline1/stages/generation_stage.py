@@ -182,7 +182,8 @@ class GenerationStage(BaseStage):
             question=query.question,
             cleaned_question=query.cleaned_question,
             detected_category=query.detected_category,
-            category_confidence=query.category_confidence,
+            category_validated=query.category_validated,
+            category_validation_reason=query.category_validation_reason,
             orchestration_error=query.orchestration_error,
             generated_answer=answer,
             retrieved_chunks=[item.chunk_id for item in retrieved],
@@ -223,7 +224,7 @@ class GenerationStage(BaseStage):
             ranking_score_type="rerank_score" if reranker_used else (
                 retrieved[0].ranking_score_type if retrieved else self.cfg.retrieval.retriever_type
             ),
-            retrieval_mode=self.cfg.retrieval.retriever_type,
+            retrieval_mode=str(retrieval_diagnostics.get("retrieval_mode") or self.cfg.retrieval.retriever_type),
             retrieved_unique_count=len({item.chunk_id for item in retrieved}),
             raw_retrieved_unique_count=len({item.chunk_id for item in raw_retrieved}),
             raw_duplicate_rate=duplicate_rate([item.chunk_id for item in raw_retrieved]),

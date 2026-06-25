@@ -10,9 +10,19 @@ from typing import Any
 from src.pipeline2.aggregation.summarizer import summarize_by_category, summarize_by_experiment
 from src.pipeline2.io.jsonl import read_jsonl, write_jsonl
 from src.pipeline2.io.tabular import write_csv
-from src.pipeline2.metrics.answer_metrics import compute_answer_metrics, resolve_ground_truth_answer
+from src.pipeline2.metrics.answer_metrics import (
+    bert_score_model_metadata,
+    build_bert_score_scorer,
+    compute_answer_metrics,
+    compute_bert_score,
+    resolve_ground_truth_answer,
+)
 from src.pipeline2.metrics.category_metrics import compute_category_metrics, compute_category_routing_report
-from src.pipeline2.metrics.embedding_similarity import build_answer_embedder, compute_embedding_similarity
+from src.pipeline2.metrics.embedding_similarity import (
+    build_answer_embedder,
+    compute_embedding_similarity,
+    embedding_model_metadata,
+)
 from src.pipeline2.metrics.efficiency_metrics import compute_efficiency_metrics
 from src.pipeline2.metrics.retrieval_metrics import compute_retrieval_metrics_for_ks
 from src.pipeline2.schemas.eval_config_schema import EvalConfig
@@ -32,17 +42,8 @@ class EvaluationOrchestrator:
         if run_dir.exists() and not cfg.runtime.overwrite:
             raise FileExistsError(f"Evaluation run already exists and overwrite=false: {run_dir}")
         if run_dir.exists() and cfg.runtime.overwrite:
-            for name in (
-                "per_question.jsonl",
-                "per_question_metrics.jsonl",
-                "per_question.csv",
-                "summary_metrics.json",
-                "summary_by_category.csv",
-                "summary_by_category.json",
-                "eval_manifest.json",
-            ):
-                path = run_dir / name
-                if path.exists():
+            for path in run_dir.iterdir():
+                if path.is_file():
                     path.unlink()
         run_dir.mkdir(parents=True, exist_ok=True)
 
@@ -105,8 +106,8 @@ class EvaluationOrchestrator:
         category_routing_report = compute_category_routing_report(per_question, _SIVAS_CATEGORIES)
         ks = _metric_ks(cfg)
         per_fields = _per_question_fields(ks)
-        summary_fields = _summary_fields(ks)
         validity_report = _benchmark_validity_report(per_question, input_diagnostics, strict_alignment, ks)
+        metric_runtime_metadata = getattr(self, "_metric_runtime_metadata", _metric_runtime_metadata(cfg, None, None))
         print("[6/6] Writing evaluation outputs")
         write_jsonl(run_dir / "per_question.jsonl", per_question)
         write_jsonl(run_dir / "per_question_metrics.jsonl", per_question)
@@ -118,6 +119,7 @@ class EvaluationOrchestrator:
                     "run_validity": run_validity,
                     "category_routing": category_routing_report,
                     "benchmark_validity": validity_report,
+                    "metric_priority": _metric_priority_report(),
                 },
                 indent=2,
                 ensure_ascii=False,
@@ -126,11 +128,6 @@ class EvaluationOrchestrator:
         )
         if cfg.runtime.save_csv:
             write_csv(run_dir / "per_question.csv", per_question, per_fields)
-            write_csv(run_dir / "summary_by_category.csv", category_summary, _category_summary_fields(ks))
-        (run_dir / "summary_by_category.json").write_text(
-            json.dumps(category_summary, indent=2, ensure_ascii=False),
-            encoding="utf-8",
-        )
         (run_dir / "eval_manifest.json").write_text(
             json.dumps(
                 _eval_manifest(
@@ -152,6 +149,7 @@ class EvaluationOrchestrator:
                     reported_metric_comparison,
                     category_routing_report,
                     validity_report,
+                    metric_runtime_metadata,
                     start_time,
                     time.time(),
                 ),
@@ -179,6 +177,7 @@ class EvaluationOrchestrator:
             reported_metric_comparison,
             category_routing_report,
             validity_report,
+            metric_runtime_metadata,
             start_time,
             time.time(),
         )
@@ -202,8 +201,6 @@ class EvaluationOrchestrator:
                 run_dir / "per_question_metrics.jsonl",
                 run_dir / "summary_metrics.json",
                 run_dir / "per_question.csv",
-                run_dir / "summary_by_category.csv",
-                run_dir / "summary_by_category.json",
                 run_dir / "eval_manifest.json",
             ]
         )
@@ -222,12 +219,20 @@ class EvaluationOrchestrator:
         ks = _metric_ks(cfg)
         evaluated = []
         embedder = None
+        bert_scorer = None
         if not cfg.evaluation.retrieval_only and cfg.embedding_similarity.enabled:
             embedder = build_answer_embedder(
                 cfg.embedding_similarity.provider,
                 cfg.embedding_similarity.model_name,
                 cfg.embedding_similarity.dimensions,
             )
+        if not cfg.evaluation.retrieval_only and cfg.bert_score.enabled:
+            bert_scorer = build_bert_score_scorer(
+                cfg.bert_score.model_name,
+                cfg.bert_score.device,
+                cfg.bert_score.max_length,
+            )
+        self._metric_runtime_metadata = _metric_runtime_metadata(cfg, embedder, bert_scorer)
         for row in tqdm(rag_rows, desc="Computing metrics", unit="question"):
             errors = []
             qid = str(row.get("question_id", ""))
@@ -281,6 +286,11 @@ class EvaluationOrchestrator:
                 _emb_metric = embedder.metric_name if embedder is not None else "embedding_similarity"
                 answer_metrics["embedding_similarity"] = _emb_value if _emb_metric == "embedding_similarity" else None
                 answer_metrics["bow_token_overlap_similarity"] = _emb_value if _emb_metric == "bow_token_overlap_similarity" else None
+                answer_metrics.update(
+                    compute_bert_score(str(row.get("generated_answer", "")), ground_truth, bert_scorer)
+                    if bert_scorer is not None
+                    else {"bertscore_precision": None, "bertscore_recall": None, "bertscore_f1": None}
+                )
             if generation_failed and not cfg.evaluation.retrieval_only:
                 failure_status = "pipeline1_error" if pipeline1_error else "generation_failure"
                 _fail_emb_metric = embedder.metric_name if embedder is not None else "embedding_similarity"
@@ -299,6 +309,9 @@ class EvaluationOrchestrator:
                         "rouge_1": 0.0,
                         "embedding_similarity": 0.0 if _fail_emb_metric == "embedding_similarity" else None,
                         "bow_token_overlap_similarity": 0.0 if _fail_emb_metric == "bow_token_overlap_similarity" else None,
+                        "bertscore_precision": 0.0,
+                        "bertscore_recall": 0.0,
+                        "bertscore_f1": 0.0,
                         "normalized_generated_answer": "",
                         "answer_match_status": failure_status,
                     }
@@ -339,13 +352,15 @@ class EvaluationOrchestrator:
                 "rouge_1": answer_metrics.get("rouge_1"),
                 "embedding_similarity": answer_metrics["embedding_similarity"],
                 "bow_token_overlap_similarity": answer_metrics.get("bow_token_overlap_similarity"),
+                "bertscore_precision": answer_metrics.get("bertscore_precision"),
+                "bertscore_recall": answer_metrics.get("bertscore_recall"),
+                "bertscore_f1": answer_metrics.get("bertscore_f1"),
                 "normalized_generated_answer": answer_metrics["normalized_generated_answer"],
                 "normalized_gold_answer": answer_metrics["normalized_gold_answer"],
                 "answer_match_status": answer_metrics["answer_match_status"],
-                "category_correct": category_metrics["category_correct"],
+                "category_accuracy": category_metrics["category_accuracy"],
                 "category_predicted": category_metrics["category_predicted"],
                 "category_gold": category_metrics["category_gold"],
-                "hallucination_rate": None,
                 **compute_efficiency_metrics(row),
                 "pipeline_success": pipeline_success,
                 "generation_failed": generation_failed,
@@ -702,6 +717,7 @@ def _gold_by_question(rows: list[dict[str, Any]]) -> dict[str, list[str]]:
 
 
 def _merge_gold_with_qa_fallback(gold_by_id: dict[str, list[str]], qa_by_id: dict[str, dict[str, Any]]) -> dict[str, list[str]]:
+    # Intentional guardrail: retrieval gold must come from explicit evidence, not QA fallback fields.
     raise RuntimeError(
         "QA source_files fallback for retrieval gold is disabled. "
         "Use qa_ground_truth_fixed.jsonl retrieval evidence entries only."
@@ -723,6 +739,9 @@ def _null_answer_metrics() -> dict[str, Any]:
         "rouge_1": None,
         "embedding_similarity": None,
         "bow_token_overlap_similarity": None,
+        "bertscore_precision": None,
+        "bertscore_recall": None,
+        "bertscore_f1": None,
         "normalized_generated_answer": "",
         "normalized_gold_answer": "",
         "answer_match_status": "skipped_retrieval_only",
@@ -869,10 +888,13 @@ def _per_question_fields(ks: list[int]) -> list[str]:
         "rouge_1",
         "embedding_similarity",
         "bow_token_overlap_similarity",
+        "bertscore_precision",
+        "bertscore_recall",
+        "bertscore_f1",
         "normalized_generated_answer",
         "normalized_gold_answer",
         "answer_match_status",
-        "category_correct",
+        "category_accuracy",
         "category_predicted",
         "category_gold",
         "retrieval_time_ms",
@@ -883,7 +905,6 @@ def _per_question_fields(ks: list[int]) -> list[str]:
         "output_tokens",
         "total_tokens",
         "estimated_cost",
-        "hallucination_rate",
         "pipeline_success",
         "generation_failed",
         "pipeline1_error",
@@ -960,15 +981,12 @@ def compare_reported_vs_recomputed_metrics(
             f"ndcg_at_{k}",
             f"context_precision_at_{k}",
         )],
-        "exact_match",
-        "german_canonical_exact_match",
-        "umlaut_expanded_exact_match",
         "non_empty_answer_rate",
         "abstention_rate",
-        "rouge_l",
-        "rouge_1",
         "embedding_similarity",
-        "bow_token_overlap_similarity",
+        "bertscore_precision",
+        "bertscore_recall",
+        "bertscore_f1",
     ]
     comparisons = []
     for reported in reported_rows:
@@ -1364,6 +1382,23 @@ def _audit_report_markdown(report: dict[str, Any]) -> str:
             lines.append(f"- `{check.get('name')}`: {check.get('details')}")
     lines.extend([
         "",
+        "## Semantic Evaluation",
+    ])
+    answer_metrics = report.get("recomputed_answer_metrics") or {}
+    lines.append(f"- BERTScore F1: `{answer_metrics.get('mean_bertscore_f1', 'n/a')}`")
+    lines.append(f"- Embedding Similarity: `{answer_metrics.get('mean_embedding_similarity', 'n/a')}`")
+    lines.extend([
+        "",
+        "## Retrieval Metrics",
+    ])
+    retrieval_metrics = report.get("recomputed_retrieval_metrics") or {}
+    for name in sorted(retrieval_metrics):
+        lines.append(f"- {name}: `{retrieval_metrics.get(name)}`")
+    lines.extend([
+        "",
+        "## Coverage",
+        f"- Answer coverage: `{answer_metrics.get('mean_answer_coverage_rate', 'n/a')}`",
+        "",
         "## Metric Comparison",
         f"- Reported-vs-recomputed failures: `{(report.get('reported_vs_recomputed_comparison') or {}).get('failure_count', 'n/a')}`",
         "",
@@ -1376,12 +1411,19 @@ def _audit_report_markdown(report: dict[str, Any]) -> str:
     routing = report.get("category_routing") or {}
     lines.append(f"- Active: `{routing.get('category_routing_active', 'n/a')}`")
     if routing.get("category_routing_active"):
-        lines.append(f"- Coverage: `{routing.get('category_routing_coverage', 'n/a')}`")
+        lines.append(f"- Coverage: `{routing.get('category_coverage', 'n/a')}`")
         lines.append(f"- Accuracy: `{routing.get('category_accuracy', 'n/a')}`")
         lines.append(f"- Macro Precision: `{routing.get('category_precision_macro', 'n/a')}`")
         lines.append(f"- Macro Recall: `{routing.get('category_recall_macro', 'n/a')}`")
     else:
         lines.append(f"- {routing.get('message', 'Category routing inactive.')}")
+    runtime = report.get("metric_runtime") or {}
+    lines.extend([
+        "",
+        "## Reproducibility",
+        f"- BERTScore: `{runtime.get('bert_score', {})}`",
+        f"- Embedding Similarity: `{runtime.get('embedding_similarity', {})}`",
+    ])
     return "\n".join(lines) + "\n"
 
 
@@ -1400,6 +1442,8 @@ def _verdict_from_audit(report: dict[str, Any]) -> str:
 
 
 def _category_summary_fields(ks: list[int]) -> list[str]:
+    # Retained as a schema reference for discontinued category CSV output.
+    # Pipeline 2 now writes category aggregates inside summary_metrics.json only.
     metric_fields = []
     for k in ks:
         metric_fields.extend(
@@ -1417,15 +1461,11 @@ def _category_summary_fields(ks: list[int]) -> list[str]:
         "pipeline_success_rate",
         *metric_fields,
         "mean_category_accuracy",
-        "mean_exact_match",
-        "mean_literal_exact_match",
-        "mean_canonical_exact_match",
-        "mean_german_canonical_exact_match",
-        "mean_umlaut_expanded_exact_match",
-        "mean_rouge_l",
-        "mean_rouge_1",
         "mean_embedding_similarity",
         "mean_bow_token_overlap_similarity",
+        "mean_bertscore_precision",
+        "mean_bertscore_recall",
+        "mean_bertscore_f1",
         "mean_abstention_rate",
         "unknown_count",
         "unknown_rate",
@@ -1441,7 +1481,27 @@ def _mean(values: list[Any]) -> float | None:
     return sum(numeric) / len(numeric)
 
 
+def _metric_priority_report() -> dict[str, Any]:
+    return {
+        "primary_metrics": [
+            "bertscore_f1",
+            "embedding_similarity",
+            "category_accuracy",
+            "category_coverage",
+        ],
+        "secondary_metrics": [],
+        "notes": {
+            "bertscore_f1": "Semantic similarity between generated and reference answers.",
+            "embedding_similarity": "Vector similarity between generated and reference answers.",
+            "category_accuracy": "Correct category predictions divided by questions with both predicted and gold category.",
+            "category_coverage": "Questions with predicted category divided by total questions.",
+        },
+    }
+
+
 def _summary_fields(ks: list[int]) -> list[str]:
+    # Retained as a schema reference for the discontinued experiment-level CSV output.
+    # Pipeline 2 now writes experiment aggregates inside summary_metrics.json only.
     metric_fields = []
     for k in ks:
         metric_fields.extend(
@@ -1465,21 +1525,17 @@ def _summary_fields(ks: list[int]) -> list[str]:
         "mean_unique_retrieved_document_count",
         "mean_duplicate_document_count",
         "mean_duplicate_document_rate",
-        "mean_exact_match",
-        "mean_literal_exact_match",
-        "mean_canonical_exact_match",
-        "mean_german_canonical_exact_match",
-        "mean_umlaut_expanded_exact_match",
         "mean_non_empty_answer_rate",
         "mean_answer_coverage_rate",
         "mean_abstention_rate",
         "unknown_count",
         "unknown_rate",
-        "mean_rouge_l",
-        "mean_rouge_1",
         "mean_embedding_similarity",
         "mean_bow_token_overlap_similarity",
         # diagnostic — lexical overlap between question and answer tokens, not a quality score
+        "mean_bertscore_precision",
+        "mean_bertscore_recall",
+        "mean_bertscore_f1",
         "diagnostic_mean_answer_relevancy",
         "mean_category_accuracy",
         "mean_retrieval_time_ms",
@@ -1497,6 +1553,17 @@ def _summary_fields(ks: list[int]) -> list[str]:
         "run_valid",
         "failure_threshold_exceeded",
     ]
+
+
+def _metric_runtime_metadata(cfg: EvalConfig, embedder: Any, bert_scorer: Any) -> dict[str, Any]:
+    return {
+        "bert_score": bert_score_model_metadata(bert_scorer, cfg.bert_score.model_name),
+        "embedding_similarity": embedding_model_metadata(
+            cfg.embedding_similarity.provider,
+            cfg.embedding_similarity.model_name,
+            embedder,
+        ),
+    }
 
 
 def _eval_manifest(
@@ -1518,6 +1585,7 @@ def _eval_manifest(
     reported_metric_comparison: dict[str, Any],
     category_routing_report: dict[str, Any],
     validity_report: dict[str, Any],
+    metric_runtime_metadata: dict[str, Any],
     start_time: float,
     end_time: float,
 ) -> dict[str, Any]:
@@ -1571,23 +1639,21 @@ def _eval_manifest(
         "recomputed_answer_metrics": {
             key: all_summary.get(key)
             for key in (
-                "mean_exact_match",
-                "mean_literal_exact_match",
-                "mean_canonical_exact_match",
-                "mean_german_canonical_exact_match",
-                "mean_umlaut_expanded_exact_match",
+                "mean_bertscore_f1",
+                "mean_bertscore_precision",
+                "mean_bertscore_recall",
+                "mean_embedding_similarity",
+                "mean_bow_token_overlap_similarity",
                 "mean_non_empty_answer_rate",
                 "mean_abstention_rate",
                 "unknown_count",
                 "unknown_rate",
-                "mean_rouge_l",
-                "mean_rouge_1",
-                "mean_embedding_similarity",
-                "mean_bow_token_overlap_similarity",
             )
             if key in all_summary
         },
         "reported_vs_recomputed_comparison": reported_metric_comparison,
+        "metric_priority": _metric_priority_report(),
+        "metric_runtime": metric_runtime_metadata,
         "duplicate_retrieval_statistics": {
             "mean_raw_retrieved_count": _mean([row.get("raw_retrieved_count") for row in per_question]),
             "mean_unique_retrieved_document_count": _mean([row.get("unique_retrieved_document_count") for row in per_question]),
@@ -1644,20 +1710,16 @@ def _eval_manifest(
             "raw_duplicate_rate",
             "duplicate_document_rate",
             "unique_retrieved_document_count",
-            "exact_match",
-            "literal_exact_match",
-            "canonical_exact_match",
-            "german_canonical_exact_match",
-            "umlaut_expanded_exact_match",
             "non_empty_answer_rate",
             "answer_coverage_rate",
             "abstention_rate",
             "is_unknown",
             "answer_relevancy_score",
-            "rouge_l",
-            "rouge_1",
             "embedding_similarity",
             "bow_token_overlap_similarity",
+            "bertscore_precision",
+            "bertscore_recall",
+            "bertscore_f1",
             "retrieval_time_ms",
             "rerank_time_ms",
             "generation_time_ms",
@@ -1672,7 +1734,7 @@ def _eval_manifest(
             "run_valid",
         ],
         "category_routing_behavior": (
-            "category_accuracy, category_precision_macro, category_recall_macro, and per_class_metrics "
+            "category_accuracy, category_coverage, category_precision_macro, category_recall_macro, and per_class_metrics "
             "are only emitted when Pipeline 1 produces at least one detected_category prediction. "
             "When category_routing_active=false all category metrics are suppressed to avoid null entries."
         ),
@@ -1681,15 +1743,6 @@ def _eval_manifest(
             "bow_token_overlap_similarity contains values only when provider=deterministic_hash. "
             "The two columns are mutually exclusive; exactly one is non-null per row."
         ),
-        "deprecated_metrics": [
-            "company_match_rate",
-            "year_match_rate",
-            "month_match_rate",
-            "exact_year_month_match_rate",
-            "metadata_match_rate",
-            "leaderboard",
-            "summary_by_difficulty",
-        ],
         "summary_behavior": (
             "mean retrieval and answer metrics use all evaluated rows; generation failures are retained, "
             "score zero for answer correctness, and can mark run_valid=false"

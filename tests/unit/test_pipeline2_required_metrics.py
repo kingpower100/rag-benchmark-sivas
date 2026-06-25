@@ -30,20 +30,20 @@ def test_total_latency_is_component_sum_with_rerank():
     assert metrics["total_latency_ms"] == 32.5
 
 
-def test_summary_aggregates_rouge_embedding_latency_and_reliability_denominators():
+def test_summary_aggregates_semantic_latency_and_reliability_denominators():
     rows = [
         {
             "experiment_id": "exp",
-            "rouge_l": 1.0,
             "embedding_similarity": 1.0,
+            "bertscore_f1": 1.0,
             "total_latency_ms": 10,
             "generation_failed": False,
             "evaluation_errors": [],
         },
         {
             "experiment_id": "exp",
-            "rouge_l": 0.0,
             "embedding_similarity": 0.0,
+            "bertscore_f1": 0.0,
             "total_latency_ms": 0,
             "generation_failed": True,
             "evaluation_errors": ["missing gold context"],
@@ -53,8 +53,8 @@ def test_summary_aggregates_rouge_embedding_latency_and_reliability_denominators
     summary = summarize_by_experiment(rows)[0]
 
     assert summary["n_questions"] == 2
-    assert summary["mean_rouge_l"] == 0.5
     assert summary["mean_embedding_similarity"] == 0.5
+    assert summary["mean_bertscore_f1"] == 0.5
     assert summary["mean_total_latency_ms"] == 5
     assert summary["pipeline_success_rate"] == 0.5
     assert summary["eval_success_rate"] == 0.5
@@ -116,7 +116,6 @@ def test_orchestrator_emits_generation_metrics_for_edge_cases():
         cfg,
     )
 
-    assert evaluated[0]["rouge_l"] > 0.0
     # provider=deterministic_hash routes value to bow_token_overlap_similarity, not embedding_similarity
     assert evaluated[0]["bow_token_overlap_similarity"] > 0.0
     assert evaluated[0]["embedding_similarity"] is None
@@ -128,7 +127,6 @@ def test_orchestrator_emits_generation_metrics_for_edge_cases():
     assert evaluated[1]["abstention_rate"] == 1.0
     assert evaluated[1]["is_unknown"] == 1.0
     assert evaluated[2]["generation_failed"] is True
-    assert evaluated[2]["rouge_l"] == 0.0
     # failed row: bow_token_overlap_similarity zeroed, embedding_similarity remains None
     assert evaluated[2]["bow_token_overlap_similarity"] == 0.0
     assert evaluated[2]["embedding_similarity"] is None
@@ -191,24 +189,16 @@ embedding_similarity:
 
         assert (run_dir / "per_question_metrics.jsonl").exists()
         assert (run_dir / "summary_metrics.json").exists()
-        assert (run_dir / "summary_by_category.csv").exists()
-        assert (run_dir / "summary_by_category.json").exists()
         assert (run_dir / "eval_manifest.json").exists()
         assert (run_dir / "audit_report.json").exists()
         assert (run_dir / "audit_report.md").exists()
         # Deprecated outputs must NOT be written
-        assert not (run_dir / "leaderboard.csv").exists()
-        assert not (run_dir / "leaderboard.md").exists()
-        assert not (run_dir / "summary_by_difficulty.csv").exists()
-        assert not (run_dir / "summary_by_difficulty.json").exists()
         row = read_jsonl(run_dir / "per_question_metrics.jsonl")[0]
         summary = json.loads((run_dir / "summary_metrics.json").read_text(encoding="utf-8"))
-        assert row["rouge_l"] == 1.0
         # provider=deterministic_hash routes value to bow_token_overlap_similarity
         assert row["bow_token_overlap_similarity"] == pytest.approx(1.0)
         assert row["embedding_similarity"] is None
         assert row["total_latency_ms"] == 6
-        assert summary["summary_by_experiment"][0]["mean_rouge_l"] == 1.0
         # Benchmark validity must be present
         assert "benchmark_validity" in summary
         assert summary["benchmark_validity"]["benchmark_validity_status"] in ("VALID", "WARNING", "INVALID")

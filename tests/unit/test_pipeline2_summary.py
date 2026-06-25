@@ -12,7 +12,8 @@ def test_summary_aggregates_final_metrics_and_success_rates():
             "ndcg_at_3": 0.75,
             "duplicate_context_rate": 0.0,
             "raw_duplicate_rate": 0.25,
-            "exact_match": 1.0,
+            "embedding_similarity": 1.0,
+            "bertscore_f1": 1.0,
             "non_empty_answer_rate": 1.0,
             "answer_coverage_rate": 1.0,
             "abstention_rate": 0.0,
@@ -36,7 +37,8 @@ def test_summary_aggregates_final_metrics_and_success_rates():
             "ndcg_at_3": 0.0,
             "duplicate_context_rate": 0.0,
             "raw_duplicate_rate": 0.0,
-            "exact_match": 0.0,
+            "embedding_similarity": 0.0,
+            "bertscore_f1": 0.0,
             "non_empty_answer_rate": 0.0,
             "answer_coverage_rate": 0.0,
             "abstention_rate": 1.0,
@@ -61,7 +63,8 @@ def test_summary_aggregates_final_metrics_and_success_rates():
     assert summary["mean_ndcg_at_3"] == 0.375
     assert summary["mean_duplicate_context_rate"] == 0.0
     assert summary["mean_raw_duplicate_rate"] == 0.125
-    assert summary["mean_exact_match"] == 0.5
+    assert summary["mean_embedding_similarity"] == 0.5
+    assert summary["mean_bertscore_f1"] == 0.5
     assert summary["mean_non_empty_answer_rate"] == 0.5
     assert summary["mean_answer_coverage_rate"] == 0.5
     assert summary["mean_abstention_rate"] == 0.5
@@ -81,7 +84,7 @@ def test_summary_keeps_pipeline1_failures_in_metric_denominators():
             "experiment_id": "exp",
             "recall_at_5": 1.0,
             "mrr_at_5": 1.0,
-            "exact_match": 1.0,
+            "embedding_similarity": 1.0,
             "pipeline1_error": None,
             "evaluation_errors": [],
         },
@@ -89,7 +92,7 @@ def test_summary_keeps_pipeline1_failures_in_metric_denominators():
             "experiment_id": "exp",
             "recall_at_5": 1.0,
             "mrr_at_5": 1.0,
-            "exact_match": 1.0,
+            "embedding_similarity": 1.0,
             "pipeline1_error": None,
             "evaluation_errors": [],
         },
@@ -97,7 +100,7 @@ def test_summary_keeps_pipeline1_failures_in_metric_denominators():
             "experiment_id": "exp",
             "recall_at_5": 0.0,
             "mrr_at_5": 0.0,
-            "exact_match": 0.0,
+            "embedding_similarity": 0.0,
             "pipeline1_error": "generation failed",
             "evaluation_errors": [],
         },
@@ -105,7 +108,7 @@ def test_summary_keeps_pipeline1_failures_in_metric_denominators():
             "experiment_id": "exp",
             "recall_at_5": 0.0,
             "mrr_at_5": 0.0,
-            "exact_match": 0.0,
+            "embedding_similarity": 0.0,
             "pipeline1_error": "timeout",
             "evaluation_errors": [],
         },
@@ -114,7 +117,7 @@ def test_summary_keeps_pipeline1_failures_in_metric_denominators():
     summary = summarize_by_experiment(rows)[0]
 
     assert summary["n_questions"] == 4
-    assert summary["mean_exact_match"] == 0.5
+    assert summary["mean_embedding_similarity"] == 0.5
     assert summary["mean_recall_at_5"] == 0.5
     assert summary["mean_mrr_at_5"] == 0.5
     assert summary["pipeline_success_rate"] == 0.5

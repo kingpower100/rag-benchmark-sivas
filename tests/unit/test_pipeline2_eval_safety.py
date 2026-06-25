@@ -151,7 +151,7 @@ def test_reported_vs_recomputed_metric_comparison_flags_mismatch():
         [1],
     )
 
-    assert comparison["comparison_count"] == 2
+    assert comparison["comparison_count"] == 1
     assert comparison["failure_count"] == 1
     assert comparison["failed_examples"][0]["metric"] == "hit_at_1"
 

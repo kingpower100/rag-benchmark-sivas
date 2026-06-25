@@ -128,16 +128,76 @@ class RetrievalStage(BaseStage):
                         "fetch_k": self.cfg.retrieval.fetch_k,
                     },
             )
-            if hasattr(retriever, "set_active_category"):
-                retriever.set_active_category(query.detected_category)
-            raw_retrieved, retrieved, retrieval_warnings, reranker_used = retrieve_top_k_unique_contexts(
-                query.retrieval_question,
-                retriever,
-                reranker,
-                rerank_top_k,
-                self.cfg.retrieval.fetch_k,
-                max_candidates=len(self.chunks),
-            )
+            category_filter_applied = False
+            category_fallback_used = False
+            retrieval_mode = self.cfg.retrieval.retriever_type
+            number_of_category_results = 0
+            number_of_global_fallback_results = 0
+            retrieval_warnings: list[str] = []
+            if self.cfg.retrieval.retriever_type == "category_aware_dense" and hasattr(retriever, "set_active_category"):
+                if query.category_validated:
+                    category_filter_applied = True
+                    retrieval_mode = "category_aware_dense"
+                    retriever.set_active_category(query.detected_category)
+                    raw_retrieved, retrieved, retrieval_warnings, reranker_used = retrieve_top_k_unique_contexts(
+                        query.retrieval_question,
+                        retriever,
+                        reranker,
+                        rerank_top_k,
+                        self.cfg.retrieval.fetch_k,
+                        max_candidates=len(self.chunks),
+                    )
+                    number_of_category_results = len(retrieved)
+                    enough_retrieved_chunks = len(retrieved) >= final_top_k
+                    if self.logger:
+                        self.logger.info(
+                            "retrieval_decision question_id=%s decision='Enough Retrieved Chunks?' retrieved=%s top_k=%s result=%s",
+                            query.question_id,
+                            len(retrieved),
+                            final_top_k,
+                            enough_retrieved_chunks,
+                        )
+                    if not enough_retrieved_chunks:
+                        category_fallback_used = True
+                        retrieval_mode = "global_fallback"
+                        retriever.set_active_category(None)
+                        raw_retrieved, retrieved, retrieval_warnings, reranker_used = retrieve_top_k_unique_contexts(
+                            query.retrieval_question,
+                            retriever,
+                            reranker,
+                            rerank_top_k,
+                            self.cfg.retrieval.fetch_k,
+                            max_candidates=len(self.chunks),
+                        )
+                        number_of_global_fallback_results = len(retrieved)
+                else:
+                    category_fallback_used = True
+                    retrieval_mode = "global_fallback"
+                    retriever.set_active_category(None)
+                    raw_retrieved, retrieved, retrieval_warnings, reranker_used = retrieve_top_k_unique_contexts(
+                        query.retrieval_question,
+                        retriever,
+                        reranker,
+                        rerank_top_k,
+                        self.cfg.retrieval.fetch_k,
+                        max_candidates=len(self.chunks),
+                    )
+                    number_of_global_fallback_results = len(retrieved)
+                    if self.logger:
+                        self.logger.info(
+                            "retrieval_decision question_id=%s decision='Category Validation' category_validated=false reason=%s",
+                            query.question_id,
+                            query.category_validation_reason,
+                        )
+            else:
+                raw_retrieved, retrieved, retrieval_warnings, reranker_used = retrieve_top_k_unique_contexts(
+                    query.retrieval_question,
+                    retriever,
+                    reranker,
+                    rerank_top_k,
+                    self.cfg.retrieval.fetch_k,
+                    max_candidates=len(self.chunks),
+                )
             reranked_candidates = list(retrieved)
             if reranker_used and len(retrieved) > final_top_k:
                 retrieved = retrieved[:final_top_k]
@@ -151,7 +211,16 @@ class RetrievalStage(BaseStage):
                     "rerank_top_k": rerank_top_k,
                     "cleaned_question": query.cleaned_question,
                     "detected_category": query.detected_category,
-                    "category_confidence": query.category_confidence,
+                    "category_validated": query.category_validated,
+                    "category_validation_reason": query.category_validation_reason,
+                    "retrieval_mode": retrieval_mode,
+                    "category_filter_applied": category_filter_applied,
+                    "category_fallback_used": category_fallback_used,
+                    "number_of_category_results": number_of_category_results,
+                    "number_of_global_fallback_results": number_of_global_fallback_results,
+                    "top_k": final_top_k,
+                    "fetch_k": self.cfg.retrieval.fetch_k,
+                    "decision": "Enough Retrieved Chunks?",
                     "retrieved_chunks": [item.chunk_id for item in retrieved],
                     "retrieved_documents": [
                         stable_retrieved_document_id(item.metadata, item.original_context_id)

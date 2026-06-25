@@ -10,9 +10,14 @@ ORCHESTRATION_PROMPT_PATH = Path(__file__).resolve().parents[1] / "prompts" / "o
 def build_orchestration_prompt(question: str, categories: list[str]) -> str:
     categories_json = json.dumps(categories, ensure_ascii=False)
     question_json = json.dumps(question, ensure_ascii=False)
+    null_json = json.dumps(None)
     return (
         _load_orchestration_prompt_template()
         .replace("{{categories_json}}", categories_json)
+        .replace("{{module_json}}", null_json)
+        .replace("{{program_json}}", null_json)
+        .replace("{{role_json}}", null_json)
+        .replace("{{role_description_json}}", null_json)
         .replace("{{question_json}}", question_json)
     )
 

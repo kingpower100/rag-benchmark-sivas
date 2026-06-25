@@ -34,7 +34,7 @@ class _FakeGenerator:
     def generate(self, prompt):
         if "fixed preprocessing model" in prompt:
             return GenerationResult(
-                answer='{"cleaned_question":"Q?","detected_category":"","category_confidence":0.0}',
+                answer='{"cleaned_question":"Q?","detected_category":""}',
                 input_tokens=5,
                 output_tokens=5,
             )

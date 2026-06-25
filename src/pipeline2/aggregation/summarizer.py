@@ -23,18 +23,15 @@ def summarize_by_experiment(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
         for col in metric_cols:
             summary[f"mean_{col}"] = _mean([row.get(col) for row in group if row.get(col) is not None])
         for col in (
-            "exact_match",
-            "literal_exact_match",
-            "canonical_exact_match",
-            "german_canonical_exact_match",
-            "umlaut_expanded_exact_match",
+            "category_accuracy",
             "non_empty_answer_rate",
             "answer_coverage_rate",
             "abstention_rate",
-            "rouge_l",
-            "rouge_1",
             "embedding_similarity",
             "bow_token_overlap_similarity",
+            "bertscore_precision",
+            "bertscore_recall",
+            "bertscore_f1",
         ):
             summary[f"mean_{col}"] = _mean([row.get(col) for row in group if row.get(col) is not None])
         # answer_relevancy_score is a lexical diagnostic, not a quality metric.
@@ -43,7 +40,7 @@ def summarize_by_experiment(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
             [row.get("answer_relevancy_score") for row in group if row.get("answer_relevancy_score") is not None]
         )
         summary["mean_category_accuracy"] = _mean(
-            [row.get("category_correct") for row in group if row.get("category_correct") is not None]
+            [row.get("category_accuracy") for row in group if row.get("category_accuracy") is not None]
         )
         # UNKNOWN-specific tracking (separate from general abstention)
         unknown_count = sum(1 for row in group if row.get("is_unknown") == 1.0)
@@ -131,24 +128,19 @@ def summarize_by_category(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
             summary[f"mean_{col}"] = _mean([row.get(col) for row in group if row.get(col) is not None])
 
         for col in (
-            "category_correct",
-            "exact_match",
-            "literal_exact_match",
-            "canonical_exact_match",
-            "german_canonical_exact_match",
-            "umlaut_expanded_exact_match",
+            "category_accuracy",
             "non_empty_answer_rate",
             "abstention_rate",
-            "rouge_l",
-            "rouge_1",
             "embedding_similarity",
             "bow_token_overlap_similarity",
+            "bertscore_precision",
+            "bertscore_recall",
+            "bertscore_f1",
             "total_latency_ms",
             "total_tokens",
         ):
             summary[f"mean_{col}"] = _mean([row.get(col) for row in group if row.get(col) is not None])
 
-        summary["mean_category_accuracy"] = summary.pop("mean_category_correct", None)
         summary["pipeline_success_rate"] = _mean(
             [1.0 if not row.get("generation_failed") else 0.0 for row in group]
         )

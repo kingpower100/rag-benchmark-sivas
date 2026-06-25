@@ -1,4 +1,3 @@
-from src.pipeline1.indexing.faiss_index import FaissIndex
 from src.pipeline1.schemas.config_schema import IndexConfig
 
 
@@ -27,4 +26,6 @@ def build_index(config: IndexConfig):
             password=config.password,
             api_key=config.api_key,
         )
+    from src.pipeline1.indexing.faiss_index import FaissIndex
+
     return FaissIndex(metric=config.metric)

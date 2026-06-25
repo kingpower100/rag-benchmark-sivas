@@ -2,6 +2,7 @@ import pytest
 
 from src.pipeline1.generation.base import GenerationResult
 from src.pipeline1.orchestration.parser import parse_orchestration_response
+from src.pipeline1.orchestration.prompt import build_orchestration_prompt
 from src.pipeline1.schemas.chunk import ChunkRecord
 from src.pipeline1.schemas.config_schema import PipelineConfig
 from src.pipeline1.schemas.query import QueryRecord
@@ -22,7 +23,8 @@ def test_orchestration_stage_cleans_question_and_detects_sivas_category():
     query = output.queries[0]
     assert query.cleaned_question == "Wie bestelle ich?"
     assert query.detected_category == "Einkauf"
-    assert query.category_confidence == 0.91
+    assert query.category_validated is True
+    assert query.category_validation_reason is None
 
 
 def test_orchestration_malformed_json_falls_back_without_crashing(monkeypatch):
@@ -49,7 +51,8 @@ def test_orchestration_malformed_json_falls_back_without_crashing(monkeypatch):
     second = output.queries[1]
     assert first.cleaned_question == "Original question?"
     assert first.detected_category is None
-    assert first.category_confidence == 0.0
+    assert first.category_validated is False
+    assert first.category_validation_reason == "orchestration failed before category validation"
     assert first.orchestration_error
     assert second.cleaned_question == "Second question?"
 
@@ -67,17 +70,42 @@ def test_orchestration_model_exception_falls_back_without_crashing(monkeypatch):
     query = output.queries[0]
     assert query.cleaned_question == "Original question?"
     assert query.detected_category is None
-    assert query.category_confidence == 0.0
+    assert query.category_validated is False
+    assert query.category_validation_reason == "orchestration failed before category validation"
     assert query.orchestration_error == "orchestration down"
 
 
 def test_orchestration_parser_rejects_answer_fields():
     with pytest.raises(ValueError, match="must not contain answer fields"):
         parse_orchestration_response(
-            '{"cleaned_question":"Q?","detected_category":"Einkauf","category_confidence":0.8,"answer":"42"}',
+            '{"cleaned_question":"Q?","detected_category":"Einkauf","answer":"42"}',
             "Q?",
             ["Einkauf"],
         )
+
+
+def test_orchestration_parser_does_not_require_category_confidence():
+    parsed = parse_orchestration_response(
+        '{"cleaned_question":"Q?","detected_category":"Einkauf"}',
+        "Q?",
+        ["Einkauf"],
+    )
+
+    assert parsed == {
+        "cleaned_question": "Q?",
+        "detected_category": "Einkauf",
+        "category_validated": True,
+        "category_validation_reason": None,
+    }
+
+
+def test_orchestration_prompt_renders_optional_request_fields_as_null():
+    prompt = build_orchestration_prompt("Q?", ["Einkauf"])
+
+    assert "{{module_json}}" not in prompt
+    assert "{{program_json}}" not in prompt
+    assert "{{role_json}}" not in prompt
+    assert "{{role_description_json}}" not in prompt
 
 
 def test_orchestration_model_is_fixed_across_experiments():
@@ -93,7 +121,7 @@ class _FakeOrchestrationGenerator:
         assert "CategoryNames" in prompt
         assert "Einkauf" in prompt
         return GenerationResult(
-            answer='{"cleaned_question":"Wie bestelle ich?","detected_category":"Einkauf","category_confidence":0.91}',
+            answer='{"cleaned_question":"Wie bestelle ich?","detected_category":"Einkauf"}',
             input_tokens=10,
             output_tokens=8,
         )

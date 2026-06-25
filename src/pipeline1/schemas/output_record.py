@@ -11,7 +11,8 @@ class OutputRecord(BaseModel):
     question: str
     cleaned_question: str | None = None
     detected_category: str | None = None
-    category_confidence: float = 0.0
+    category_validated: bool = False
+    category_validation_reason: str | None = None
     orchestration_error: str | None = None
     generated_answer: str
     retrieved_chunks: list[str] = Field(default_factory=list)
@@ -114,7 +115,11 @@ class OutputRecord(BaseModel):
             "question": self.question,
             "clean_question": self.cleaned_question,
             "detected_category": self.detected_category,
-            "category_confidence": self.category_confidence,
+            "category_validated": self.category_validated,
+            "category_validation_reason": self.category_validation_reason,
+            "retrieval_mode": self.retrieval_mode,
+            "category_filter_applied": self.category_filter_applied,
+            "category_fallback_used": self.category_fallback_used,
             "retrieved_chunks": retrieved_chunks,
             "answer": self.generated_answer,
             "config_id": self.experiment_id,
@@ -144,8 +149,6 @@ class OutputRecord(BaseModel):
             "retrieval_warnings": self.retrieval_warnings,
             "retriever_type": self.retriever_type,
             "reranker_used": self.reranker_used,
-            "category_filter_applied": self.category_filter_applied,
-            "category_fallback_used": self.category_fallback_used,
             "retrieval_time_ms": self.retrieval_time_ms,
             "generation_time_ms": self.generation_time_ms,
             "total_latency_ms": self.total_latency_ms,

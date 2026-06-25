@@ -18,8 +18,8 @@ def test_pipeline1_sivas_baseline_config_loads():
     assert cfg.retrieval.retriever_type == "category_aware_dense"
     assert cfg.index.type == "faiss"
     assert cfg.generation.model_name == "qwen2.5:7b"
-    assert cfg.runtime.resume is False
-    assert cfg.runtime.overwrite is True
+    assert cfg.runtime.resume is True
+    assert cfg.runtime.overwrite is False
 
 
 def test_pipeline1_base_uses_sivas_defaults_and_safe_run_defaults():

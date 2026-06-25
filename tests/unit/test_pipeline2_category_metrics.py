@@ -17,57 +17,57 @@ from src.pipeline2.aggregation.summarizer import summarize_by_category, SIVAS_CA
 # compute_category_metrics
 # ---------------------------------------------------------------------------
 
-def test_category_correct_exact_match():
+def test_category_accuracy_exact_match():
     result = compute_category_metrics("Einkauf", "Einkauf")
-    assert result["category_correct"] == 1.0
+    assert result["category_accuracy"] == 1.0
     assert result["category_predicted"] == "Einkauf"
     assert result["category_gold"] == "Einkauf"
 
 
-def test_category_correct_case_insensitive():
+def test_category_accuracy_case_insensitive():
     result = compute_category_metrics("einkauf", "Einkauf")
-    assert result["category_correct"] == 1.0
+    assert result["category_accuracy"] == 1.0
 
 
 def test_category_incorrect_mismatch():
     result = compute_category_metrics("Technik", "Einkauf")
-    assert result["category_correct"] == 0.0
+    assert result["category_accuracy"] == 0.0
     assert result["category_predicted"] == "Technik"
     assert result["category_gold"] == "Einkauf"
 
 
 def test_category_none_predicted_returns_null():
     result = compute_category_metrics(None, "Einkauf")
-    assert result["category_correct"] is None
+    assert result["category_accuracy"] is None
     assert result["category_predicted"] is None
     assert result["category_gold"] == "Einkauf"
 
 
 def test_category_none_gold_returns_null():
     result = compute_category_metrics("Technik", None)
-    assert result["category_correct"] is None
+    assert result["category_accuracy"] is None
 
 
 def test_category_both_none_returns_null():
     result = compute_category_metrics(None, None)
-    assert result["category_correct"] is None
+    assert result["category_accuracy"] is None
 
 
 def test_category_strips_whitespace():
     result = compute_category_metrics("  Vertrieb  ", "Vertrieb")
-    assert result["category_correct"] == 1.0
+    assert result["category_accuracy"] == 1.0
     assert result["category_predicted"] == "Vertrieb"
 
 
 def test_category_empty_string_treated_as_missing():
     result = compute_category_metrics("", "Technik")
-    assert result["category_correct"] is None
+    assert result["category_accuracy"] is None
 
 
 def test_category_all_five_sivas_categories_work():
     for cat in SIVAS_CATEGORIES:
         r = compute_category_metrics(cat, cat)
-        assert r["category_correct"] == 1.0
+        assert r["category_accuracy"] == 1.0
 
 
 # ---------------------------------------------------------------------------
@@ -160,11 +160,11 @@ def test_rouge_l_german_better_than_pure_ascii_would_score():
 # summarize_by_category
 # ---------------------------------------------------------------------------
 
-def _make_rows(category_gold: str, n: int, category_correct: float | None = 1.0) -> list[dict]:
+def _make_rows(category_gold: str, n: int, category_accuracy: float | None = 1.0) -> list[dict]:
     return [
         {
             "category_gold": category_gold,
-            "category_correct": category_correct,
+            "category_accuracy": category_accuracy,
             "rouge_l": 0.8,
             "exact_match": 1.0,
             "literal_exact_match": 1.0,
@@ -194,7 +194,7 @@ def test_summarize_by_category_first_row_is_all():
 
 
 def test_summarize_by_category_aggregates_category_accuracy():
-    rows = _make_rows("Einkauf", 4, category_correct=1.0) + _make_rows("Technik", 4, category_correct=0.0)
+    rows = _make_rows("Einkauf", 4, category_accuracy=1.0) + _make_rows("Technik", 4, category_accuracy=0.0)
     result = summarize_by_category(rows)
     all_row = next(r for r in result if r["category"] == "all")
     einkauf_row = next(r for r in result if r["category"] == "Einkauf")
@@ -221,10 +221,10 @@ def test_summarize_by_category_pipeline_success_rate():
     assert einkauf_row["pipeline_success_rate"] == pytest.approx(0.5)
 
 
-def test_summarize_by_category_null_category_correct_excluded_from_mean():
+def test_summarize_by_category_null_category_accuracy_excluded_from_mean():
     rows = [
-        {"category_gold": "Vertrieb", "category_correct": 1.0, "generation_failed": False},
-        {"category_gold": "Vertrieb", "category_correct": None, "generation_failed": False},
+        {"category_gold": "Vertrieb", "category_accuracy": 1.0, "generation_failed": False},
+        {"category_gold": "Vertrieb", "category_accuracy": None, "generation_failed": False},
     ]
     result = summarize_by_category(rows)
     vertrieb_row = next(r for r in result if r["category"] == "Vertrieb")

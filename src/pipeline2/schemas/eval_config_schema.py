@@ -66,6 +66,13 @@ class EmbeddingSimilarityConfig(StrictEvalConfigModel):
     enabled: bool = True
 
 
+class BertScoreConfig(StrictEvalConfigModel):
+    enabled: bool = False
+    model_name: str = "bert-base-multilingual-cased"
+    device: str = "auto"
+    max_length: int = Field(default=512, gt=0)
+
+
 class RuntimeConfig(StrictEvalConfigModel):
     overwrite: bool = True
     save_csv: bool = True
@@ -77,6 +84,7 @@ class EvalConfig(StrictEvalConfigModel):
     retrieval: RetrievalEvalConfig = RetrievalEvalConfig()
     answer_quality: AnswerQualityConfig = AnswerQualityConfig()
     embedding_similarity: EmbeddingSimilarityConfig = EmbeddingSimilarityConfig()
+    bert_score: BertScoreConfig = BertScoreConfig()
     runtime: RuntimeConfig = RuntimeConfig()
 
     @classmethod

@@ -6,7 +6,8 @@ class QueryRecord(BaseModel):
     question: str
     cleaned_question: str | None = None
     detected_category: str | None = None
-    category_confidence: float = 0.0
+    category_validated: bool = False
+    category_validation_reason: str | None = None
     orchestration_error: str | None = None
 
     @property

@@ -17,7 +17,7 @@ class _FakeEmbedder:
 
 def test_document_stage_loads_jsonl_documents(tmp_path):
     docs_path = tmp_path / "documents.jsonl"
-    docs_path.write_text('{"context_id":"ctx1","cleaned_context":"alpha"}\n', encoding="utf-8")
+    docs_path.write_text('{"doc_key":"ctx1","doc_name":"ctx1.md","text":"alpha","kategorie":"ERP"}\n', encoding="utf-8")
     cfg = _cfg(tmp_path)
 
     output = DocumentStage(cfg, docs_path).run()
@@ -30,7 +30,7 @@ def test_document_stage_loads_jsonl_documents(tmp_path):
 
 def test_chunking_stage_builds_and_reuses_chunk_cache(tmp_path):
     docs_path = tmp_path / "documents.jsonl"
-    docs_path.write_text('{"context_id":"ctx1","cleaned_context":"alpha beta"}\n', encoding="utf-8")
+    docs_path.write_text('{"doc_key":"ctx1","doc_name":"ctx1.md","text":"alpha beta","kategorie":"ERP"}\n', encoding="utf-8")
     cfg = _cfg(tmp_path)
     docs = DocumentStage(cfg, docs_path).run().documents
     cache_dir = tmp_path / "data" / "processed"
@@ -48,7 +48,7 @@ def test_chunking_stage_builds_and_reuses_chunk_cache(tmp_path):
 
 def test_embedding_stage_builds_and_validates_npy_cache(tmp_path):
     docs_path = tmp_path / "documents.jsonl"
-    docs_path.write_text('{"context_id":"ctx1","cleaned_context":"alpha beta"}\n', encoding="utf-8")
+    docs_path.write_text('{"doc_key":"ctx1","doc_name":"ctx1.md","text":"alpha beta","kategorie":"ERP"}\n', encoding="utf-8")
     cfg = _cfg(tmp_path)
     docs = DocumentStage(cfg, docs_path).run().documents
     cache_dir = tmp_path / "data" / "processed"

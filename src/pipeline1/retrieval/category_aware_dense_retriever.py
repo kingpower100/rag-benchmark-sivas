@@ -47,13 +47,6 @@ class CategoryAwareDenseRetriever(BaseRetriever):
             if str((item.metadata or {}).get(self.category_field) or "").strip() == self.active_category
         ]
         selected = list(category_matches[:top_k])
-        if len(selected) < top_k and self.fallback_to_global:
-            seen = {item.chunk_id for item in selected}
-            fill = [item for item in candidates if item.chunk_id not in seen]
-            selected.extend(fill[: top_k - len(selected)])
-            fallback_used = len(selected) > len(category_matches[:top_k])
-            diagnostics["category_fallback_used"] = fallback_used
-            diagnostics["category_filter_fallback"] = fallback_used
         diagnostics.update(
             {
                 "category_matches": len(category_matches),
@@ -61,13 +54,6 @@ class CategoryAwareDenseRetriever(BaseRetriever):
                 **_result_payload(selected, self.category_field),
             }
         )
-        if not selected and self.fallback_to_global:
-            selected = candidates[:top_k]
-            diagnostics.update(_result_payload(selected, self.category_field))
-            diagnostics["category_fallback_used"] = True
-            diagnostics["category_filter_fallback"] = True
-            self.last_retrieval_diagnostics = diagnostics
-            return selected
         self.last_retrieval_diagnostics = diagnostics
         return selected
 

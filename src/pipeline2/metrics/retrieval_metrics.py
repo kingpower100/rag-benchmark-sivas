@@ -131,13 +131,6 @@ def _ndcg_at_k(ranked: list[str], gold_set: set[str], k: int) -> float:
     return dcg / idcg if idcg else 0.0
 
 
-def _reciprocal_rank(ranked: list[str], gold_set: set[str]) -> float:
-    for idx, item in enumerate(ranked, start=1):
-        if item in gold_set:
-            return 1.0 / idx
-    return 0.0
-
-
 def _dedupe_preserving_order(items) -> list[str]:
     seen: set[str] = set()
     output: list[str] = []

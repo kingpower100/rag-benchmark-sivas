@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import math
 import re
+from importlib import metadata
 from functools import lru_cache
 from typing import Protocol
 
@@ -27,6 +28,7 @@ class DeterministicHashEmbedder:
     def __init__(self, model_name: str = "hashing-bow-v1", dimensions: int = 256) -> None:
         self.model_name = model_name
         self.dimensions = dimensions
+        self.device = "cpu"
 
     def encode(self, text: str) -> list[float]:
         vector = [0.0] * self.dimensions
@@ -45,7 +47,9 @@ class SentenceTransformerAnswerEmbedder:
     def __init__(self, model_name: str) -> None:
         from sentence_transformers import SentenceTransformer
 
+        self.model_name = model_name
         self.model = SentenceTransformer(model_name)
+        self.device = str(getattr(self.model, "device", "unknown"))
 
     def encode(self, text: str) -> list[float]:
         # normalize_embeddings=True is required for cosine similarity to be in [-1, 1]
@@ -69,6 +73,24 @@ def compute_embedding_similarity(
     if not (generated_answer or "").strip() or not (ground_truth_answer or "").strip():
         return 0.0
     return cosine_similarity(embedder.encode(generated_answer), embedder.encode(ground_truth_answer))
+
+
+def embedding_model_metadata(provider: str, model_name: str, embedder: AnswerEmbedder | None) -> dict[str, str]:
+    return {
+        "provider": provider,
+        "model_name": model_name,
+        "sentence_transformers_version": _package_version("sentence-transformers"),
+        "model_revision": "unknown",
+        "local_cache_path": "unknown",
+        "device_used": str(getattr(embedder, "device", "unknown")) if embedder is not None else "unknown",
+    }
+
+
+def _package_version(package_name: str) -> str:
+    try:
+        return metadata.version(package_name)
+    except metadata.PackageNotFoundError:
+        return "unknown"
 
 
 def cosine_similarity(left: list[float], right: list[float]) -> float:

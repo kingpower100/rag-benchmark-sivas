@@ -13,7 +13,11 @@ TARGET_TOP_LEVEL_FIELDS = {
     "question",
     "clean_question",
     "detected_category",
-    "category_confidence",
+    "category_validated",
+    "category_validation_reason",
+    "retrieval_mode",
+    "category_filter_applied",
+    "category_fallback_used",
     "retrieved_chunks",
     "answer",
     "config_id",
@@ -32,7 +36,9 @@ def _make_record(**overrides) -> OutputRecord:
         "question": "Was ist ein Arbeitsplan?",
         "cleaned_question": "Was ist ein Arbeitsplan?",
         "detected_category": "Arbeitsplan",
-        "category_confidence": 0.95,
+        "category_validated": True,
+        "category_validation_reason": None,
+        "retrieval_mode": "category_aware_dense",
         "generated_answer": "Ein Arbeitsplan definiert die Abfolge der Arbeitsgänge.",
         "retrieved_chunk_ids": ["chunk_001"],
         "retrieved_original_context_ids": ["doc_key_001"],
@@ -76,10 +82,19 @@ def test_export_record_field_renames():
     record = _make_record()
     export = record.to_export_record()
     assert export["clean_question"] == record.cleaned_question
+    assert export["category_validated"] is True
+    assert export["category_validation_reason"] is None
+    assert export["retrieval_mode"] == "category_aware_dense"
     assert export["answer"] == record.generated_answer
     assert export["config_id"] == record.experiment_id
     assert export["generation_model"] == record.llm_model
     assert export["retrieval_k"] == record.top_k
+
+
+def test_export_record_does_not_emit_category_confidence():
+    record = _make_record()
+    export = record.to_export_record()
+    assert "category_confidence" not in export
 
 
 def test_export_record_retrieved_chunks_structure():

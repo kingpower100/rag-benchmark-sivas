@@ -88,7 +88,7 @@ def test_retrieval_stage_uses_cleaned_question_and_detected_category():
                         question="dirty alpha?",
                         cleaned_question="clean alpha?",
                         detected_category="Finanzen",
-                        category_confidence=0.8,
+                        category_validated=True,
                     )
                 ]
             }
@@ -99,9 +99,11 @@ def test_retrieval_stage_uses_cleaned_question_and_detected_category():
     assert embedder.last_query == "clean alpha?"
     assert [item.chunk_id for item in row.retrieved] == ["c2"]
     assert row.retrieval_diagnostics["detected_category"] == "Finanzen"
+    assert row.retrieval_diagnostics["category_validated"] is True
+    assert row.retrieval_diagnostics["retrieval_mode"] == "category_aware_dense"
 
 
-def test_category_aware_retrieval_fills_remaining_slots_from_global_candidates():
+def test_valid_category_but_fewer_than_top_k_uses_controlled_global_fallback():
     cfg = _cfg(retriever_type="category_aware_dense", top_k=3, fetch_k=4)
     chunks = [
         _chunk("c1", "alpha", "Einkauf"),
@@ -119,7 +121,7 @@ def test_category_aware_retrieval_fills_remaining_slots_from_global_candidates()
                         question="alpha?",
                         cleaned_question="alpha?",
                         detected_category="Finanzen",
-                        category_confidence=0.9,
+                        category_validated=True,
                     )
                 ]
             }
@@ -127,15 +129,18 @@ def test_category_aware_retrieval_fills_remaining_slots_from_global_candidates()
     )
 
     row = output.retrieval_rows[0]
-    assert [item.chunk_id for item in row.retrieved] == ["c2", "c4", "c1"]
-    assert row.retrieval_diagnostics["retrieved_chunks"] == ["c2", "c4", "c1"]
-    assert row.retrieval_diagnostics["retrieved_documents"] == ["doc-c2", "doc-c4", "doc-c1"]
-    assert row.retrieval_diagnostics["retrieved_categories"] == ["Finanzen", "Finanzen", "Einkauf"]
+    assert [item.chunk_id for item in row.retrieved] == ["c1", "c2", "c3"]
+    assert row.retrieval_diagnostics["retrieved_chunks"] == ["c1", "c2", "c3"]
+    assert row.retrieval_diagnostics["retrieved_documents"] == ["doc-c1", "doc-c2", "doc-c3"]
+    assert row.retrieval_diagnostics["retrieved_categories"] == ["Einkauf", "Finanzen", "Personal"]
     assert row.retrieval_diagnostics["category_filter_applied"] is True
     assert row.retrieval_diagnostics["category_fallback_used"] is True
+    assert row.retrieval_diagnostics["retrieval_mode"] == "global_fallback"
+    assert row.retrieval_diagnostics["number_of_category_results"] == 2
+    assert row.retrieval_diagnostics["number_of_global_fallback_results"] == 3
 
 
-def test_category_aware_retrieval_falls_back_to_global_when_category_missing():
+def test_empty_category_uses_global_fallback():
     cfg = _cfg(retriever_type="category_aware_dense", top_k=2, fetch_k=2)
     chunks = [_chunk("c1", "alpha", "Einkauf"), _chunk("c2", "alpha", "Finanzen")]
 
@@ -146,7 +151,42 @@ def test_category_aware_retrieval_falls_back_to_global_when_category_missing():
     row = output.retrieval_rows[0]
     assert [item.chunk_id for item in row.retrieved] == ["c1", "c2"]
     assert row.retrieval_diagnostics["category_filter_applied"] is False
-    assert row.retrieval_diagnostics["category_fallback_used"] is False
+    assert row.retrieval_diagnostics["category_fallback_used"] is True
+    assert row.retrieval_diagnostics["retrieval_mode"] == "global_fallback"
+    assert row.retrieval_diagnostics["category_validated"] is False
+    assert row.retrieval_diagnostics["number_of_category_results"] == 0
+    assert row.retrieval_diagnostics["number_of_global_fallback_results"] == 2
+
+
+def test_invalid_category_uses_global_fallback():
+    cfg = _cfg(retriever_type="category_aware_dense", top_k=2, fetch_k=2)
+    chunks = [_chunk("c1", "alpha", "Einkauf"), _chunk("c2", "alpha", "Finanzen")]
+
+    output = RetrievalStage(cfg, _Embedder(), _FaissIndex(), chunks).run(
+        StageInput(
+            {
+                "queries": [
+                    QueryRecord(
+                        question_id="q1",
+                        question="alpha?",
+                        cleaned_question="alpha?",
+                        detected_category="Unknown",
+                        category_validated=False,
+                        category_validation_reason="detected_category not found in KB category list",
+                    )
+                ]
+            }
+        )
+    )
+
+    row = output.retrieval_rows[0]
+    assert [item.chunk_id for item in row.retrieved] == ["c1", "c2"]
+    assert row.retrieval_diagnostics["detected_category"] == "Unknown"
+    assert row.retrieval_diagnostics["category_validated"] is False
+    assert row.retrieval_diagnostics["category_validation_reason"] == "detected_category not found in KB category list"
+    assert row.retrieval_diagnostics["category_filter_applied"] is False
+    assert row.retrieval_diagnostics["category_fallback_used"] is True
+    assert row.retrieval_diagnostics["retrieval_mode"] == "global_fallback"
 
 
 def test_sivas_chunk_metadata_is_available_during_retrieval():
@@ -181,6 +221,7 @@ def test_sivas_chunk_metadata_is_available_during_retrieval():
                         question="alpha?",
                         cleaned_question="alpha?",
                         detected_category="Einkauf",
+                        category_validated=True,
                     )
                 ]
             }

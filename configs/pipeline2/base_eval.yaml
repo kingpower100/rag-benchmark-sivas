@@ -37,6 +37,11 @@ embedding_similarity:
   model_name: intfloat/multilingual-e5-large
   dimensions: 1024
   enabled: true
+bert_score:
+  enabled: true
+  model_name: bert-base-multilingual-cased
+  device: auto
+  max_length: 512
 runtime:
   overwrite: true
   save_csv: true

@@ -102,13 +102,16 @@ class OrchestrationStage(BaseStage):
             metrics={
                 "input_tokens": result.input_tokens if result is not None else 0,
                 "output_tokens": result.output_tokens if result is not None else 0,
-                "category_confidence": orchestrated.category_confidence,
+                "category_validated": orchestrated.category_validated,
                 "orchestration_failed": error is not None,
                 "orchestration_attempts": attempts,
             },
             diagnostics={
+                "decision": "Category Validation",
                 "cleaned_question": orchestrated.cleaned_question,
                 "detected_category": orchestrated.detected_category,
+                "category_validated": orchestrated.category_validated,
+                "category_validation_reason": orchestrated.category_validation_reason,
                 "error": error,
                 "orchestration_attempts": attempts,
             },
@@ -167,7 +170,8 @@ class OrchestrationStage(BaseStage):
             {
                 "cleaned_question": query.question,
                 "detected_category": None,
-                "category_confidence": 0.0,
+                "category_validated": False,
+                "category_validation_reason": "orchestration failed before category validation",
                 "orchestration_error": last_error,
             },
             last_result,

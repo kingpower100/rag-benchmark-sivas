@@ -10,20 +10,20 @@ def compute_category_metrics(
 ) -> dict[str, Any]:
     """Compare the orchestration LLM's predicted category against the gold label.
 
-    Returns category_correct=None when either value is missing so that the
+    Returns category_accuracy=None when either value is missing so that the
     metric is excluded from averages rather than penalising missing predictions.
     """
     predicted = detected_category.strip() if detected_category else None
     gold = gold_kategorie.strip() if gold_kategorie else None
     if predicted is None or gold is None:
         return {
-            "category_correct": None,
+            "category_accuracy": None,
             "category_predicted": predicted,
             "category_gold": gold,
         }
     correct = predicted.lower() == gold.lower()
     return {
-        "category_correct": 1.0 if correct else 0.0,
+        "category_accuracy": 1.0 if correct else 0.0,
         "category_predicted": predicted,
         "category_gold": gold,
     }
@@ -48,7 +48,7 @@ def compute_category_routing_report(
     if active_count == 0:
         return {
             "category_routing_active": False,
-            "category_routing_coverage": 0.0,
+            "category_coverage": 0.0,
             "total_questions": total,
             "questions_with_prediction": 0,
             "message": (
@@ -89,15 +89,15 @@ def compute_category_routing_report(
     macro_precision = sum(v["precision"] for v in per_class.values()) / len(per_class) if per_class else 0.0
     macro_recall = sum(v["recall"] for v in per_class.values()) / len(per_class) if per_class else 0.0
 
-    accuracy_rows = [row for row in rows_with_prediction if row.get("category_correct") is not None]
+    accuracy_rows = [row for row in rows_with_prediction if row.get("category_accuracy") is not None]
     category_accuracy = (
-        sum(row["category_correct"] for row in accuracy_rows) / len(accuracy_rows)
+        sum(row["category_accuracy"] for row in accuracy_rows) / len(accuracy_rows)
         if accuracy_rows else 0.0
     )
 
     return {
         "category_routing_active": True,
-        "category_routing_coverage": round(active_count / total, 6) if total > 0 else 0.0,
+        "category_coverage": round(active_count / total, 6) if total > 0 else 0.0,
         "total_questions": total,
         "questions_with_prediction": active_count,
         "category_accuracy": round(category_accuracy, 6),

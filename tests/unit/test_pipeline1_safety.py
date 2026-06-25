@@ -22,14 +22,19 @@ def test_missing_context_id_fails_when_required(tmp_path):
     path.write_text('{"document_id":"doc1","cleaned_context":"text"}\n', encoding="utf-8")
 
     with pytest.raises(ValueError, match="missing required context_id"):
-        JsonlReader.read_documents(str(path), require_context_id=True)
+        JsonlReader.read_documents(str(path), require_context_id=True, dataset_schema="generic")
 
 
 def test_document_text_field_uses_cleaned_context(tmp_path):
     path = tmp_path / "documents.jsonl"
     path.write_text('{"context_id":"ctx1","context":"raw text","cleaned_context":"clean text","file_name":"f"}\n', encoding="utf-8")
 
-    docs = JsonlReader.read_documents(str(path), require_context_id=True, text_field="cleaned_context")
+    docs = JsonlReader.read_documents(
+        str(path),
+        require_context_id=True,
+        text_field="cleaned_context",
+        dataset_schema="generic",
+    )
 
     assert docs[0].text == "clean text"
     assert docs[0].original_context_id == "ctx1"
@@ -41,7 +46,12 @@ def test_document_text_field_missing_fails_without_explicit_fallback(tmp_path):
     path.write_text('{"context_id":"ctx1","context":"raw text"}\n', encoding="utf-8")
 
     with pytest.raises(ValueError, match="cleaned_context"):
-        JsonlReader.read_documents(str(path), require_context_id=True, text_field="cleaned_context")
+        JsonlReader.read_documents(
+            str(path),
+            require_context_id=True,
+            text_field="cleaned_context",
+            dataset_schema="generic",
+        )
 
 
 def test_sivas_document_schema_maps_doc_key_and_text(tmp_path):
@@ -208,23 +218,26 @@ def test_txt_folder_reader_recurses_and_preserves_relative_paths(tmp_path):
 
 
 def test_pipeline1_rejects_answer_bearing_query_file(tmp_path, monkeypatch):
-    (tmp_path / "documents.jsonl").write_text('{"context_id":"c1","cleaned_context":"text"}\n', encoding="utf-8")
+    (tmp_path / "documents.jsonl").write_text(
+        '{"doc_key":"c1","doc_name":"c1.md","text":"text","kategorie":"ERP"}\n',
+        encoding="utf-8",
+    )
     (tmp_path / "questions.jsonl").write_text(
-        '{"id":"q1","question":"Q?","program_answer":"100"}\n',
+        '{"question_id":"q1","frage":"Q?","program_answer":"100"}\n',
         encoding="utf-8",
     )
     monkeypatch.setenv("PIPELINE1_SKIP_OLLAMA_PREFLIGHT", "1")
 
     errors = run_preflight_checks(_cfg(False, top_k=1, fetch_k=1), tmp_path)
 
-    assert any("Pipeline 1 questions file without answers/gold contexts" in error for error in errors)
+    assert any("Pipeline 1 query file must contain questions only" in error for error in errors)
 
 
 def test_preflight_accepts_txt_folder_documents(tmp_path, monkeypatch):
     folder = tmp_path / "transformed"
     folder.mkdir()
     (folder / "sivas_manual_01.txt").write_text("SIVAS text", encoding="utf-8")
-    (tmp_path / "questions.jsonl").write_text('{"question_id":"q1","question":"Q?"}\n', encoding="utf-8")
+    (tmp_path / "questions.jsonl").write_text('{"question_id":"q1","frage":"Q?"}\n', encoding="utf-8")
     cfg = _cfg(False, top_k=1, fetch_k=1)
     cfg.data.documents_path = "transformed"
     cfg.data.documents_source_type = "txt_folder"
