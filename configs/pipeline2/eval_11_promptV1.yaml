@@ -1,0 +1,9 @@
+extends: "base_eval.yaml"
+
+evaluation:
+  eval_run_id: "11_sivas_fixed512_faiss_dense_qwen25_promptV1_eval"
+
+inputs:
+  pipeline1_results_path: "data/runs/pipeline1/11_sivas_fixed512_faiss_dense_qwen25_promptV1/results.jsonl"
+  rag_outputs:
+    - "data/runs/pipeline1/11_sivas_fixed512_faiss_dense_qwen25_promptV1/results.jsonl"
