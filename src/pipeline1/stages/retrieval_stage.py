@@ -65,6 +65,7 @@ class RetrievalStage(BaseStage):
         logger=None,
         retriever_factory: Callable = build_retriever,
         reranker_factory: Callable = CrossEncoderReranker,
+        embeddings=None,
     ) -> None:
         self.cfg = cfg
         self.embedder = embedder
@@ -74,10 +75,13 @@ class RetrievalStage(BaseStage):
         self.logger = logger
         self.retriever_factory = retriever_factory
         self.reranker_factory = reranker_factory
+        # Pre-computed embeddings (numpy array, shape [N, D]) used by
+        # CategoryAwareDenseRetriever to build per-category FAISS sub-indexes.
+        self.embeddings = embeddings
 
     def run(self, stage_input: StageInput) -> RetrievalStageOutput:
         queries = list(stage_input.payload["queries"])
-        retriever = self.retriever_factory(self.cfg.retrieval, self.embedder, self.index, self.chunks)
+        retriever = self.retriever_factory(self.cfg.retrieval, self.embedder, self.index, self.chunks, embeddings=self.embeddings)
         reranker = (
             self.reranker_factory(self.cfg.reranker.model_name, self.cfg.reranker.device)
             if self.cfg.reranker.enabled and self.cfg.reranker.model_name
@@ -189,6 +193,9 @@ class RetrievalStage(BaseStage):
                             query.question_id,
                             query.category_validation_reason,
                         )
+            # If category validation fails, category-restricted retrieval is skipped
+            # because there is no trusted category scope. The pipeline directly
+            # performs global retrieval as controlled fallback.
             else:
                 raw_retrieved, retrieved, retrieval_warnings, reranker_used = retrieve_top_k_unique_contexts(
                     query.retrieval_question,

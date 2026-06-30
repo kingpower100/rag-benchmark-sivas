@@ -17,8 +17,14 @@ class PromptBudget:
     context_truncation_strategy: str = "ranked_budget"
 
 
-def build_prompt(system_prompt: str, question: str, contexts: list, include_metadata_headers: bool = False) -> str:
-    prompt, _ = build_prompt_with_stats(system_prompt, question, contexts, include_metadata_headers)
+def build_prompt(
+    system_prompt: str,
+    question: str,
+    contexts: list,
+    include_metadata_headers: bool = False,
+    retrieval_metadata: dict | None = None,
+) -> str:
+    prompt, _ = build_prompt_with_stats(system_prompt, question, contexts, include_metadata_headers, retrieval_metadata=retrieval_metadata)
     return prompt
 
 
@@ -28,18 +34,21 @@ def build_prompt_with_stats(
     contexts: list,
     include_metadata_headers: bool = False,
     budget: PromptBudget | None = None,
+    retrieval_metadata: dict | None = None,
 ) -> tuple[str, dict[str, Any]]:
     budget = budget or PromptBudget()
     encoder = _load_token_encoder(budget.tokenizer_name)
     raw_context_texts = [_format_context(item, include_metadata_headers) for item in contexts]
     budgeted_contexts, context_stats = _budget_contexts(raw_context_texts, budget, encoder)
     context_text = "\n\n".join(f"[{idx}] {text}" for idx, text in enumerate(budgeted_contexts, start=1))
+    metadata_block = _format_retrieval_metadata(retrieval_metadata)
     if "{context}" in system_prompt or "{question}" in system_prompt:
         prompt = system_prompt.strip().format(context=context_text, question=question)
     else:
         prompt = (
             f"{system_prompt.strip()}\n\n"
             f"Question:\n{question}\n\n"
+            f"{metadata_block}"
             f"Retrieved Context:\n{context_text}\n\n"
             "Final Answer:"
         )
@@ -142,3 +151,22 @@ def _load_token_encoder(tokenizer_name: str):
         return tiktoken.get_encoding(tokenizer_name)
     except Exception:
         return None
+
+
+def _format_retrieval_metadata(metadata: dict | None) -> str:
+    if not metadata:
+        return ""
+    lines = ["Retrieval Metadata:"]
+    detected = metadata.get("detected_category")
+    if detected is not None:
+        lines.append(f"- Detected category: {detected}")
+    validated = metadata.get("category_validated")
+    if validated is not None:
+        lines.append(f"- Category validated: {str(validated).lower()}")
+    mode = metadata.get("retrieval_mode")
+    if mode is not None:
+        lines.append(f"- Retrieval mode: {mode}")
+    fallback = metadata.get("fallback_used")
+    if fallback is not None:
+        lines.append(f"- Fallback used: {str(fallback).lower()}")
+    return "\n".join(lines) + "\n\n"

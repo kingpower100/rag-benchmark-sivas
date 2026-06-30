@@ -153,6 +153,8 @@ class OrchestrationConfig(StrictConfigModel):
     temperature: float = 0.0
     max_tokens: int = Field(default=256, gt=0)
     timeout_s: int = Field(default=60, gt=0)
+    prompt_path: Optional[str] = None
+    prompt_version: Optional[str] = None
 
     @field_validator("fixed")
     @classmethod
@@ -194,6 +196,7 @@ class GenerationConfig(StrictConfigModel):
     max_chunk_chars: int = Field(default=8000, gt=0)
     context_truncation_strategy: Literal["ranked_budget"] = "ranked_budget"
     log_prompt_stats: bool = True
+    include_retrieval_metadata: bool = False
 
 
 class PricingConfig(StrictConfigModel):

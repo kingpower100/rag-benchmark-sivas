@@ -48,13 +48,6 @@ def test_bertscore_empty_reference_answer_returns_safe_values():
     assert metrics == {"bertscore_precision": 0.0, "bertscore_recall": 0.0, "bertscore_f1": 0.0}
 
 
-def test_literal_exact_match_uses_minimal_text_normalization_only():
-    assert compute_answer_metrics("2602", "2602")["literal_exact_match"] == 1.0
-    assert compute_answer_metrics(" 2602 ", "2602")["literal_exact_match"] == 1.0
-    assert compute_answer_metrics("2.602 billion", "2602 million")["literal_exact_match"] == 0.0
-    assert compute_answer_metrics("Revenue was 2602", "2602")["literal_exact_match"] == 0.0
-
-
 def test_non_empty_answer_rate_keeps_backward_compatible_alias():
     metrics = compute_answer_metrics("UNKNOWN", "100")
 
@@ -77,9 +70,3 @@ def test_answer_relevancy_score_is_deterministic_overlap_baseline():
     assert answer_relevancy_score("What was total revenue in 2020?", "1250") == 0.0
 
 
-def test_rouge_l_remains_available_as_compatibility_metric():
-    metrics = compute_answer_metrics("net income increased in 2020", "net income increased")
-
-    assert metrics["rouge_l"] == pytest.approx(0.75)
-    assert compute_answer_metrics("", "net income")["rouge_l"] == 0.0
-    assert compute_answer_metrics("UNKNOWN", "100")["rouge_l"] == 0.0

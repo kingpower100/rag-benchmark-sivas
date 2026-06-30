@@ -146,8 +146,8 @@ def test_three_way_alignment_rejects_duplicates_in_all_inputs():
 
 def test_reported_vs_recomputed_metric_comparison_flags_mismatch():
     comparison = compare_reported_vs_recomputed_metrics(
-        [{"question_id": "q1", "hit_at_1": 0.0, "exact_match": 1.0}],
-        [{"question_id": "q1", "hit_at_1": 1.0, "exact_match": 1.0}],
+        [{"question_id": "q1", "hit_at_1": 0.0}],
+        [{"question_id": "q1", "hit_at_1": 1.0}],
         [1],
     )
 

@@ -7,7 +7,7 @@ from src.pipeline1.retrieval.hybrid_rrf_retriever import HybridRRFRetriever
 from src.pipeline1.schemas.config_schema import RetrievalConfig
 
 
-def build_retriever(config: RetrievalConfig, embedder, index, chunks):
+def build_retriever(config: RetrievalConfig, embedder, index, chunks, embeddings=None):
     if config.retriever_type == "bm25":
         return _build_bm25_retriever(config, chunks)
     if config.retriever_type == "elasticsearch_dense":
@@ -26,7 +26,8 @@ def build_retriever(config: RetrievalConfig, embedder, index, chunks):
         return CategoryAwareDenseRetriever(
             dense_retriever=dense_retriever,
             category_field=config.category_field,
-            fallback_to_global=config.fallback_to_global,
+            embeddings=embeddings,
+            index_metric=getattr(index, "metric", "cosine"),
         )
     if config.retriever_type == "hybrid_rrf":
         return HybridRRFRetriever(

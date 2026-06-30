@@ -54,7 +54,8 @@ class OrchestrationStage(BaseStage):
             diagnostics={"orchestrated_rows": len(orchestrated), "available_categories": categories},
             metadata={
                 "llm_model": self.cfg.orchestration.model_name,
-                "prompt_version": ORCHESTRATION_PROMPT_VERSION,
+                "prompt_path": self.cfg.orchestration.prompt_path,
+                "prompt_version": self.cfg.orchestration.prompt_version or ORCHESTRATION_PROMPT_VERSION,
                 "tasks": list(self.cfg.orchestration.tasks),
             },
             queries=orchestrated,
@@ -76,7 +77,7 @@ class OrchestrationStage(BaseStage):
                 row_index,
                 total_rows,
             )
-        prompt = build_orchestration_prompt(query.question, categories)
+        prompt = build_orchestration_prompt(query.question, categories, self.cfg.orchestration.prompt_path)
         self._write_event(
             stage="orchestration",
             event_type=EventType.GENERATION_START,

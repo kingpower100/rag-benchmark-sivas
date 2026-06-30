@@ -296,17 +296,10 @@ class EvaluationOrchestrator:
                 _fail_emb_metric = embedder.metric_name if embedder is not None else "embedding_similarity"
                 answer_metrics.update(
                     {
-                        "exact_match": 0.0,
-                        "literal_exact_match": 0.0,
-                        "canonical_exact_match": 0.0,
-                        "german_canonical_exact_match": 0.0,
-                        "umlaut_expanded_exact_match": 0.0,
                         "non_empty_answer_rate": 0.0,
                         "answer_coverage_rate": 0.0,
                         "abstention_rate": 0.0,
                         "answer_relevancy_score": 0.0,
-                        "rouge_l": 0.0,
-                        "rouge_1": 0.0,
                         "embedding_similarity": 0.0 if _fail_emb_metric == "embedding_similarity" else None,
                         "bow_token_overlap_similarity": 0.0 if _fail_emb_metric == "bow_token_overlap_similarity" else None,
                         "bertscore_precision": 0.0,
@@ -330,7 +323,6 @@ class EvaluationOrchestrator:
                 "experiment_id": str(row.get("experiment_id", "")),
                 "generated_answer": row.get("generated_answer", ""),
                 "ground_truth_answer": ground_truth,
-                "difficulty": str(qa_row.get("difficulty", "unknown") or "unknown"),
                 "retrieved_original_context_ids": retrieved_ids,
                 "raw_retrieved_original_context_ids": raw_retrieved_ids,
                 "retrieval_eval_ids": retrieval_eval_ids,
@@ -338,18 +330,11 @@ class EvaluationOrchestrator:
                 "gold_context_ids": gold_ids,
                 "id_alignment_ok": id_alignment_ok,
                 **retrieval_metrics,
-                "exact_match": answer_metrics["exact_match"],
-                "literal_exact_match": answer_metrics["literal_exact_match"],
-                "canonical_exact_match": answer_metrics["canonical_exact_match"],
-                "german_canonical_exact_match": answer_metrics.get("german_canonical_exact_match"),
-                "umlaut_expanded_exact_match": answer_metrics.get("umlaut_expanded_exact_match"),
                 "non_empty_answer_rate": answer_metrics["non_empty_answer_rate"],
                 "answer_coverage_rate": answer_metrics["answer_coverage_rate"],
                 "abstention_rate": answer_metrics["abstention_rate"],
                 "is_unknown": is_unknown,
                 "answer_relevancy_score": answer_metrics["answer_relevancy_score"],
-                "rouge_l": answer_metrics["rouge_l"],
-                "rouge_1": answer_metrics.get("rouge_1"),
                 "embedding_similarity": answer_metrics["embedding_similarity"],
                 "bow_token_overlap_similarity": answer_metrics.get("bow_token_overlap_similarity"),
                 "bertscore_precision": answer_metrics.get("bertscore_precision"),
@@ -726,17 +711,10 @@ def _merge_gold_with_qa_fallback(gold_by_id: dict[str, list[str]], qa_by_id: dic
 
 def _null_answer_metrics() -> dict[str, Any]:
     return {
-        "exact_match": None,
-        "literal_exact_match": None,
-        "canonical_exact_match": None,
-        "german_canonical_exact_match": None,
-        "umlaut_expanded_exact_match": None,
         "non_empty_answer_rate": None,
         "answer_coverage_rate": None,
         "abstention_rate": None,
         "answer_relevancy_score": None,
-        "rouge_l": None,
-        "rouge_1": None,
         "embedding_similarity": None,
         "bow_token_overlap_similarity": None,
         "bertscore_precision": None,
@@ -858,7 +836,6 @@ def _per_question_fields(ks: list[int]) -> list[str]:
         "uid",
         "question_id",
         "experiment_id",
-        "difficulty",
         "generated_answer",
         "ground_truth_answer",
         "retrieved_original_context_ids",
@@ -874,18 +851,11 @@ def _per_question_fields(ks: list[int]) -> list[str]:
         "unique_retrieved_document_count",
         "duplicate_document_count",
         "duplicate_document_rate",
-        "exact_match",
-        "literal_exact_match",
-        "canonical_exact_match",
-        "german_canonical_exact_match",
-        "umlaut_expanded_exact_match",
         "non_empty_answer_rate",
         "answer_coverage_rate",
         "abstention_rate",
         "is_unknown",
         "answer_relevancy_score",
-        "rouge_l",
-        "rouge_1",
         "embedding_similarity",
         "bow_token_overlap_similarity",
         "bertscore_precision",
@@ -1441,39 +1411,6 @@ def _verdict_from_audit(report: dict[str, Any]) -> str:
     return "partially_valid"
 
 
-def _category_summary_fields(ks: list[int]) -> list[str]:
-    # Retained as a schema reference for discontinued category CSV output.
-    # Pipeline 2 now writes category aggregates inside summary_metrics.json only.
-    metric_fields = []
-    for k in ks:
-        metric_fields.extend(
-            [
-                f"mean_hit_at_{k}",
-                f"mean_recall_at_{k}",
-                f"mean_mrr_at_{k}",
-                f"mean_context_precision_at_{k}",
-                f"mean_ndcg_at_{k}",
-            ]
-        )
-    return [
-        "category",
-        "n_questions",
-        "pipeline_success_rate",
-        *metric_fields,
-        "mean_category_accuracy",
-        "mean_embedding_similarity",
-        "mean_bow_token_overlap_similarity",
-        "mean_bertscore_precision",
-        "mean_bertscore_recall",
-        "mean_bertscore_f1",
-        "mean_abstention_rate",
-        "unknown_count",
-        "unknown_rate",
-        "mean_total_latency_ms",
-        "mean_total_tokens",
-    ]
-
-
 def _mean(values: list[Any]) -> float | None:
     numeric = [float(value) for value in values if value is not None]
     if not numeric:
@@ -1497,62 +1434,6 @@ def _metric_priority_report() -> dict[str, Any]:
             "category_coverage": "Questions with predicted category divided by total questions.",
         },
     }
-
-
-def _summary_fields(ks: list[int]) -> list[str]:
-    # Retained as a schema reference for the discontinued experiment-level CSV output.
-    # Pipeline 2 now writes experiment aggregates inside summary_metrics.json only.
-    metric_fields = []
-    for k in ks:
-        metric_fields.extend(
-            [
-                f"mean_hit_at_{k}",
-                f"mean_recall_at_{k}",
-                f"mean_mrr_at_{k}",
-                f"mean_context_precision_at_{k}",
-                f"mean_ndcg_at_{k}",
-            ]
-        )
-    return [
-        "experiment_id",
-        "n_questions",
-        "pipeline_success_rate",
-        "eval_success_rate",
-        *metric_fields,
-        "mean_duplicate_context_rate",
-        "mean_raw_duplicate_rate",
-        "mean_raw_retrieved_count",
-        "mean_unique_retrieved_document_count",
-        "mean_duplicate_document_count",
-        "mean_duplicate_document_rate",
-        "mean_non_empty_answer_rate",
-        "mean_answer_coverage_rate",
-        "mean_abstention_rate",
-        "unknown_count",
-        "unknown_rate",
-        "mean_embedding_similarity",
-        "mean_bow_token_overlap_similarity",
-        # diagnostic — lexical overlap between question and answer tokens, not a quality score
-        "mean_bertscore_precision",
-        "mean_bertscore_recall",
-        "mean_bertscore_f1",
-        "diagnostic_mean_answer_relevancy",
-        "mean_category_accuracy",
-        "mean_retrieval_time_ms",
-        "mean_rerank_time_ms",
-        "mean_generation_time_ms",
-        "mean_total_latency_ms",
-        "mean_input_tokens",
-        "mean_output_tokens",
-        "mean_total_tokens",
-        "mean_estimated_cost",
-        "total_questions",
-        "generation_failure_count",
-        "generation_failure_rate",
-        "max_generation_failure_rate",
-        "run_valid",
-        "failure_threshold_exceeded",
-    ]
 
 
 def _metric_runtime_metadata(cfg: EvalConfig, embedder: Any, bert_scorer: Any) -> dict[str, Any]:

@@ -1,0 +1,8 @@
+extends: "11_sivas_fixed512_faiss_dense_qwen25.yaml"
+
+experiment:
+  experiment_id: "12_sivas_fixed512_faiss_dense_qwen25_promptV2"
+
+orchestration:
+  prompt_path: "src/pipeline1/prompts/orchestration_promptV2.txt"
+  prompt_version: "orchestration_promptV2"

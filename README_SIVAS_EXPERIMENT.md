@@ -309,8 +309,6 @@ data/eval/runs/pipeline2/11_sivas_fixed512_faiss_dense_qwen25_eval/
 ├── summary_metrics.json        # aggregated metrics JSON
 ├── summary_by_experiment.csv   # experiment-level summary
 ├── summary_by_category.csv     # per-SIVAS-category breakdown
-├── summary_by_difficulty.csv   # per-difficulty breakdown
-├── summary_by_difficulty.json  # same as JSON
 ├── summary_by_category.json    # same as JSON
 ├── leaderboard.csv             # sorted leaderboard
 ├── leaderboard.md              # human-readable leaderboard
@@ -327,7 +325,6 @@ data/eval/runs/pipeline2/11_sivas_fixed512_faiss_dense_qwen25_eval/
 | MRR@5 | `mean_mrr_at_5` |
 | NDCG@5 | `mean_ndcg_at_5` |
 | Category Accuracy | `mean_category_accuracy` |
-| ROUGE-L | `mean_rouge_l` |
 | Embedding Similarity | `mean_embedding_similarity` |
 | Pipeline Success Rate | `pipeline_success_rate` |
 

@@ -31,6 +31,7 @@ from src.pipeline1.stages.chunking_stage import ChunkingStage
 from src.pipeline1.stages.document_stage import DocumentStage
 from src.pipeline1.stages.embedding_stage import EmbeddingStage
 from src.pipeline1.stages.generation_stage import GenerationStage
+from src.pipeline1.orchestration.prompt import DEFAULT_ORCHESTRATION_PROMPT_PATH, ORCHESTRATION_PROMPT_VERSION
 from src.pipeline1.stages.orchestration_stage import OrchestrationStage
 from src.pipeline1.stages.retrieval_stage import (
     RetrievalStage,
@@ -290,6 +291,7 @@ def run_pipeline(config_path: str) -> Path:
                     chunks,
                     event_writer=event_writer,
                     logger=logger,
+                    embeddings=embeddings,
                 ).run(StageInput({"queries": [orchestrated_query]}))
                 retriever = retrieval_output.retriever
                 final_top_k = retrieval_output.final_top_k
@@ -414,6 +416,11 @@ def run_pipeline(config_path: str) -> Path:
                 "reranker_model": cfg.reranker.model_name if cfg.reranker.enabled else None,
                 "generator_provider": cfg.generation.provider,
                 "generator_model": cfg.generation.model_name,
+                "orchestration_prompt_path": cfg.orchestration.prompt_path or DEFAULT_ORCHESTRATION_PROMPT_PATH,
+                "orchestration_prompt_version": cfg.orchestration.prompt_version or ORCHESTRATION_PROMPT_VERSION,
+                "orchestration_prompt_sha256": file_sha256(
+                    _resolve_orchestration_prompt_path(cfg.orchestration.prompt_path, project_root)
+                ),
             },
             "run_stats": {
                 "n_documents": len(docs),
@@ -727,6 +734,13 @@ def _chunk_diagnostics(chunks: list[ChunkRecord], cfg: PipelineConfig) -> dict[s
         "max_chunk_chars_observed": max((len(chunk.text) for chunk in chunks), default=0),
         "max_chunk_tokens_observed": max((len(chunk.text.split()) for chunk in chunks), default=0),
     }
+
+
+def _resolve_orchestration_prompt_path(prompt_path: str | None, project_root: Path) -> Path:
+    if prompt_path is None:
+        return (project_root / DEFAULT_ORCHESTRATION_PROMPT_PATH).resolve()
+    path = Path(prompt_path)
+    return path if path.is_absolute() else (project_root / path).resolve()
 
 
 def _run_compatibility_payload(

@@ -1,0 +1,256 @@
+# Deine Aufgaben
+
+1. Bereinigen der gestellten Frage.
+2. Ermitteln der passenden Kategorie.
+
+---
+
+# Workflow
+
+## 1. Bereinigen der gestellten Frage
+
+- Nutze ausschließlich die Property `Frage` aus der Anfrage.
+- Übersetze die Frage auf Deutsch, wenn sie in einer anderen Sprache gestellt wurde.
+- Korrigiere ausschließlich:
+  - Rechtschreibung
+  - Grammatik
+  - Groß- und Kleinschreibung
+
+- Verändere NICHT:
+  - die Bedeutung
+  - die Wortwahl
+  - die Reihenfolge der Informationen
+
+- Ergänze keine Informationen.
+- Ersetze keine Begriffe durch Synonyme.
+- Erfinde keine zusätzlichen Details.
+
+- Ist die Frage bereits korrekt formuliert, gib sie unverändert zurück.
+
+---
+
+## 2. Kategorie bestimmen
+
+Nutze ausschließlich:
+
+- ModuleName
+- ProgramName
+- Role
+- RoleDescription
+- Frage
+
+Bestimme zuerst das Hauptthema der Frage.
+
+Ordne die Frage anschließend GENAU EINER Kategorie aus CategoryNames zu.
+
+Die Kategorie muss das Hauptthema der Frage beschreiben.
+
+Falls mehrere Kategorien möglich erscheinen:
+
+→ Wähle die Kategorie,
+welche die eigentliche Benutzerabsicht am besten beschreibt.
+
+Bevorzuge niemals einen leeren String.
+
+Gib nur dann einen leeren String zurück,
+wenn die Frage keinerlei Bezug zu einer der verfügbaren Kategorien besitzt.
+
+---
+
+# Kategorien
+
+## Einkauf / Materialwirtschaft
+
+Diese Kategorie umfasst Fragen zu:
+
+- Einkauf
+- Bestellung
+- Lieferanten
+- Wareneingang
+- Lager
+- Lagerbewegungen
+- Material
+- Materialwirtschaft
+- Bestand
+- Inventur
+- Beschaffung
+- Kommissionierung
+- Umlagerung
+- Fehlteile
+- Reservierung
+
+---
+
+## Service
+
+Diese Kategorie umfasst Fragen zu:
+
+- Servicetickets
+- Serviceeinsätze
+- Wartung
+- Support
+- Serviceverträge
+- SLA
+- Kundendienst
+- Außendienst
+- Reklamationen
+
+---
+
+## Technik
+
+Diese Kategorie umfasst Fragen zu:
+
+- Arbeitspläne
+- Arbeitsgänge
+- Fertigung
+- Produktion
+- Stücklisten
+- Baugruppen
+- Konfigurator
+- Konfigurationsmanagement
+- Maschinen
+- Arbeitsplätze
+- technische Prozesse
+
+---
+
+## Vertrieb
+
+Diese Kategorie umfasst Fragen zu:
+
+- Angebote
+- Aufträge
+- Kunden
+- CRM
+- Verkauf
+- Preise
+- Verträge
+- Vertrieb
+- Rechnungen
+- Geschäftspartner
+
+---
+
+# Glossar
+
+(Hier bleibt deine komplette ERP-Begriffstabelle unverändert.)
+
+---
+
+# Beispiele
+
+Beispiel 1
+
+Frage:
+Wie buche ich einen Wareneingang?
+
+Kategorie:
+Einkauf / Materialwirtschaft
+
+---
+
+Beispiel 2
+
+Frage:
+Wie lege ich einen Lieferanten an?
+
+Kategorie:
+Einkauf / Materialwirtschaft
+
+---
+
+Beispiel 3
+
+Frage:
+Wie erstelle ich ein Serviceticket?
+
+Kategorie:
+Service
+
+---
+
+Beispiel 4
+
+Frage:
+Wie plane ich einen Serviceeinsatz?
+
+Kategorie:
+Service
+
+---
+
+Beispiel 5
+
+Frage:
+Wie ändere ich einen Arbeitsplan?
+
+Kategorie:
+Technik
+
+---
+
+Beispiel 6
+
+Frage:
+Wie füge ich einen Arbeitsgang hinzu?
+
+Kategorie:
+Technik
+
+---
+
+Beispiel 7
+
+Frage:
+Wie erstelle ich ein Angebot?
+
+Kategorie:
+Vertrieb
+
+---
+
+Beispiel 8
+
+Frage:
+Wie bearbeite ich einen Kundenauftrag?
+
+Kategorie:
+Vertrieb
+
+---
+
+# Kategorien
+
+CategoryNames:
+
+{{categories_json}}
+
+---
+
+# Anfrage
+
+{
+    "ModuleName": {{module_json}},
+    "ProgramName": {{program_json}},
+    "Role": {{role_json}},
+    "RoleDescription": {{role_description_json}},
+    "Frage": {{question_json}}
+}
+
+---
+
+# Ausgabe
+
+Antworte ausschließlich mit einem gültigen JSON.
+
+Keine Erklärung.
+
+Kein Markdown.
+
+Kein Text vor oder nach dem JSON.
+
+{
+    "cleaned_question": "<bereinigte Frage>",
+    "detected_category": "<exakter Wert aus CategoryNames>"
+}

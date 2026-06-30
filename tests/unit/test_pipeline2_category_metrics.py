@@ -6,9 +6,7 @@ import pytest
 
 from src.pipeline2.metrics.category_metrics import compute_category_metrics
 from src.pipeline2.metrics.answer_metrics import (
-    compute_rouge_l,
     resolve_ground_truth_answer,
-    _rouge_tokens,
 )
 from src.pipeline2.aggregation.summarizer import summarize_by_category, SIVAS_CATEGORIES
 
@@ -115,48 +113,6 @@ def test_resolve_handles_none_value_in_referenzantwort():
 
 
 # ---------------------------------------------------------------------------
-# German ROUGE-L tokenization
-# ---------------------------------------------------------------------------
-
-def test_rouge_tokens_includes_german_umlauts():
-    tokens = _rouge_tokens("Für Änderungen müssen Überarbeitungen erfolgen.")
-    assert "für" in tokens
-    assert "änderungen" in tokens
-    assert "müssen" in tokens
-    assert "überarbeitungen" in tokens
-
-
-def test_rouge_tokens_includes_eszett():
-    tokens = _rouge_tokens("Das ist straßenweise möglich.")
-    assert "straßenweise" in tokens
-
-
-def test_rouge_l_identical_german_sentence_is_one():
-    sentence = "Arbeitsplan definiert die einzelnen Arbeitsgänge und Qualitätsprüfungen."
-    score = compute_rouge_l(sentence, sentence)
-    assert score == pytest.approx(1.0)
-
-
-def test_rouge_l_german_partial_overlap_is_nonzero():
-    generated = "Der Arbeitsplan enthält Vorgänge und Qualitätsprüfungen."
-    reference = "Der Arbeitsplan enthält Arbeitsgänge und Qualitätsprüfungen."
-    score = compute_rouge_l(generated, reference)
-    assert score > 0.0
-
-
-def test_rouge_l_no_overlap_is_zero():
-    score = compute_rouge_l("völlig anderer Text", "komplett verschiedene Wörter")
-    assert score == pytest.approx(0.0)
-
-
-def test_rouge_l_german_better_than_pure_ascii_would_score():
-    generated = "Überarbeitungen der Qualitätsprüfungen sind notwendig."
-    reference = "Überarbeitungen der Qualitätsprüfungen sind erforderlich."
-    score = compute_rouge_l(generated, reference)
-    assert score > 0.7
-
-
-# ---------------------------------------------------------------------------
 # summarize_by_category
 # ---------------------------------------------------------------------------
 
@@ -165,10 +121,6 @@ def _make_rows(category_gold: str, n: int, category_accuracy: float | None = 1.0
         {
             "category_gold": category_gold,
             "category_accuracy": category_accuracy,
-            "rouge_l": 0.8,
-            "exact_match": 1.0,
-            "literal_exact_match": 1.0,
-            "canonical_exact_match": 1.0,
             "embedding_similarity": 0.9,
             "total_latency_ms": 200.0,
             "total_tokens": 500,

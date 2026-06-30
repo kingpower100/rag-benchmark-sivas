@@ -104,6 +104,14 @@ class GenerationStage(BaseStage):
                 len(retrieved),
                 len(prompt_contexts),
             )
+        retrieval_metadata = None
+        if self.cfg.generation.include_retrieval_metadata:
+            retrieval_metadata = {
+                "detected_category": query.detected_category,
+                "category_validated": query.category_validated,
+                "retrieval_mode": retrieval_diagnostics.get("retrieval_mode"),
+                "fallback_used": retrieval_diagnostics.get("category_fallback_used"),
+            }
         prompt, prompt_stats = build_prompt_with_stats(
             self.cfg.generation.system_prompt,
             query.retrieval_question,
@@ -118,6 +126,7 @@ class GenerationStage(BaseStage):
                 tokenizer_name=self.cfg.chunking.tokenizer_name,
                 context_truncation_strategy=self.cfg.generation.context_truncation_strategy,
             ),
+            retrieval_metadata=retrieval_metadata,
         )
         if self.cfg.generation.log_prompt_stats and self.logger:
             self.logger.info("prompt_stats question_id=%s stats=%s", query.question_id, prompt_stats)

@@ -18,6 +18,7 @@ def run_preflight_checks(cfg, base_dir: Path | None = None) -> list[str]:
     docs_path = _resolve_path(base_dir, cfg.data.documents_path)
     questions_path = _resolve_path(base_dir, cfg.data.questions_path)
     errors.extend(_validate_documents_input(cfg, docs_path))
+    errors.extend(_validate_orchestration_prompt(cfg, base_dir))
     if not questions_path.exists() or not questions_path.is_file():
         errors.append(f"questions_path is missing or not a file: {questions_path}")
     elif questions_path.stat().st_size == 0:
@@ -194,6 +195,21 @@ def _ollama_model_names(payload: dict) -> set[str]:
             if value:
                 names.add(str(value))
     return names
+
+
+def _validate_orchestration_prompt(cfg, base_dir: Path | None) -> list[str]:
+    errors: list[str] = []
+    prompt_path = getattr(cfg.orchestration, "prompt_path", None)
+    if prompt_path is None:
+        return errors
+    resolved = Path(prompt_path)
+    if not resolved.is_absolute() and base_dir is not None:
+        resolved = (base_dir / resolved).resolve()
+    if not resolved.exists() or not resolved.is_file():
+        errors.append(f"orchestration.prompt_path is missing or not a file: {resolved}")
+    elif resolved.stat().st_size == 0:
+        errors.append(f"orchestration.prompt_path is empty: {resolved}")
+    return errors
 
 
 def _ollama_list_models() -> set[str]:

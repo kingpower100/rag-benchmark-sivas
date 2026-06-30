@@ -27,7 +27,7 @@ chunking:
 
 embedding:
   provider: "sentence_transformers"
-  model_name: "BAAI/bge-small-en-v1.5"
+  model_name: "BAAI/bge-m3"
   normalize_embeddings: true
   batch_size: 64
   device: "cuda"
@@ -37,6 +37,8 @@ embedding:
 index:
   type: "faiss"
   metric: "cosine"
+  dense_dim: 1024
+  index_name: "sivas_fixed512_bge_m3"
 
 retrieval:
   retriever_type: "category_aware_dense"

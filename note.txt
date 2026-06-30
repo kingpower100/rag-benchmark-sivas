@@ -1,0 +1,32 @@
+ Example YAML for V4
+
+  extends: "11_sivas_fixed512_faiss_dense_qwen25.yaml"
+
+  experiment:
+    experiment_id: "14_sivas_fixed512_faiss_dense_qwen25_promptV4"
+
+  orchestration:
+    prompt_path: "src/pipeline1/prompts/orchestration_promptV4.txt"
+    prompt_version: "orchestration_promptV4"
+
+  All other pipeline settings (embedding, chunking, retrieval, generation, runtime) are inherited unchanged from the base experiment.
+
+  ---
+  Run commands
+
+  Pipeline 1 — run each experiment (from the rag_benchmark/ directory):
+
+  python -m src.pipeline1.main --config configs/pipeline1/experiments/11_sivas_fixed512_faiss_dense_qwen25_promptV1.yaml
+  python -m src.pipeline1.main --config configs/pipeline1/experiments/12_sivas_fixed512_faiss_dense_qwen25_promptV2.yaml
+  python -m src.pipeline1.main --config configs/pipeline1/experiments/13_sivas_fixed512_faiss_dense_qwen25_promptV3.yaml
+  python -m src.pipeline1.main --config configs/pipeline1/experiments/14_sivas_fixed512_faiss_dense_qwen25_promptV4.yaml
+
+  Pipeline 2 — run after each Pipeline 1 completes:
+
+  python -m src.pipeline2.main --run-id 11_sivas_fixed512_faiss_dense_qwen25_promptV1
+  python -m src.pipeline2.main --run-id 12_sivas_fixed512_faiss_dense_qwen25_promptV2
+  python -m src.pipeline2.main --run-id 13_sivas_fixed512_faiss_dense_qwen25_promptV3
+  python -m src.pipeline2.main --run-id 14_sivas_fixed512_faiss_dense_qwen25_promptV4
+
+  ▎ Note: Verify the Pipeline 2 flag name against src/pipeline2/main.py — it may be --run-dir pointing to data/runs/pipeline1/<experiment_id> instead of
+  ▎ --run-id. The exact argument depends on your Pipeline 2 entry point.

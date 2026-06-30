@@ -54,7 +54,6 @@ def test_answer_metrics_are_computed():
     assert evaluated[0]["raw_duplicate_rate"] == 0.5
     assert evaluated[0]["non_empty_answer_rate"] == 1.0
     assert evaluated[0]["answer_coverage_rate"] == 1.0
-    assert evaluated[0]["exact_match"] == 1.0
     assert evaluated[0]["abstention_rate"] == 0.0
     assert evaluated[0]["answer_relevancy_score"] == 0.0
     assert evaluated[0]["retrieval_time_ms"] == 4
@@ -236,7 +235,6 @@ def test_pipeline1_error_row_is_retained_and_scores_zero_for_answer_metrics():
     assert len(evaluated) == 1
     assert evaluated[0]["pipeline_success"] == 0.0
     assert evaluated[0]["pipeline1_error"] == "generation failed"
-    assert evaluated[0]["exact_match"] == 0.0
     assert evaluated[0]["non_empty_answer_rate"] == 0.0
     assert evaluated[0]["answer_match_status"] == "pipeline1_error"
     assert evaluated[0]["hit_at_1"] == 0.0
@@ -280,7 +278,6 @@ def test_qa_index_supports_uid_only_rows():
     )
 
     assert evaluated[0]["ground_truth_answer"] == "507"
-    assert evaluated[0]["exact_match"] == 1.0
     assert evaluated[0]["answer_match_status"] == "match"
 
 
@@ -335,35 +332,6 @@ def test_qa_index_allows_empty_answers_for_retrieval_only_mode():
     assert qa_by_id["q1"]["source_files"] == ["sivas_manual_02.md"]
 
 
-def test_pipeline2_joins_difficulty():
-    cfg = EvalConfig.model_validate(
-        {
-            "evaluation": {"eval_run_id": "eval", "retrieval_eval_field": "retrieved_original_context_ids"},
-            "inputs": {"rag_outputs": []},
-            "retrieval": {"k": 1, "ks": [1]},
-        }
-    )
-    rows = [
-        {
-            "question_id": "UID0002",
-            "experiment_id": "exp",
-            "generated_answer": "507",
-            "question": "Q?",
-            "retrieved_original_context_ids": ["sivas_manual_01.md"],
-        }
-    ]
-
-    evaluated = EvaluationOrchestrator()._evaluate_rows(
-        rows,
-        {"UID0002": {"uid": "UID0002", "answer": "507", "difficulty": "easy"}},
-        {"UID0002": ["sivas_manual_01.md"]},
-        cfg,
-    )
-
-    assert evaluated[0]["uid"] == "UID0002"
-    assert evaluated[0]["difficulty"] == "easy"
-
-
 def test_retrieval_only_mode_skips_answer_metrics_without_generated_answer():
     cfg = EvalConfig.model_validate(
         {
@@ -389,7 +357,6 @@ def test_retrieval_only_mode_skips_answer_metrics_without_generated_answer():
     )
 
     assert evaluated[0]["hit_at_1"] == 1.0
-    assert evaluated[0]["exact_match"] is None
     assert evaluated[0]["answer_match_status"] == "skipped_retrieval_only"
 
 
