@@ -24,6 +24,7 @@ from src.pipeline2.metrics.embedding_similarity import (
     embedding_model_metadata,
 )
 from src.pipeline2.metrics.efficiency_metrics import compute_efficiency_metrics
+from src.pipeline2.metrics.fallback_metrics import compute_fallback_flag, compute_fallback_summary
 from src.pipeline2.metrics.retrieval_metrics import compute_retrieval_metrics_for_ks
 from src.pipeline2.schemas.eval_config_schema import EvalConfig
 from src.pipeline1.utils.hashing import file_sha256
@@ -317,6 +318,8 @@ class EvaluationOrchestrator:
 
             retrieval_metrics = compute_retrieval_metrics_for_ks(retrieval_eval_ids, gold_ids, ks, raw_retrieval_eval_ids)
 
+            fallback_used, fallback_reason = compute_fallback_flag(row)
+
             output = {
                 "question_id": qid,
                 "uid": qid,
@@ -351,6 +354,8 @@ class EvaluationOrchestrator:
                 "generation_failed": generation_failed,
                 "pipeline1_error": pipeline1_error,
                 "evaluation_errors": errors,
+                "fallback_used": fallback_used,
+                "fallback_reason": fallback_reason,
             }
             evaluated.append(output)
         return evaluated
@@ -879,6 +884,8 @@ def _per_question_fields(ks: list[int]) -> list[str]:
         "generation_failed",
         "pipeline1_error",
         "evaluation_errors",
+        "fallback_used",
+        "fallback_reason",
     ]
 
 
@@ -1532,6 +1539,7 @@ def _eval_manifest(
             )
             if key in all_summary
         },
+        "fallback_summary": compute_fallback_summary(per_question),
         "reported_vs_recomputed_comparison": reported_metric_comparison,
         "metric_priority": _metric_priority_report(),
         "metric_runtime": metric_runtime_metadata,
@@ -1613,6 +1621,8 @@ def _eval_manifest(
             "eval_success_rate",
             "generation_failure_rate",
             "run_valid",
+            "fallback_used",
+            "fallback_rate",
         ],
         "category_routing_behavior": (
             "category_accuracy, category_coverage, category_precision_macro, category_recall_macro, and per_class_metrics "

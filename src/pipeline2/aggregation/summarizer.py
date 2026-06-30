@@ -3,6 +3,8 @@ from __future__ import annotations
 from statistics import mean
 from typing import Any
 
+from src.pipeline2.metrics.fallback_metrics import compute_fallback_summary
+
 SIVAS_CATEGORIES = ["Technik", "Vertrieb", "Materialwirtschaft", "Einkauf", "Service"]
 
 
@@ -46,6 +48,7 @@ def summarize_by_experiment(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
         unknown_count = sum(1 for row in group if row.get("is_unknown") == 1.0)
         summary["unknown_count"] = unknown_count
         summary["unknown_rate"] = unknown_count / len(group) if group else 0.0
+        summary.update(compute_fallback_summary(group))
         for col in (
             "duplicate_context_rate",
             "raw_duplicate_rate",
