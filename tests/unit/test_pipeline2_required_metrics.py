@@ -1,3 +1,4 @@
+import csv
 import json
 import shutil
 from pathlib import Path
@@ -189,6 +190,7 @@ embedding_similarity:
 
         assert (run_dir / "per_question_metrics.jsonl").exists()
         assert (run_dir / "summary_metrics.json").exists()
+        assert (run_dir / "summary_metrics.csv").exists()
         assert (run_dir / "eval_manifest.json").exists()
         assert (run_dir / "audit_report.json").exists()
         assert (run_dir / "audit_report.md").exists()
@@ -202,6 +204,21 @@ embedding_similarity:
         # Benchmark validity must be present
         assert "benchmark_validity" in summary
         assert summary["benchmark_validity"]["benchmark_validity_status"] in ("VALID", "WARNING", "INVALID")
+        with (run_dir / "summary_metrics.csv").open("r", encoding="utf-8", newline="") as f:
+            csv_rows = list(csv.DictReader(f))
+        assert len(csv_rows) == 1
+        assert csv_rows[0]["experiment_id"] == "exp"
+        assert csv_rows[0]["eval_run_id"] == "eval"
+        assert csv_rows[0]["total_questions"] == "1"
+        assert csv_rows[0]["hit@1"] == "1.0"
+        assert csv_rows[0]["hit@3"] == ""
+        assert csv_rows[0]["hit@5"] == ""
+        assert csv_rows[0]["recall@1"] == "1.0"
+        assert csv_rows[0]["mrr@1"] == "1.0"
+        assert csv_rows[0]["ndcg@1"] == "1.0"
+        assert csv_rows[0]["embedding_similarity"] == ""
+        assert csv_rows[0]["category_coverage"] == "0.0"
+        assert csv_rows[0]["avg_latency"] == "6.0"
     finally:
         if workspace.exists():
             shutil.rmtree(workspace)

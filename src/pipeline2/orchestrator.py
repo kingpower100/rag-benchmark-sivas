@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import csv
 import json
 import time
 import warnings
@@ -127,6 +128,7 @@ class EvaluationOrchestrator:
             ),
             encoding="utf-8",
         )
+        write_summary_metrics_csv(run_dir / "summary_metrics.csv", summary, cfg.evaluation.eval_run_id, category_routing_report)
         if cfg.runtime.save_csv:
             write_csv(run_dir / "per_question.csv", per_question, per_fields)
         (run_dir / "eval_manifest.json").write_text(
@@ -201,6 +203,7 @@ class EvaluationOrchestrator:
                 run_dir / "per_question.jsonl",
                 run_dir / "per_question_metrics.jsonl",
                 run_dir / "summary_metrics.json",
+                run_dir / "summary_metrics.csv",
                 run_dir / "per_question.csv",
                 run_dir / "eval_manifest.json",
             ]
@@ -819,6 +822,86 @@ def _raise_on_failure_threshold(validity: dict[str, dict[str, Any]], max_failure
 
 def _metric_ks(cfg: EvalConfig) -> list[int]:
     return sorted({int(k) for k in (cfg.retrieval.ks or [cfg.retrieval.k]) if int(k) > 0})
+
+
+SUMMARY_METRICS_CSV_FIELDS = [
+    "experiment_id",
+    "eval_run_id",
+    "total_questions",
+    "hit@1",
+    "hit@3",
+    "hit@5",
+    "recall@1",
+    "recall@3",
+    "recall@5",
+    "mrr@1",
+    "mrr@3",
+    "mrr@5",
+    "ndcg@1",
+    "ndcg@3",
+    "ndcg@5",
+    "bertscore_precision",
+    "bertscore_recall",
+    "bertscore_f1",
+    "embedding_similarity",
+    "category_accuracy",
+    "category_coverage",
+    "fallback_rate",
+    "avg_latency",
+]
+
+
+def write_summary_metrics_csv(
+    path: Path,
+    summary_rows: list[dict[str, Any]],
+    eval_run_id: str,
+    category_routing_report: dict[str, Any],
+) -> None:
+    """Write a compact CSV view of the already-computed aggregate metrics."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    rows = [
+        _summary_metrics_csv_row(summary_row, eval_run_id, category_routing_report)
+        for summary_row in summary_rows
+    ]
+    with path.open("w", encoding="utf-8", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=SUMMARY_METRICS_CSV_FIELDS, extrasaction="ignore")
+        writer.writeheader()
+        writer.writerows(rows)
+
+
+def _summary_metrics_csv_row(
+    summary: dict[str, Any],
+    eval_run_id: str,
+    category_routing_report: dict[str, Any],
+) -> dict[str, Any]:
+    def value(key: str) -> Any:
+        current = summary.get(key)
+        return "" if current is None else current
+
+    category_accuracy = summary.get("mean_category_accuracy")
+    if category_accuracy is None:
+        category_accuracy = category_routing_report.get("category_accuracy")
+    category_coverage = category_routing_report.get("category_coverage")
+
+    row = {
+        "experiment_id": value("experiment_id"),
+        "eval_run_id": eval_run_id,
+        "total_questions": value("n_questions"),
+        "bertscore_precision": value("mean_bertscore_precision"),
+        "bertscore_recall": value("mean_bertscore_recall"),
+        "bertscore_f1": value("mean_bertscore_f1"),
+        "embedding_similarity": value("mean_embedding_similarity"),
+        "category_accuracy": "" if category_accuracy is None else category_accuracy,
+        "category_coverage": "" if category_coverage is None else category_coverage,
+        "fallback_rate": value("fallback_rate"),
+        "avg_latency": value("mean_total_latency_ms"),
+    }
+    for k in (1, 3, 5):
+        row[f"hit@{k}"] = value(f"mean_hit_at_{k}")
+        row[f"recall@{k}"] = value(f"mean_recall_at_{k}")
+        row[f"mrr@{k}"] = value(f"mean_mrr_at_{k}")
+        row[f"ndcg@{k}"] = value(f"mean_ndcg_at_{k}")
+    return row
 
 
 def _per_question_fields(ks: list[int]) -> list[str]:
