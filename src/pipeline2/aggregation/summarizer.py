@@ -31,9 +31,9 @@ def summarize_by_experiment(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
             "abstention_rate",
             "embedding_similarity",
             "hashed_embedding_cosine_similarity",
-            "custom_bertscore_precision",
-            "custom_bertscore_recall",
-            "custom_bertscore_f1",
+            "official_bertscore_precision",
+            "official_bertscore_recall",
+            "official_bertscore_f1",
         ):
             summary[f"mean_{col}"] = _mean([row.get(col) for row in group if row.get(col) is not None])
         # question_answer_lexical_f1 is a lexical diagnostic (token-overlap F1), not a quality metric.
@@ -136,9 +136,9 @@ def summarize_by_category(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
             "abstention_rate",
             "embedding_similarity",
             "hashed_embedding_cosine_similarity",
-            "custom_bertscore_precision",
-            "custom_bertscore_recall",
-            "custom_bertscore_f1",
+            "official_bertscore_precision",
+            "official_bertscore_recall",
+            "official_bertscore_f1",
             "total_latency_ms",
             "total_tokens",
         ):

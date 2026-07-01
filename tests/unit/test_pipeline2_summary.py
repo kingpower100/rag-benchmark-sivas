@@ -13,7 +13,7 @@ def test_summary_aggregates_final_metrics_and_success_rates():
             "duplicate_context_rate": 0.0,
             "raw_duplicate_rate": 0.25,
             "embedding_similarity": 1.0,
-            "custom_bertscore_f1": 1.0,
+            "official_bertscore_f1": 1.0,
             "non_empty_answer_rate": 1.0,
             "answer_coverage_rate": 1.0,
             "abstention_rate": 0.0,
@@ -38,7 +38,7 @@ def test_summary_aggregates_final_metrics_and_success_rates():
             "duplicate_context_rate": 0.0,
             "raw_duplicate_rate": 0.0,
             "embedding_similarity": 0.0,
-            "custom_bertscore_f1": 0.0,
+            "official_bertscore_f1": 0.0,
             "non_empty_answer_rate": 0.0,
             "answer_coverage_rate": 0.0,
             "abstention_rate": 1.0,
@@ -64,7 +64,7 @@ def test_summary_aggregates_final_metrics_and_success_rates():
     assert summary["mean_duplicate_context_rate"] == 0.0
     assert summary["mean_raw_duplicate_rate"] == 0.125
     assert summary["mean_embedding_similarity"] == 0.5
-    assert summary["mean_custom_bertscore_f1"] == 0.5
+    assert summary["mean_official_bertscore_f1"] == 0.5
     assert summary["mean_non_empty_answer_rate"] == 0.5
     # answer_coverage_rate is a deprecated alias; mean_answer_coverage_rate is no longer emitted
     assert summary["mean_abstention_rate"] == 0.5

@@ -76,13 +76,21 @@ def compute_embedding_similarity(
     return cosine_similarity(embedder.encode(generated_answer), embedder.encode(ground_truth_answer))
 
 
-def embedding_model_metadata(provider: str, model_name: str, embedder: AnswerEmbedder | None) -> dict[str, str]:
+def embedding_model_metadata(
+    provider: str,
+    model_name: str,
+    embedder: "AnswerEmbedder | None",
+    offline_mode: bool = False,
+) -> dict:
     return {
         "provider": provider,
         "model_name": model_name,
-        "sentence_transformers_version": _package_version("sentence-transformers"),
+        "is_semantic": provider == "sentence_transformers",
+        "offline_mode": offline_mode,
+        "sentence_transformers_version": (
+            _package_version("sentence-transformers") if provider == "sentence_transformers" else "n/a"
+        ),
         "model_revision": "unknown",
-        "local_cache_path": "unknown",
         "device_used": str(getattr(embedder, "device", "unknown")) if embedder is not None else "unknown",
     }
 

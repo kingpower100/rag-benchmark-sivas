@@ -64,13 +64,20 @@ class EmbeddingSimilarityConfig(StrictEvalConfigModel):
     model_name: str = "hashing-bow-v1"
     dimensions: int = Field(default=256, gt=0)
     enabled: bool = True
+    # Set offline_mode=true to explicitly allow deterministic_hash in non-production runs.
+    # EvaluationOrchestrator.run() raises if enabled=True, provider=deterministic_hash, offline_mode=False.
+    offline_mode: bool = False
 
 
 class BertScoreConfig(StrictEvalConfigModel):
     enabled: bool = False
     model_name: str = "bert-base-multilingual-cased"
     device: str = "auto"
+    # max_length is kept for YAML backward-compatibility; the official bert-score library
+    # selects tokenisation limits internally per model and ignores this field.
     max_length: int = Field(default=512, gt=0)
+    idf: bool = False
+    rescale_with_baseline: bool = False
 
 
 class RuntimeConfig(StrictEvalConfigModel):

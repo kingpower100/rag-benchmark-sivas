@@ -88,97 +88,96 @@ def compute_answer_metrics(
     }
 
 
-class BertScoreScorer:
-    """Custom BertScore using greedy token-level cosine matching per Zhang et al. (2020).
+class OfficialBertScorer:
+    """BERTScore using the official bert-score library (Zhang et al., 2020).
 
-    Omits IDF weighting and baseline rescaling.  Scores are NOT numerically
-    comparable to the official ``bert_score`` library.  Output keys are
-    ``custom_bertscore_precision/recall/f1`` to make this explicit.
+    Wraps ``bert_score.BERTScorer``, which automatically selects the optimal
+    transformer layer for the chosen model and supports optional IDF weighting
+    and baseline rescaling.  Results are comparable to published BERTScore
+    benchmarks when ``rescale_with_baseline=True``.
+
+    Output keys are ``official_bertscore_precision/recall/f1``.
     """
 
-    def __init__(self, model_name: str, device: str = "auto", max_length: int = 512) -> None:
-        import torch
-        from transformers import AutoModel, AutoTokenizer
+    def __init__(
+        self,
+        model_name: str,
+        device: str = "auto",
+        idf: bool = False,
+        rescale_with_baseline: bool = False,
+    ) -> None:
+        try:
+            from bert_score import BERTScorer
+        except ImportError:
+            raise ImportError(
+                "The 'bert-score' package is required for BERTScore computation. "
+                "Install with: pip install bert-score>=0.3.0"
+            ) from None
 
-        resolved_device = "cuda" if device == "auto" and torch.cuda.is_available() else device
-        if resolved_device == "auto":
-            resolved_device = "cpu"
-        self.torch = torch
-        self.device = resolved_device
         self.model_name = model_name
-        self.tokenizer_name = model_name
-        self.max_length = max_length
-        self.tokenizer = AutoTokenizer.from_pretrained(model_name)
-        self.model = AutoModel.from_pretrained(model_name).to(self.device)
-        self.model.eval()
+        self.idf = idf
+        self.rescale_with_baseline = rescale_with_baseline
+        resolved_device = None if device == "auto" else device
+        self._scorer = BERTScorer(
+            model_type=model_name,
+            idf=idf,
+            rescale_with_baseline=rescale_with_baseline,
+            device=resolved_device,
+        )
+        self.device = str(getattr(self._scorer, "device", device))
 
     def score(self, generated_answer: str, ground_truth_answer: str) -> dict[str, float]:
-        if not (generated_answer or "").strip() or not (ground_truth_answer or "").strip():
-            return {"custom_bertscore_precision": 0.0, "custom_bertscore_recall": 0.0, "custom_bertscore_f1": 0.0}
-        generated_embeddings = self._token_embeddings(generated_answer)
-        reference_embeddings = self._token_embeddings(ground_truth_answer)
-        if generated_embeddings is None or reference_embeddings is None:
-            return {"custom_bertscore_precision": 0.0, "custom_bertscore_recall": 0.0, "custom_bertscore_f1": 0.0}
-
-        similarity = generated_embeddings @ reference_embeddings.T
-        precision = float(similarity.max(dim=1).values.mean().item())
-        recall = float(similarity.max(dim=0).values.mean().item())
-        f1 = 0.0 if precision + recall == 0.0 else (2 * precision * recall) / (precision + recall)
-        return {
-            "custom_bertscore_precision": precision,
-            "custom_bertscore_recall": recall,
-            "custom_bertscore_f1": f1,
+        _zero = {
+            "official_bertscore_precision": 0.0,
+            "official_bertscore_recall": 0.0,
+            "official_bertscore_f1": 0.0,
         }
-
-    def _token_embeddings(self, text: str):
-        torch = self.torch
-        encoded = self.tokenizer(
-            text or "",
-            return_tensors="pt",
-            truncation=True,
-            max_length=self.max_length,
-        )
-        encoded = {key: value.to(self.device) for key, value in encoded.items()}
-        with torch.no_grad():
-            outputs = self.model(**encoded)
-        hidden = outputs.last_hidden_state[0]
-        input_ids = encoded["input_ids"][0].tolist()
-        attention = encoded["attention_mask"][0].bool()
-        special = torch.tensor(
-            self.tokenizer.get_special_tokens_mask(input_ids, already_has_special_tokens=True),
-            device=self.device,
-            dtype=torch.bool,
-        )
-        mask = attention & ~special
-        if int(mask.sum().item()) == 0:
-            mask = attention
-        token_embeddings = hidden[mask]
-        if token_embeddings.numel() == 0:
-            return None
-        return torch.nn.functional.normalize(token_embeddings, p=2, dim=1)
+        if not (generated_answer or "").strip() or not (ground_truth_answer or "").strip():
+            return _zero
+        P, R, F1 = self._scorer.score([generated_answer], [ground_truth_answer], verbose=False)
+        return {
+            "official_bertscore_precision": float(P[0]),
+            "official_bertscore_recall": float(R[0]),
+            "official_bertscore_f1": float(F1[0]),
+        }
 
 
 @lru_cache(maxsize=4)
-def build_bert_score_scorer(model_name: str, device: str, max_length: int) -> BertScoreScorer:
-    return BertScoreScorer(model_name=model_name, device=device, max_length=max_length)
+def build_bert_score_scorer(
+    model_name: str,
+    device: str,
+    idf: bool,
+    rescale_with_baseline: bool,
+) -> OfficialBertScorer:
+    return OfficialBertScorer(
+        model_name=model_name,
+        device=device,
+        idf=idf,
+        rescale_with_baseline=rescale_with_baseline,
+    )
 
 
 def compute_bert_score(
     generated_answer: str,
     ground_truth_answer: str,
-    scorer: BertScoreScorer,
+    scorer: "OfficialBertScorer",
 ) -> dict[str, float]:
     return scorer.score(generated_answer, ground_truth_answer)
 
 
-def bert_score_model_metadata(scorer: BertScoreScorer | None, configured_model_name: str) -> dict[str, str]:
+def bert_score_model_metadata(
+    scorer: "OfficialBertScorer | None",
+    configured_model_name: str,
+    idf: bool = False,
+    rescale_with_baseline: bool = False,
+) -> dict[str, Any]:
     return {
-        "provider": "transformers",
+        "implementation": "official_bert_score_library",
+        "library_version": _package_version("bert-score"),
         "model_name": str(getattr(scorer, "model_name", configured_model_name)),
-        "tokenizer_name": str(getattr(scorer, "tokenizer_name", configured_model_name)),
-        "model_revision": "unknown",
-        "local_cache_path": "unknown",
-        "device_used": str(getattr(scorer, "device", "unknown")),
+        "idf": idf,
+        "rescale_with_baseline": rescale_with_baseline,
+        "device_used": str(getattr(scorer, "device", "unknown")) if scorer is not None else "unknown",
         "transformers_version": _package_version("transformers"),
         "torch_version": _package_version("torch"),
     }

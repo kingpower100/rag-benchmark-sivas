@@ -35,9 +35,26 @@ _SIVAS_CATEGORIES = ["Technik", "Vertrieb", "Materialwirtschaft", "Einkauf", "Se
 
 
 class EvaluationOrchestrator:
+    def _validate_production_config(self, cfg: EvalConfig) -> None:
+        """Raise ValueError if the config would silently use a non-semantic embedding metric."""
+        if (
+            cfg.embedding_similarity.enabled
+            and cfg.embedding_similarity.provider == "deterministic_hash"
+            and not cfg.embedding_similarity.offline_mode
+        ):
+            raise ValueError(
+                "embedding_similarity.provider='deterministic_hash' is a bag-of-words hash "
+                "projection, not a semantic metric. "
+                "For production evaluation set provider='sentence_transformers' with a real "
+                "embedding model (e.g. intfloat/multilingual-e5-large). "
+                "To explicitly allow offline/debug mode set "
+                "embedding_similarity.offline_mode=true in the config."
+            )
+
     def run(self, config_path: str) -> Path:
         start_time = time.time()
         cfg = EvalConfig.from_yaml(config_path)
+        self._validate_production_config(cfg)
         project_root = Path(__file__).resolve().parents[2]
         run_dir = project_root / cfg.evaluation.output_dir / cfg.evaluation.eval_run_id
         print(f"Resolved eval output dir: {run_dir}")
@@ -234,7 +251,8 @@ class EvaluationOrchestrator:
             bert_scorer = build_bert_score_scorer(
                 cfg.bert_score.model_name,
                 cfg.bert_score.device,
-                cfg.bert_score.max_length,
+                cfg.bert_score.idf,
+                cfg.bert_score.rescale_with_baseline,
             )
         self._metric_runtime_metadata = _metric_runtime_metadata(cfg, embedder, bert_scorer)
         for row in tqdm(rag_rows, desc="Computing metrics", unit="question"):
@@ -293,7 +311,7 @@ class EvaluationOrchestrator:
                 answer_metrics.update(
                     compute_bert_score(str(row.get("generated_answer", "")), ground_truth, bert_scorer)
                     if bert_scorer is not None
-                    else {"custom_bertscore_precision": None, "custom_bertscore_recall": None, "custom_bertscore_f1": None}
+                    else {"official_bertscore_precision": None, "official_bertscore_recall": None, "official_bertscore_f1": None}
                 )
             if generation_failed and not cfg.evaluation.retrieval_only:
                 failure_status = "pipeline1_error" if pipeline1_error else "generation_failure"
@@ -306,9 +324,9 @@ class EvaluationOrchestrator:
                         "question_answer_lexical_f1": 0.0,
                         "embedding_similarity": 0.0 if _fail_emb_metric == "embedding_similarity" else None,
                         "hashed_embedding_cosine_similarity": 0.0 if _fail_emb_metric == "hashed_embedding_cosine_similarity" else None,
-                        "custom_bertscore_precision": 0.0,
-                        "custom_bertscore_recall": 0.0,
-                        "custom_bertscore_f1": 0.0,
+                        "official_bertscore_precision": 0.0,
+                        "official_bertscore_recall": 0.0,
+                        "official_bertscore_f1": 0.0,
                         "normalized_generated_answer": "",
                         "answer_match_status": failure_status,
                     }
@@ -343,9 +361,9 @@ class EvaluationOrchestrator:
                 "question_answer_lexical_f1": answer_metrics["question_answer_lexical_f1"],
                 "embedding_similarity": answer_metrics["embedding_similarity"],
                 "hashed_embedding_cosine_similarity": answer_metrics.get("hashed_embedding_cosine_similarity"),
-                "custom_bertscore_precision": answer_metrics.get("custom_bertscore_precision"),
-                "custom_bertscore_recall": answer_metrics.get("custom_bertscore_recall"),
-                "custom_bertscore_f1": answer_metrics.get("custom_bertscore_f1"),
+                "official_bertscore_precision": answer_metrics.get("official_bertscore_precision"),
+                "official_bertscore_recall": answer_metrics.get("official_bertscore_recall"),
+                "official_bertscore_f1": answer_metrics.get("official_bertscore_f1"),
                 "normalized_generated_answer": answer_metrics["normalized_generated_answer"],
                 "normalized_gold_answer": answer_metrics["normalized_gold_answer"],
                 "answer_match_status": answer_metrics["answer_match_status"],
@@ -725,9 +743,9 @@ def _null_answer_metrics() -> dict[str, Any]:
         "question_answer_lexical_f1": None,
         "embedding_similarity": None,
         "hashed_embedding_cosine_similarity": None,
-        "custom_bertscore_precision": None,
-        "custom_bertscore_recall": None,
-        "custom_bertscore_f1": None,
+        "official_bertscore_precision": None,
+        "official_bertscore_recall": None,
+        "official_bertscore_f1": None,
         "normalized_generated_answer": "",
         "normalized_gold_answer": "",
         "answer_match_status": "skipped_retrieval_only",
@@ -840,9 +858,9 @@ SUMMARY_METRICS_CSV_FIELDS = [
     "ndcg@1",
     "ndcg@3",
     "ndcg@5",
-    "custom_bertscore_precision",
-    "custom_bertscore_recall",
-    "custom_bertscore_f1",
+    "official_bertscore_precision",
+    "official_bertscore_recall",
+    "official_bertscore_f1",
     "embedding_similarity",            # active when provider=sentence_transformers
     "hashed_embedding_cosine_similarity",  # active when provider=deterministic_hash (default)
     "category_accuracy",
@@ -888,9 +906,9 @@ def _summary_metrics_csv_row(
         "experiment_id": value("experiment_id"),
         "eval_run_id": eval_run_id,
         "total_questions": value("n_questions"),
-        "custom_bertscore_precision": value("mean_custom_bertscore_precision"),
-        "custom_bertscore_recall": value("mean_custom_bertscore_recall"),
-        "custom_bertscore_f1": value("mean_custom_bertscore_f1"),
+        "official_bertscore_precision": value("mean_official_bertscore_precision"),
+        "official_bertscore_recall": value("mean_official_bertscore_recall"),
+        "official_bertscore_f1": value("mean_official_bertscore_f1"),
         "embedding_similarity": value("mean_embedding_similarity"),
         "hashed_embedding_cosine_similarity": value("mean_hashed_embedding_cosine_similarity"),
         "category_accuracy": "" if category_accuracy is None else category_accuracy,
@@ -948,9 +966,9 @@ def _per_question_fields(ks: list[int]) -> list[str]:
         "question_answer_lexical_f1",
         "embedding_similarity",
         "hashed_embedding_cosine_similarity",
-        "custom_bertscore_precision",
-        "custom_bertscore_recall",
-        "custom_bertscore_f1",
+        "official_bertscore_precision",
+        "official_bertscore_recall",
+        "official_bertscore_f1",
         "normalized_generated_answer",
         "normalized_gold_answer",
         "answer_match_status",
@@ -1047,9 +1065,9 @@ def compare_reported_vs_recomputed_metrics(
         "abstention_rate",
         "embedding_similarity",
         "hashed_embedding_cosine_similarity",
-        "custom_bertscore_precision",
-        "custom_bertscore_recall",
-        "custom_bertscore_f1",
+        "official_bertscore_precision",
+        "official_bertscore_recall",
+        "official_bertscore_f1",
     ]
     comparisons = []
     for reported in reported_rows:
@@ -1448,7 +1466,7 @@ def _audit_report_markdown(report: dict[str, Any]) -> str:
         "## Semantic Evaluation",
     ])
     answer_metrics = report.get("recomputed_answer_metrics") or {}
-    lines.append(f"- Custom BERTScore F1: `{answer_metrics.get('mean_custom_bertscore_f1', 'n/a')}`")
+    lines.append(f"- Official BERTScore F1: `{answer_metrics.get('mean_official_bertscore_f1', 'n/a')}`")
     _emb_val = answer_metrics.get('mean_embedding_similarity') or answer_metrics.get('mean_hashed_embedding_cosine_similarity', 'n/a')
     lines.append(f"- Embedding Similarity: `{_emb_val}`")
     lines.extend([
@@ -1519,10 +1537,10 @@ def _metric_priority_report(cfg: "EvalConfig | None" = None) -> dict[str, Any]:
 
     bert_enabled = cfg is None or cfg.bert_score.enabled
     if bert_enabled:
-        primary.append("custom_bertscore_f1")
-        status["custom_bertscore_f1"] = "computed"
+        primary.append("official_bertscore_f1")
+        status["official_bertscore_f1"] = "computed"
     else:
-        status["custom_bertscore_f1"] = "disabled_by_config"
+        status["official_bertscore_f1"] = "disabled_by_config"
 
     emb_provider = "unknown" if cfg is None else cfg.embedding_similarity.provider
     if emb_provider == "sentence_transformers":
@@ -1543,10 +1561,11 @@ def _metric_priority_report(cfg: "EvalConfig | None" = None) -> dict[str, Any]:
         "primary_metrics_status": status,
         "secondary_metrics": [],
         "notes": {
-            "custom_bertscore_f1": (
-                "Custom BertScore F1 (greedy token-level cosine matching; no IDF weighting; "
-                "no baseline rescaling). NOT numerically comparable to the official bert_score "
-                "library. Enabled when bert_score.enabled=True."
+            "official_bertscore_f1": (
+                "Official BERTScore F1 via the bert-score library (Zhang et al., 2020). "
+                "Automatic optimal-layer selection per model. Optional IDF weighting and "
+                "baseline rescaling controlled by bert_score.idf and "
+                "bert_score.rescale_with_baseline. Enabled when bert_score.enabled=True."
             ),
             "embedding_similarity": (
                 "Cosine similarity between generated and reference answer embeddings via "
@@ -1571,11 +1590,17 @@ def _metric_priority_report(cfg: "EvalConfig | None" = None) -> dict[str, Any]:
 
 def _metric_runtime_metadata(cfg: EvalConfig, embedder: Any, bert_scorer: Any) -> dict[str, Any]:
     return {
-        "bert_score": bert_score_model_metadata(bert_scorer, cfg.bert_score.model_name),
+        "bert_score": bert_score_model_metadata(
+            bert_scorer,
+            cfg.bert_score.model_name,
+            cfg.bert_score.idf,
+            cfg.bert_score.rescale_with_baseline,
+        ),
         "embedding_similarity": embedding_model_metadata(
             cfg.embedding_similarity.provider,
             cfg.embedding_similarity.model_name,
             embedder,
+            cfg.embedding_similarity.offline_mode,
         ),
     }
 
@@ -1653,9 +1678,9 @@ def _eval_manifest(
         "recomputed_answer_metrics": {
             key: all_summary.get(key)
             for key in (
-                "mean_custom_bertscore_f1",
-                "mean_custom_bertscore_precision",
-                "mean_custom_bertscore_recall",
+                "mean_official_bertscore_f1",
+                "mean_official_bertscore_precision",
+                "mean_official_bertscore_recall",
                 "mean_embedding_similarity",
                 "mean_hashed_embedding_cosine_similarity",
                 "mean_non_empty_answer_rate",
@@ -1732,9 +1757,9 @@ def _eval_manifest(
             "question_answer_lexical_f1",
             "embedding_similarity",
             "hashed_embedding_cosine_similarity",
-            "custom_bertscore_precision",
-            "custom_bertscore_recall",
-            "custom_bertscore_f1",
+            "official_bertscore_precision",
+            "official_bertscore_recall",
+            "official_bertscore_f1",
             "retrieval_time_ms",
             "rerank_time_ms",
             "generation_time_ms",

@@ -11,41 +11,41 @@ from src.pipeline2.metrics.answer_metrics import (
 class FakeBertScorer:
     def score(self, generated_answer: str, ground_truth_answer: str) -> dict[str, float]:
         if not generated_answer.strip() or not ground_truth_answer.strip():
-            return {"custom_bertscore_precision": 0.0, "custom_bertscore_recall": 0.0, "custom_bertscore_f1": 0.0}
+            return {"official_bertscore_precision": 0.0, "official_bertscore_recall": 0.0, "official_bertscore_f1": 0.0}
         generated_tokens = set(generated_answer.lower().split())
         truth_tokens = set(ground_truth_answer.lower().split())
         overlap = len(generated_tokens & truth_tokens)
         precision = overlap / len(generated_tokens)
         recall = overlap / len(truth_tokens)
         f1 = 0.0 if precision + recall == 0.0 else (2 * precision * recall) / (precision + recall)
-        return {"custom_bertscore_precision": precision, "custom_bertscore_recall": recall, "custom_bertscore_f1": f1}
+        return {"official_bertscore_precision": precision, "official_bertscore_recall": recall, "official_bertscore_f1": f1}
 
 
 def test_bertscore_identical_answers_are_high():
     metrics = compute_bert_score("net income increased", "net income increased", FakeBertScorer())
 
-    assert metrics["custom_bertscore_precision"] == pytest.approx(1.0)
-    assert metrics["custom_bertscore_recall"] == pytest.approx(1.0)
-    assert metrics["custom_bertscore_f1"] == pytest.approx(1.0)
+    assert metrics["official_bertscore_precision"] == pytest.approx(1.0)
+    assert metrics["official_bertscore_recall"] == pytest.approx(1.0)
+    assert metrics["official_bertscore_f1"] == pytest.approx(1.0)
 
 
 def test_bertscore_unrelated_answers_are_lower():
     identical = compute_bert_score("net income increased", "net income increased", FakeBertScorer())
     unrelated = compute_bert_score("net income increased", "warehouse delivery blocked", FakeBertScorer())
 
-    assert unrelated["custom_bertscore_f1"] < identical["custom_bertscore_f1"]
+    assert unrelated["official_bertscore_f1"] < identical["official_bertscore_f1"]
 
 
 def test_bertscore_empty_generated_answer_returns_safe_values():
     metrics = compute_bert_score("", "net income increased", FakeBertScorer())
 
-    assert metrics == {"custom_bertscore_precision": 0.0, "custom_bertscore_recall": 0.0, "custom_bertscore_f1": 0.0}
+    assert metrics == {"official_bertscore_precision": 0.0, "official_bertscore_recall": 0.0, "official_bertscore_f1": 0.0}
 
 
 def test_bertscore_empty_reference_answer_returns_safe_values():
     metrics = compute_bert_score("net income increased", "", FakeBertScorer())
 
-    assert metrics == {"custom_bertscore_precision": 0.0, "custom_bertscore_recall": 0.0, "custom_bertscore_f1": 0.0}
+    assert metrics == {"official_bertscore_precision": 0.0, "official_bertscore_recall": 0.0, "official_bertscore_f1": 0.0}
 
 
 def test_non_empty_answer_rate_keeps_backward_compatible_alias():

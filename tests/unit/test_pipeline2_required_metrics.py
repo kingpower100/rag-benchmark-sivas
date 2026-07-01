@@ -36,7 +36,7 @@ def test_summary_aggregates_semantic_latency_and_reliability_denominators():
         {
             "experiment_id": "exp",
             "embedding_similarity": 1.0,
-            "custom_bertscore_f1": 1.0,
+            "official_bertscore_f1": 1.0,
             "total_latency_ms": 10,
             "generation_failed": False,
             "evaluation_errors": [],
@@ -44,7 +44,7 @@ def test_summary_aggregates_semantic_latency_and_reliability_denominators():
         {
             "experiment_id": "exp",
             "embedding_similarity": 0.0,
-            "custom_bertscore_f1": 0.0,
+            "official_bertscore_f1": 0.0,
             "total_latency_ms": 0,
             "generation_failed": True,
             "evaluation_errors": ["missing gold context"],
@@ -55,7 +55,7 @@ def test_summary_aggregates_semantic_latency_and_reliability_denominators():
 
     assert summary["n_questions"] == 2
     assert summary["mean_embedding_similarity"] == 0.5
-    assert summary["mean_custom_bertscore_f1"] == 0.5
+    assert summary["mean_official_bertscore_f1"] == 0.5
     assert summary["mean_total_latency_ms"] == 5
     assert summary["pipeline_success_rate"] == 0.5
     assert summary["eval_success_rate"] == 0.5
@@ -67,7 +67,7 @@ def test_orchestrator_emits_generation_metrics_for_edge_cases():
             "evaluation": {"eval_run_id": "eval", "retrieval_eval_field": "retrieved_original_context_ids"},
             "inputs": {"rag_outputs": []},
             "retrieval": {"k": 2, "ks": [1, 2]},
-            "embedding_similarity": {"provider": "deterministic_hash", "model_name": "unit-test", "dimensions": 64},
+            "embedding_similarity": {"provider": "deterministic_hash", "model_name": "unit-test", "dimensions": 64, "offline_mode": True},
         }
     )
     rows = [
@@ -182,6 +182,7 @@ embedding_similarity:
   provider: "deterministic_hash"
   model_name: "unit-test"
   dimensions: 64
+  offline_mode: true
 """,
             encoding="utf-8",
         )
