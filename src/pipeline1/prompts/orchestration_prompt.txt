@@ -12,6 +12,13 @@
 
 ## 2. Ermitteln der Kategorie.
 - Nutze ausschließlich die Properties `ModuleName`, `ProgramName`, `Role`, `RoleDescription`, `Frage` aus der Anfrage.
+### Entscheidungsregeln
+1. Ermittle zunächst alle relevanten Fachbegriffe aus der Anfrage.
+2. Vergleiche diese mit den Begriffen und Synonymen der folgenden Tabelle.
+3. Berücksichtige zusätzlich `ModuleName`, `ProgramName`, `Role` und `RoleDescription` als Kontext.
+4. Wähle genau einen Wert aus der Liste `CategoryNames`, wenn die verfügbaren Informationen eindeutig auf eine Kategorie hinweisen.
+5. Sind mehrere Kategorien gleichermaßen plausibel oder reichen die Informationen nicht für eine eindeutige Zuordnung aus, gib einen leeren String zurück.
+6. Nutze ausschließlich die bereitgestellten Informationen und leite keine zusätzlichen Annahmen ab.
 - Die folgende Tabelle hilft dir, Begriffe aus der Anfrage semantisch einzuordnen. Sie dient **nur zur Orientierung**.
 - Wähle anhand dieser Informationen genau einen Wert aus der Liste `CategoryNames` und gebe ihn als name zurück.
 - Der zurückgegebene Wert muss exakt so geschrieben sein wie in CategoryNames. Jede andere Ausgabe ist ungültig.
