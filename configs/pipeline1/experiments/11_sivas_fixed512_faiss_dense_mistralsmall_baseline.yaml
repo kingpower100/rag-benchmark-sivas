@@ -1,7 +1,7 @@
 extends: "../base.yaml"
 
 experiment:
-  experiment_id: "11_sivas_fixed512_faiss_dense_qwen25"
+  experiment_id: "11_sivas_fixed512_faiss_dense_mistralsmall_baseline"
   random_seed: 42
   output_dir: "data/runs/pipeline1"
 

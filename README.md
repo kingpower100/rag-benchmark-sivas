@@ -18,19 +18,19 @@ Pipeline 1 uses only `kb_documents_fixed.jsonl` and `questions_fixed.jsonl`. Pip
 
 ## Active Pipeline 1 Config
 
-- `configs/pipeline1/experiments/11_sivas_fixed512_faiss_dense_qwen25.yaml`
+- `configs/pipeline1/experiments/11_sivas_fixed512_faiss_dense_mistralsmall_baseline.yaml`
 
 Baseline run command:
 
 ```bash
-python -m src.pipeline1.main --config configs/pipeline1/experiments/11_sivas_fixed512_faiss_dense_qwen25.yaml
+python -m src.pipeline1.main --config configs/pipeline1/experiments/11_sivas_fixed512_faiss_dense_mistralsmall_baseline.yaml
 ```
 
 Expected Pipeline 1 output:
 
-- `data/runs/pipeline1/11_sivas_fixed512_faiss_dense_qwen25/results.jsonl`
-- `data/runs/pipeline1/11_sivas_fixed512_faiss_dense_qwen25/run_manifest.json`
-- `data/runs/pipeline1/11_sivas_fixed512_faiss_dense_qwen25/logs.txt`
+- `data/runs/pipeline1/11_sivas_fixed512_faiss_dense_mistralsmall_baseline/results.jsonl`
+- `data/runs/pipeline1/11_sivas_fixed512_faiss_dense_mistralsmall_baseline/run_manifest.json`
+- `data/runs/pipeline1/11_sivas_fixed512_faiss_dense_mistralsmall_baseline/logs.txt`
 
 Pipeline 1 requires the configured local generation service and embedding dependencies at runtime. Cleanup and static checks must not start services, load models, build indexes, or execute retrieval/generation.
 
@@ -40,7 +40,7 @@ Pipeline 2 defaults are SIVAS-first:
 
 - `configs/pipeline2/base_eval.yaml`
 - `qa_path: data/raw/qa_ground_truth_fixed.jsonl`
-- `pipeline1_results_path: data/runs/pipeline1/11_sivas_fixed512_faiss_dense_qwen25/results.jsonl`
+- `pipeline1_results_path: data/runs/pipeline1/11_sivas_fixed512_faiss_dense_mistralsmall_baseline/results.jsonl`
 
 Run evaluation only after Pipeline 1 has produced `results.jsonl`:
 
@@ -50,9 +50,9 @@ python -m src.pipeline2.main --config configs/pipeline2/base_eval.yaml
 
 Expected Pipeline 2 output:
 
-- `data/eval/runs/pipeline2/11_sivas_fixed512_faiss_dense_qwen25_eval/per_question.jsonl`
-- `data/eval/runs/pipeline2/11_sivas_fixed512_faiss_dense_qwen25_eval/summary_by_experiment.csv`
-- `data/eval/runs/pipeline2/11_sivas_fixed512_faiss_dense_qwen25_eval/eval_manifest.json`
+- `data/eval/runs/pipeline2/11_sivas_fixed512_faiss_dense_mistralsmall_baseline_eval/per_question.jsonl`
+- `data/eval/runs/pipeline2/11_sivas_fixed512_faiss_dense_mistralsmall_baseline_eval/summary_by_experiment.csv`
+- `data/eval/runs/pipeline2/11_sivas_fixed512_faiss_dense_mistralsmall_baseline_eval/eval_manifest.json`
 
 ## Data Format
 

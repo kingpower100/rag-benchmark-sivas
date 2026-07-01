@@ -9,7 +9,7 @@ def main() -> None:
     parser = argparse.ArgumentParser(description="Run the SIVAS Pipeline 1 baseline.")
     parser.add_argument(
         "--config",
-        default="configs/pipeline1/experiments/11_sivas_fixed512_faiss_dense_qwen25.yaml",
+        default="configs/pipeline1/experiments/11_sivas_fixed512_faiss_dense_mistralsmall_baseline.yaml",
     )
     args = parser.parse_args()
     print(run_pipeline(args.config))

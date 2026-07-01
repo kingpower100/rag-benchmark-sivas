@@ -23,4 +23,4 @@ RUN python3.11 -m pip install --upgrade pip \
     && python3.11 -m pip install --requirement requirements-lock.txt \
     && python3.11 -m pip install --no-deps -e .
 
-CMD ["python3.11", "-m", "src.pipeline1.main", "--config", "configs/pipeline1/experiments/11_sivas_fixed512_faiss_dense_qwen25.yaml"]
+CMD ["python3.11", "-m", "src.pipeline1.main", "--config", "configs/pipeline1/experiments/11_sivas_fixed512_faiss_dense_mistralsmall_baseline.yaml"]

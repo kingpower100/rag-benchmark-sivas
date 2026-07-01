@@ -34,7 +34,7 @@
   │   │   ├── archive/
   │   │   ├── examples/
   │   │   └── experiments/
-  │   │       └── 11_sivas_fixed512_faiss_dense_qwen25.yaml
+  │   │       └── 11_sivas_fixed512_faiss_dense_mistralsmall_baseline.yaml
   │   └── pipeline2/
   │       └── base_eval.yaml
   ├── data/
@@ -47,7 +47,7 @@
   │   │   └── indexes/
   │   ├── runs/
   │   │   └── pipeline1/
-  │   │       └── 11_sivas_fixed512_faiss_dense_qwen25/
+  │   │       └── 11_sivas_fixed512_faiss_dense_mistralsmall_baseline/
   │   └── eval/
   │       └── runs/
   ├── infra/
@@ -87,7 +87,7 @@
   Important files:
 
   configs/pipeline1/base.yaml
-  configs/pipeline1/experiments/11_sivas_fixed512_faiss_dense_qwen25.yaml
+  configs/pipeline1/experiments/11_sivas_fixed512_faiss_dense_mistralsmall_baseline.yaml
   configs/pipeline2/base_eval.yaml
 
   Used to define dataset paths, chunking, embedding, retrieval, generation, runtime behavior, and evaluation settings.
@@ -107,7 +107,7 @@
 
   - experiments/
       - Contains the active baseline only:
-          - 11_sivas_fixed512_faiss_dense_qwen25.yaml
+          - 11_sivas_fixed512_faiss_dense_mistralsmall_baseline.yaml
 
   - archive/, examples/
       - Currently present as folders, but no important active configs were listed inside.
@@ -121,7 +121,7 @@
       - Active SIVAS evaluation config.
       - Points to:
           - qa_path: data/raw/qa_ground_truth_fixed.jsonl
-          - pipeline1_results_path: data/runs/pipeline1/11_sivas_fixed512_faiss_dense_qwen25/results.jsonl
+          - pipeline1_results_path: data/runs/pipeline1/11_sivas_fixed512_faiss_dense_mistralsmall_baseline/results.jsonl
 
   No Pipeline 2 experiment YAMLs remain.
 
@@ -173,7 +173,7 @@
 
   Expected active run path:
 
-  data/runs/pipeline1/11_sivas_fixed512_faiss_dense_qwen25/
+  data/runs/pipeline1/11_sivas_fixed512_faiss_dense_mistralsmall_baseline/
 
   Expected generated files after a run:
 
@@ -192,7 +192,7 @@
 
   Expected generated path:
 
-  data/eval/runs/pipeline2/11_sivas_fixed512_faiss_dense_qwen25_eval/
+  data/eval/runs/pipeline2/11_sivas_fixed512_faiss_dense_mistralsmall_baseline_eval/
 
   Expected generated files after evaluation:
 
@@ -365,7 +365,7 @@
 
   Primary CLI:
 
-  python -m src.pipeline1.main --config configs/pipeline1/experiments/11_sivas_fixed512_faiss_dense_qwen25.yaml
+  python -m src.pipeline1.main --config configs/pipeline1/experiments/11_sivas_fixed512_faiss_dense_mistralsmall_baseline.yaml
 
   Implementation:
 
@@ -374,12 +374,12 @@
 
   Helper wrappers:
 
-  python scripts/run_config.py configs/pipeline1/experiments/11_sivas_fixed512_faiss_dense_qwen25.yaml
+  python scripts/run_config.py configs/pipeline1/experiments/11_sivas_fixed512_faiss_dense_mistralsmall_baseline.yaml
   python scripts/benchmark_pipeline1.py
 
   Active config:
 
-  configs/pipeline1/experiments/11_sivas_fixed512_faiss_dense_qwen25.yaml
+  configs/pipeline1/experiments/11_sivas_fixed512_faiss_dense_mistralsmall_baseline.yaml
 
   ### Pipeline 2
 
@@ -398,7 +398,7 @@
 
   Pipeline 2 requires Pipeline 1 output first:
 
-  data/runs/pipeline1/11_sivas_fixed512_faiss_dense_qwen25/results.jsonl
+  data/runs/pipeline1/11_sivas_fixed512_faiss_dense_mistralsmall_baseline/results.jsonl
 
   ## Dataset Inventory
 
@@ -515,7 +515,7 @@
   ### Keep
 
   configs/pipeline1/base.yaml
-  configs/pipeline1/experiments/11_sivas_fixed512_faiss_dense_qwen25.yaml
+  configs/pipeline1/experiments/11_sivas_fixed512_faiss_dense_mistralsmall_baseline.yaml
   configs/pipeline2/base_eval.yaml
   data/raw/kb_documents_fixed.jsonl
   data/raw/questions_fixed.jsonl
@@ -562,7 +562,7 @@
 
   - Pipeline 1 source: src/pipeline1/
   - Pipeline 2 source: src/pipeline2/
-  - Pipeline 1 active config: configs/pipeline1/experiments/11_sivas_fixed512_faiss_dense_qwen25.yaml
+  - Pipeline 1 active config: configs/pipeline1/experiments/11_sivas_fixed512_faiss_dense_mistralsmall_baseline.yaml
   - Pipeline 2 active config: configs/pipeline2/base_eval.yaml
   - Official active data: data/raw/*_fixed.jsonl
 
@@ -587,5 +587,5 @@
 
   - Strict benchmark readiness: not fully ready until dataset schema inconsistencies are resolved
   ********
-  python -m src.pipeline1.main --config configs/pipeline1/experiments/11_sivas_fixed512_faiss_dense_qwen25.yaml 
+  python -m src.pipeline1.main --config configs/pipeline1/experiments/11_sivas_fixed512_faiss_dense_mistralsmall_baseline.yaml 
   python -m src.pipeline2.main --config configs/pipeline2/base_eval.yaml

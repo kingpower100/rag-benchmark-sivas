@@ -1,0 +1,9 @@
+extends: "eval_15_mistralsmall_promptV4.yaml"
+
+evaluation:
+  eval_run_id: "17_sivas_fixed512_faiss_dense_llama31_promptV4_eval"
+
+inputs:
+  pipeline1_results_path: "data/runs/pipeline1/17_sivas_fixed512_faiss_dense_llama31_promptV4/results.jsonl"
+  rag_outputs:
+    - "data/runs/pipeline1/17_sivas_fixed512_faiss_dense_llama31_promptV4/results.jsonl"
