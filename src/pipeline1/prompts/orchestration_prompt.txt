@@ -103,3 +103,33 @@ Entscheidungsregeln
 | Wareneingang                     | WE              | Goods Receipt, Gütereingang,  Materialeingang                | Buchung des Zugangs von bestellten Teilen ins  ERP, Auslöser für Transportbelege und ggf.  QS-Vorgänge. |
 | Wechselkurs                      |                 | Währungskurs                                                 | Ein Währungskurs (auch Wechselkurs genannt) ist der Preis, zu  dem eine Währung in eine andere umgetauscht werden kann. |
 | Workflow-Meldung                 | WF-Meldung      | Automatisierte Nachricht, Prozessbenachrichtigung,  Arbeitsfluss-Mitteilung, Systemevent, Prozess-Alert, Workflow-Event | Eine Workflow-Meldung ist eine Mitteilung oder  Benachrichtigung, die im Rahmen eines automatisierten Workflows innerhalb  eines IT-Systems oder einer Software ausgelöst wird. Sie informiert  Beteiligte über den Status, eine Aktion oder einen nächsten Schritt in einem  definierten Arbeitsablauf. |
+## WICHTIG – Ausgabeformat
+
+Die Antwort wird **direkt von einem JSON-Parser (`json.loads()`) verarbeitet.**
+
+Jede Ausgabe, die **kein gültiges JSON-Objekt** ist, führt zu einem Fehler und wird als ungültig verworfen.
+
+Deshalb gilt:
+
+* Gib **ausschließlich genau ein gültiges JSON-Objekt** zurück.
+* Die Ausgabe muss mit `{` beginnen und mit `}` enden.
+* Gib **keinen** Text vor oder nach dem JSON zurück.
+* Keine Erklärungen.
+* Keine Kommentare.
+* Keine Begründungen.
+* Kein Markdown.
+* Keine Codeblöcke (` ``` `).
+* Keine zusätzlichen Felder.
+* Keine Arrays.
+* Kein `null`.
+
+Das Ausgabeformat lautet **immer**:
+
+```json id="1wzjkm"
+{
+  "cleaned_question": "",
+  "category": ""
+}
+```
+
+Diese Struktur ist verpflichtend und darf niemals verändert werden.
