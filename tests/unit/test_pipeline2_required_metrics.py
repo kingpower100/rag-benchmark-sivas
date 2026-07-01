@@ -36,7 +36,7 @@ def test_summary_aggregates_semantic_latency_and_reliability_denominators():
         {
             "experiment_id": "exp",
             "embedding_similarity": 1.0,
-            "bertscore_f1": 1.0,
+            "custom_bertscore_f1": 1.0,
             "total_latency_ms": 10,
             "generation_failed": False,
             "evaluation_errors": [],
@@ -44,7 +44,7 @@ def test_summary_aggregates_semantic_latency_and_reliability_denominators():
         {
             "experiment_id": "exp",
             "embedding_similarity": 0.0,
-            "bertscore_f1": 0.0,
+            "custom_bertscore_f1": 0.0,
             "total_latency_ms": 0,
             "generation_failed": True,
             "evaluation_errors": ["missing gold context"],
@@ -55,7 +55,7 @@ def test_summary_aggregates_semantic_latency_and_reliability_denominators():
 
     assert summary["n_questions"] == 2
     assert summary["mean_embedding_similarity"] == 0.5
-    assert summary["mean_bertscore_f1"] == 0.5
+    assert summary["mean_custom_bertscore_f1"] == 0.5
     assert summary["mean_total_latency_ms"] == 5
     assert summary["pipeline_success_rate"] == 0.5
     assert summary["eval_success_rate"] == 0.5
@@ -117,8 +117,8 @@ def test_orchestrator_emits_generation_metrics_for_edge_cases():
         cfg,
     )
 
-    # provider=deterministic_hash routes value to bow_token_overlap_similarity, not embedding_similarity
-    assert evaluated[0]["bow_token_overlap_similarity"] > 0.0
+    # provider=deterministic_hash routes value to hashed_embedding_cosine_similarity, not embedding_similarity
+    assert evaluated[0]["hashed_embedding_cosine_similarity"] > 0.0
     assert evaluated[0]["embedding_similarity"] is None
     assert evaluated[0]["hit_at_2"] == 1.0
     assert evaluated[0]["recall_at_2"] == 0.5
@@ -128,8 +128,8 @@ def test_orchestrator_emits_generation_metrics_for_edge_cases():
     assert evaluated[1]["abstention_rate"] == 1.0
     assert evaluated[1]["is_unknown"] == 1.0
     assert evaluated[2]["generation_failed"] is True
-    # failed row: bow_token_overlap_similarity zeroed, embedding_similarity remains None
-    assert evaluated[2]["bow_token_overlap_similarity"] == 0.0
+    # failed row: hashed_embedding_cosine_similarity zeroed, embedding_similarity remains None
+    assert evaluated[2]["hashed_embedding_cosine_similarity"] == 0.0
     assert evaluated[2]["embedding_similarity"] is None
     assert evaluated[3]["id_alignment_ok"] is True
 
@@ -197,8 +197,8 @@ embedding_similarity:
         # Deprecated outputs must NOT be written
         row = read_jsonl(run_dir / "per_question_metrics.jsonl")[0]
         summary = json.loads((run_dir / "summary_metrics.json").read_text(encoding="utf-8"))
-        # provider=deterministic_hash routes value to bow_token_overlap_similarity
-        assert row["bow_token_overlap_similarity"] == pytest.approx(1.0)
+        # provider=deterministic_hash routes value to hashed_embedding_cosine_similarity
+        assert row["hashed_embedding_cosine_similarity"] == pytest.approx(1.0)
         assert row["embedding_similarity"] is None
         assert row["total_latency_ms"] == 6
         # Benchmark validity must be present
@@ -217,6 +217,7 @@ embedding_similarity:
         assert csv_rows[0]["mrr@1"] == "1.0"
         assert csv_rows[0]["ndcg@1"] == "1.0"
         assert csv_rows[0]["embedding_similarity"] == ""
+        assert csv_rows[0]["hashed_embedding_cosine_similarity"] != ""
         assert csv_rows[0]["category_coverage"] == "0.0"
         assert csv_rows[0]["avg_latency"] == "6.0"
     finally:

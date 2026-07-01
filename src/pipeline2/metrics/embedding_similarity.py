@@ -20,9 +20,10 @@ class AnswerEmbedder(Protocol):
 
 
 class DeterministicHashEmbedder:
-    # Not a semantic model — produces a bag-of-words random projection.
-    # Results are reported under bow_token_overlap_similarity, not embedding_similarity.
-    metric_name: str = "bow_token_overlap_similarity"
+    # Not a semantic model — produces a bag-of-words random projection via BLAKE2B hashing.
+    # Results are reported under hashed_embedding_cosine_similarity, not embedding_similarity.
+    # The metric approximates BOW cosine similarity but is NOT a lexical overlap metric.
+    metric_name: str = "hashed_embedding_cosine_similarity"
     is_semantic: bool = False
 
     def __init__(self, model_name: str = "hashing-bow-v1", dimensions: int = 256) -> None:

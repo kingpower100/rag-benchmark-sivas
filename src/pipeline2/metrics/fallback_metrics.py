@@ -44,11 +44,11 @@ def compute_fallback_summary(per_question: list[dict[str, Any]]) -> dict[str, An
     Returns:
         total_queries           — number of completed queries
         queries_using_fallback  — queries where fallback_used=True
-        fallback_rate           — percentage, rounded to two decimal places
+        fallback_rate           — proportion on 0–1 scale, matching all other rate metrics
     """
     total = len(per_question)
     using_fallback = sum(1 for row in per_question if row.get("fallback_used", False))
-    fallback_rate = round((using_fallback / total) * 100, 2) if total > 0 else 0.0
+    fallback_rate = round(using_fallback / total, 6) if total > 0 else 0.0
     return {
         "total_queries": total,
         "queries_using_fallback": using_fallback,

@@ -86,6 +86,9 @@ def _metrics_at_k(
 
     hit = 1.0 if overlap > 0 else 0.0
     recall = None if not gold_set else overlap / len(gold_set)
+    # Denominator is the raw ranked-list length (up to k), including any duplicate slots.
+    # Numerator uses set intersection so duplicates never inflate the hit count.
+    # This intentionally penalises retrieval systems that waste slots on repeated documents.
     context_precision = overlap / len(ranked) if ranked else 0.0
     reciprocal_rank = 0.0
     for idx, item in enumerate(ranked, start=1):

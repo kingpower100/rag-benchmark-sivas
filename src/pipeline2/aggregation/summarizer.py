@@ -27,19 +27,19 @@ def summarize_by_experiment(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
         for col in (
             "category_accuracy",
             "non_empty_answer_rate",
-            "answer_coverage_rate",
+            # answer_coverage_rate is a deprecated alias for non_empty_answer_rate; not averaged separately
             "abstention_rate",
             "embedding_similarity",
-            "bow_token_overlap_similarity",
-            "bertscore_precision",
-            "bertscore_recall",
-            "bertscore_f1",
+            "hashed_embedding_cosine_similarity",
+            "custom_bertscore_precision",
+            "custom_bertscore_recall",
+            "custom_bertscore_f1",
         ):
             summary[f"mean_{col}"] = _mean([row.get(col) for row in group if row.get(col) is not None])
-        # answer_relevancy_score is a lexical diagnostic, not a quality metric.
-        # It is retained here for diagnostic inspection but not promoted to a headline number.
-        summary["diagnostic_mean_answer_relevancy"] = _mean(
-            [row.get("answer_relevancy_score") for row in group if row.get("answer_relevancy_score") is not None]
+        # question_answer_lexical_f1 is a lexical diagnostic (token-overlap F1), not a quality metric.
+        # Retained for diagnostic inspection but not promoted to a headline number.
+        summary["diagnostic_mean_question_answer_lexical_f1"] = _mean(
+            [row.get("question_answer_lexical_f1") for row in group if row.get("question_answer_lexical_f1") is not None]
         )
         summary["mean_category_accuracy"] = _mean(
             [row.get("category_accuracy") for row in group if row.get("category_accuracy") is not None]
@@ -135,10 +135,10 @@ def summarize_by_category(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
             "non_empty_answer_rate",
             "abstention_rate",
             "embedding_similarity",
-            "bow_token_overlap_similarity",
-            "bertscore_precision",
-            "bertscore_recall",
-            "bertscore_f1",
+            "hashed_embedding_cosine_similarity",
+            "custom_bertscore_precision",
+            "custom_bertscore_recall",
+            "custom_bertscore_f1",
             "total_latency_ms",
             "total_tokens",
         ):

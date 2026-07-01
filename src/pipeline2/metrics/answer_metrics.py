@@ -84,11 +84,18 @@ def compute_answer_metrics(
         "non_empty_answer_rate": non_empty,
         "answer_coverage_rate": non_empty,  # backward-compatible alias; canonical name is non_empty_answer_rate
         "abstention_rate": abstained,
-        "answer_relevancy_score": answer_relevancy_score(question, generated),
+        "question_answer_lexical_f1": question_answer_lexical_f1(question, generated),
     }
 
 
 class BertScoreScorer:
+    """Custom BertScore using greedy token-level cosine matching per Zhang et al. (2020).
+
+    Omits IDF weighting and baseline rescaling.  Scores are NOT numerically
+    comparable to the official ``bert_score`` library.  Output keys are
+    ``custom_bertscore_precision/recall/f1`` to make this explicit.
+    """
+
     def __init__(self, model_name: str, device: str = "auto", max_length: int = 512) -> None:
         import torch
         from transformers import AutoModel, AutoTokenizer
@@ -107,20 +114,20 @@ class BertScoreScorer:
 
     def score(self, generated_answer: str, ground_truth_answer: str) -> dict[str, float]:
         if not (generated_answer or "").strip() or not (ground_truth_answer or "").strip():
-            return {"bertscore_precision": 0.0, "bertscore_recall": 0.0, "bertscore_f1": 0.0}
+            return {"custom_bertscore_precision": 0.0, "custom_bertscore_recall": 0.0, "custom_bertscore_f1": 0.0}
         generated_embeddings = self._token_embeddings(generated_answer)
         reference_embeddings = self._token_embeddings(ground_truth_answer)
         if generated_embeddings is None or reference_embeddings is None:
-            return {"bertscore_precision": 0.0, "bertscore_recall": 0.0, "bertscore_f1": 0.0}
+            return {"custom_bertscore_precision": 0.0, "custom_bertscore_recall": 0.0, "custom_bertscore_f1": 0.0}
 
         similarity = generated_embeddings @ reference_embeddings.T
         precision = float(similarity.max(dim=1).values.mean().item())
         recall = float(similarity.max(dim=0).values.mean().item())
         f1 = 0.0 if precision + recall == 0.0 else (2 * precision * recall) / (precision + recall)
         return {
-            "bertscore_precision": precision,
-            "bertscore_recall": recall,
-            "bertscore_f1": f1,
+            "custom_bertscore_precision": precision,
+            "custom_bertscore_recall": recall,
+            "custom_bertscore_f1": f1,
         }
 
     def _token_embeddings(self, text: str):
@@ -193,13 +200,28 @@ def is_abstention(text: str, patterns: Iterable[str] | None = None) -> bool:
     return any(canonical == _normalized_text(pattern).strip(" .!?:;") for pattern in configured)
 
 
-def answer_relevancy_score(question: str, generated_answer: str) -> float:
-    """Deterministic lexical-overlap baseline, not a semantic correctness metric."""
+def question_answer_lexical_f1(question: str, generated_answer: str) -> float:
+    """Token-overlap F1 between question and answer content tokens.
+
+    Computes 2·|Q∩A| / (|Q| + |A|) where Q and A are sets of content tokens
+    (stopwords removed, regex-extracted).  The symmetric F1 formulation means
+    both coverage of question vocabulary (recall) and on-topic phrasing
+    (precision) are penalised, unlike the deprecated ``|Q∩A|/|A|`` formula
+    which rewarded pure repetition of question terms.
+
+    Limitation: pairs with zero lexical overlap always score 0.0 regardless of
+    semantic correctness.  An embedding-based scorer is required to distinguish
+    factually correct non-overlapping answers from genuinely irrelevant ones.
+
+    This is a diagnostic-only metric; it is not a semantic correctness or
+    factual accuracy measure.
+    """
     question_tokens = _content_tokens(question)
     answer_tokens = _content_tokens(generated_answer)
     if not question_tokens or not answer_tokens:
         return 0.0
-    return len(question_tokens & answer_tokens) / len(answer_tokens)
+    intersection = len(question_tokens & answer_tokens)
+    return 2 * intersection / (len(question_tokens) + len(answer_tokens))
 
 
 def _normalized_text(text: str) -> str:

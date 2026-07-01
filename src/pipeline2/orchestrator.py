@@ -121,7 +121,7 @@ class EvaluationOrchestrator:
                     "run_validity": run_validity,
                     "category_routing": category_routing_report,
                     "benchmark_validity": validity_report,
-                    "metric_priority": _metric_priority_report(),
+                    "metric_priority": _metric_priority_report(cfg),
                 },
                 indent=2,
                 ensure_ascii=False,
@@ -289,11 +289,11 @@ class EvaluationOrchestrator:
                 )
                 _emb_metric = embedder.metric_name if embedder is not None else "embedding_similarity"
                 answer_metrics["embedding_similarity"] = _emb_value if _emb_metric == "embedding_similarity" else None
-                answer_metrics["bow_token_overlap_similarity"] = _emb_value if _emb_metric == "bow_token_overlap_similarity" else None
+                answer_metrics["hashed_embedding_cosine_similarity"] = _emb_value if _emb_metric == "hashed_embedding_cosine_similarity" else None
                 answer_metrics.update(
                     compute_bert_score(str(row.get("generated_answer", "")), ground_truth, bert_scorer)
                     if bert_scorer is not None
-                    else {"bertscore_precision": None, "bertscore_recall": None, "bertscore_f1": None}
+                    else {"custom_bertscore_precision": None, "custom_bertscore_recall": None, "custom_bertscore_f1": None}
                 )
             if generation_failed and not cfg.evaluation.retrieval_only:
                 failure_status = "pipeline1_error" if pipeline1_error else "generation_failure"
@@ -303,12 +303,12 @@ class EvaluationOrchestrator:
                         "non_empty_answer_rate": 0.0,
                         "answer_coverage_rate": 0.0,
                         "abstention_rate": 0.0,
-                        "answer_relevancy_score": 0.0,
+                        "question_answer_lexical_f1": 0.0,
                         "embedding_similarity": 0.0 if _fail_emb_metric == "embedding_similarity" else None,
-                        "bow_token_overlap_similarity": 0.0 if _fail_emb_metric == "bow_token_overlap_similarity" else None,
-                        "bertscore_precision": 0.0,
-                        "bertscore_recall": 0.0,
-                        "bertscore_f1": 0.0,
+                        "hashed_embedding_cosine_similarity": 0.0 if _fail_emb_metric == "hashed_embedding_cosine_similarity" else None,
+                        "custom_bertscore_precision": 0.0,
+                        "custom_bertscore_recall": 0.0,
+                        "custom_bertscore_f1": 0.0,
                         "normalized_generated_answer": "",
                         "answer_match_status": failure_status,
                     }
@@ -337,15 +337,15 @@ class EvaluationOrchestrator:
                 "id_alignment_ok": id_alignment_ok,
                 **retrieval_metrics,
                 "non_empty_answer_rate": answer_metrics["non_empty_answer_rate"],
-                "answer_coverage_rate": answer_metrics["answer_coverage_rate"],
+                "answer_coverage_rate": answer_metrics["answer_coverage_rate"],  # deprecated alias for non_empty_answer_rate
                 "abstention_rate": answer_metrics["abstention_rate"],
                 "is_unknown": is_unknown,
-                "answer_relevancy_score": answer_metrics["answer_relevancy_score"],
+                "question_answer_lexical_f1": answer_metrics["question_answer_lexical_f1"],
                 "embedding_similarity": answer_metrics["embedding_similarity"],
-                "bow_token_overlap_similarity": answer_metrics.get("bow_token_overlap_similarity"),
-                "bertscore_precision": answer_metrics.get("bertscore_precision"),
-                "bertscore_recall": answer_metrics.get("bertscore_recall"),
-                "bertscore_f1": answer_metrics.get("bertscore_f1"),
+                "hashed_embedding_cosine_similarity": answer_metrics.get("hashed_embedding_cosine_similarity"),
+                "custom_bertscore_precision": answer_metrics.get("custom_bertscore_precision"),
+                "custom_bertscore_recall": answer_metrics.get("custom_bertscore_recall"),
+                "custom_bertscore_f1": answer_metrics.get("custom_bertscore_f1"),
                 "normalized_generated_answer": answer_metrics["normalized_generated_answer"],
                 "normalized_gold_answer": answer_metrics["normalized_gold_answer"],
                 "answer_match_status": answer_metrics["answer_match_status"],
@@ -722,12 +722,12 @@ def _null_answer_metrics() -> dict[str, Any]:
         "non_empty_answer_rate": None,
         "answer_coverage_rate": None,
         "abstention_rate": None,
-        "answer_relevancy_score": None,
+        "question_answer_lexical_f1": None,
         "embedding_similarity": None,
-        "bow_token_overlap_similarity": None,
-        "bertscore_precision": None,
-        "bertscore_recall": None,
-        "bertscore_f1": None,
+        "hashed_embedding_cosine_similarity": None,
+        "custom_bertscore_precision": None,
+        "custom_bertscore_recall": None,
+        "custom_bertscore_f1": None,
         "normalized_generated_answer": "",
         "normalized_gold_answer": "",
         "answer_match_status": "skipped_retrieval_only",
@@ -840,10 +840,11 @@ SUMMARY_METRICS_CSV_FIELDS = [
     "ndcg@1",
     "ndcg@3",
     "ndcg@5",
-    "bertscore_precision",
-    "bertscore_recall",
-    "bertscore_f1",
-    "embedding_similarity",
+    "custom_bertscore_precision",
+    "custom_bertscore_recall",
+    "custom_bertscore_f1",
+    "embedding_similarity",            # active when provider=sentence_transformers
+    "hashed_embedding_cosine_similarity",  # active when provider=deterministic_hash (default)
     "category_accuracy",
     "category_coverage",
     "fallback_rate",
@@ -887,10 +888,11 @@ def _summary_metrics_csv_row(
         "experiment_id": value("experiment_id"),
         "eval_run_id": eval_run_id,
         "total_questions": value("n_questions"),
-        "bertscore_precision": value("mean_bertscore_precision"),
-        "bertscore_recall": value("mean_bertscore_recall"),
-        "bertscore_f1": value("mean_bertscore_f1"),
+        "custom_bertscore_precision": value("mean_custom_bertscore_precision"),
+        "custom_bertscore_recall": value("mean_custom_bertscore_recall"),
+        "custom_bertscore_f1": value("mean_custom_bertscore_f1"),
         "embedding_similarity": value("mean_embedding_similarity"),
+        "hashed_embedding_cosine_similarity": value("mean_hashed_embedding_cosine_similarity"),
         "category_accuracy": "" if category_accuracy is None else category_accuracy,
         "category_coverage": "" if category_coverage is None else category_coverage,
         "fallback_rate": value("fallback_rate"),
@@ -940,15 +942,15 @@ def _per_question_fields(ks: list[int]) -> list[str]:
         "duplicate_document_count",
         "duplicate_document_rate",
         "non_empty_answer_rate",
-        "answer_coverage_rate",
+        "answer_coverage_rate",        # deprecated alias for non_empty_answer_rate
         "abstention_rate",
         "is_unknown",
-        "answer_relevancy_score",
+        "question_answer_lexical_f1",
         "embedding_similarity",
-        "bow_token_overlap_similarity",
-        "bertscore_precision",
-        "bertscore_recall",
-        "bertscore_f1",
+        "hashed_embedding_cosine_similarity",
+        "custom_bertscore_precision",
+        "custom_bertscore_recall",
+        "custom_bertscore_f1",
         "normalized_generated_answer",
         "normalized_gold_answer",
         "answer_match_status",
@@ -1044,9 +1046,10 @@ def compare_reported_vs_recomputed_metrics(
         "non_empty_answer_rate",
         "abstention_rate",
         "embedding_similarity",
-        "bertscore_precision",
-        "bertscore_recall",
-        "bertscore_f1",
+        "hashed_embedding_cosine_similarity",
+        "custom_bertscore_precision",
+        "custom_bertscore_recall",
+        "custom_bertscore_f1",
     ]
     comparisons = []
     for reported in reported_rows:
@@ -1445,8 +1448,9 @@ def _audit_report_markdown(report: dict[str, Any]) -> str:
         "## Semantic Evaluation",
     ])
     answer_metrics = report.get("recomputed_answer_metrics") or {}
-    lines.append(f"- BERTScore F1: `{answer_metrics.get('mean_bertscore_f1', 'n/a')}`")
-    lines.append(f"- Embedding Similarity: `{answer_metrics.get('mean_embedding_similarity', 'n/a')}`")
+    lines.append(f"- Custom BERTScore F1: `{answer_metrics.get('mean_custom_bertscore_f1', 'n/a')}`")
+    _emb_val = answer_metrics.get('mean_embedding_similarity') or answer_metrics.get('mean_hashed_embedding_cosine_similarity', 'n/a')
+    lines.append(f"- Embedding Similarity: `{_emb_val}`")
     lines.extend([
         "",
         "## Retrieval Metrics",
@@ -1457,7 +1461,7 @@ def _audit_report_markdown(report: dict[str, Any]) -> str:
     lines.extend([
         "",
         "## Coverage",
-        f"- Answer coverage: `{answer_metrics.get('mean_answer_coverage_rate', 'n/a')}`",
+        f"- Non-empty answers: `{answer_metrics.get('mean_non_empty_answer_rate', 'n/a')}`",
         "",
         "## Metric Comparison",
         f"- Reported-vs-recomputed failures: `{(report.get('reported_vs_recomputed_comparison') or {}).get('failure_count', 'n/a')}`",
@@ -1508,20 +1512,59 @@ def _mean(values: list[Any]) -> float | None:
     return sum(numeric) / len(numeric)
 
 
-def _metric_priority_report() -> dict[str, Any]:
+def _metric_priority_report(cfg: "EvalConfig | None" = None) -> dict[str, Any]:
+    """Build a config-aware priority report describing which metrics are active."""
+    primary: list[str] = []
+    status: dict[str, str] = {}
+
+    bert_enabled = cfg is None or cfg.bert_score.enabled
+    if bert_enabled:
+        primary.append("custom_bertscore_f1")
+        status["custom_bertscore_f1"] = "computed"
+    else:
+        status["custom_bertscore_f1"] = "disabled_by_config"
+
+    emb_provider = "unknown" if cfg is None else cfg.embedding_similarity.provider
+    if emb_provider == "sentence_transformers":
+        primary.append("embedding_similarity")
+        status["embedding_similarity"] = "computed"
+        status["hashed_embedding_cosine_similarity"] = "disabled_by_config"
+    else:
+        primary.append("hashed_embedding_cosine_similarity")
+        status["hashed_embedding_cosine_similarity"] = "computed"
+        status["embedding_similarity"] = "disabled_by_config"
+
+    primary.extend(["category_accuracy", "category_coverage"])
+    status["category_accuracy"] = "conditional"
+    status["category_coverage"] = "conditional"
+
     return {
-        "primary_metrics": [
-            "bertscore_f1",
-            "embedding_similarity",
-            "category_accuracy",
-            "category_coverage",
-        ],
+        "primary_metrics": primary,
+        "primary_metrics_status": status,
         "secondary_metrics": [],
         "notes": {
-            "bertscore_f1": "Semantic similarity between generated and reference answers.",
-            "embedding_similarity": "Vector similarity between generated and reference answers.",
-            "category_accuracy": "Correct category predictions divided by questions with both predicted and gold category.",
-            "category_coverage": "Questions with predicted category divided by total questions.",
+            "custom_bertscore_f1": (
+                "Custom BertScore F1 (greedy token-level cosine matching; no IDF weighting; "
+                "no baseline rescaling). NOT numerically comparable to the official bert_score "
+                "library. Enabled when bert_score.enabled=True."
+            ),
+            "embedding_similarity": (
+                "Cosine similarity between generated and reference answer embeddings via "
+                "sentence_transformers. Active when provider=sentence_transformers."
+            ),
+            "hashed_embedding_cosine_similarity": (
+                "Random-projection cosine similarity over BLAKE2B-hashed token buckets. "
+                "Active by default (provider=deterministic_hash). "
+                "Approximates BOW cosine similarity — NOT a semantic metric."
+            ),
+            "category_accuracy": (
+                "Correct category predictions / questions with both predicted and gold label. "
+                "Null when category routing is inactive."
+            ),
+            "category_coverage": (
+                "Questions with a category prediction / total questions. "
+                "Null when category routing is inactive."
+            ),
         },
     }
 
@@ -1610,11 +1653,11 @@ def _eval_manifest(
         "recomputed_answer_metrics": {
             key: all_summary.get(key)
             for key in (
-                "mean_bertscore_f1",
-                "mean_bertscore_precision",
-                "mean_bertscore_recall",
+                "mean_custom_bertscore_f1",
+                "mean_custom_bertscore_precision",
+                "mean_custom_bertscore_recall",
                 "mean_embedding_similarity",
-                "mean_bow_token_overlap_similarity",
+                "mean_hashed_embedding_cosine_similarity",
                 "mean_non_empty_answer_rate",
                 "mean_abstention_rate",
                 "unknown_count",
@@ -1624,7 +1667,7 @@ def _eval_manifest(
         },
         "fallback_summary": compute_fallback_summary(per_question),
         "reported_vs_recomputed_comparison": reported_metric_comparison,
-        "metric_priority": _metric_priority_report(),
+        "metric_priority": _metric_priority_report(cfg),
         "metric_runtime": metric_runtime_metadata,
         "duplicate_retrieval_statistics": {
             "mean_raw_retrieved_count": _mean([row.get("raw_retrieved_count") for row in per_question]),
@@ -1683,15 +1726,15 @@ def _eval_manifest(
             "duplicate_document_rate",
             "unique_retrieved_document_count",
             "non_empty_answer_rate",
-            "answer_coverage_rate",
+            "answer_coverage_rate",        # deprecated alias for non_empty_answer_rate
             "abstention_rate",
             "is_unknown",
-            "answer_relevancy_score",
+            "question_answer_lexical_f1",
             "embedding_similarity",
-            "bow_token_overlap_similarity",
-            "bertscore_precision",
-            "bertscore_recall",
-            "bertscore_f1",
+            "hashed_embedding_cosine_similarity",
+            "custom_bertscore_precision",
+            "custom_bertscore_recall",
+            "custom_bertscore_f1",
             "retrieval_time_ms",
             "rerank_time_ms",
             "generation_time_ms",
@@ -1714,8 +1757,10 @@ def _eval_manifest(
         ),
         "embedding_similarity_behavior": (
             "embedding_similarity contains values only when provider=sentence_transformers. "
-            "bow_token_overlap_similarity contains values only when provider=deterministic_hash. "
-            "The two columns are mutually exclusive; exactly one is non-null per row."
+            "hashed_embedding_cosine_similarity contains values only when provider=deterministic_hash "
+            "(default). This metric uses BLAKE2B-hashed token buckets as a random projection — "
+            "it approximates BOW cosine similarity and is NOT a semantic metric. "
+            "The two embedding columns are mutually exclusive; exactly one is non-null per row."
         ),
         "summary_behavior": (
             "mean retrieval and answer metrics use all evaluated rows; generation failures are retained, "

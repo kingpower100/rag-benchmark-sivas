@@ -55,7 +55,7 @@ def test_answer_metrics_are_computed():
     assert evaluated[0]["non_empty_answer_rate"] == 1.0
     assert evaluated[0]["answer_coverage_rate"] == 1.0
     assert evaluated[0]["abstention_rate"] == 0.0
-    assert evaluated[0]["answer_relevancy_score"] == 0.0
+    assert evaluated[0]["question_answer_lexical_f1"] == 0.0
     assert evaluated[0]["retrieval_time_ms"] == 4
     assert evaluated[0]["generation_time_ms"] == 8
     assert evaluated[0]["input_tokens"] == 2

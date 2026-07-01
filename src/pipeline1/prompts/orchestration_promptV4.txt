@@ -140,20 +140,20 @@ Die folgende Tabelle hilft dir, Begriffe aus der Anfrage semantisch einzuordnen.
 | Geschäftspartner             | GEPA, Gepa  | Partner                                                                   | Kunde, Interessent oder Lieferant mit Geschäftsbeziehung.                                                                                | Vertrieb                   |
 | Gültigkeit von Preisen       | -           | Gültigkeitsdatum von Preisen                                              |                                                                                                                                          | Vertrieb                   |
 | Hauptlager                   | -           | Zentrallager                                                              | Zentrales Lager für lagergeführte Teile ohne Auftragsbezug.                                                                             | Materialwirtschaft |
-| Kaufmännischer Auftrag       | -           | Auftrag, Vertriebsauftrag                                                 | Administrativer Auftrag: Angebote, Auftragsbestätigung, Rechnung, Buchhaltung. NICHT verwechseln mit technischem Auftrag (→ Technik).    | Vertrieb                   |
+| Kaufmännischer Auftrag       | -           | Auftrag, Vertriebsauftrag                                                 | Administrativer Auftrag im Rahmen der Geschäftsabwicklung. NICHT verwechseln mit technischem Auftrag (→ Technik).                        | Vertrieb                   |
 | Kommissionslager             | -           | Auftragslager, Projektlager                                               | Lagerort für auftragsbezogene Teile im Projekt- und Sondermaschinenbau.                                                                  | Materialwirtschaft |
 | Konfigurationsgruppe         | -           | TOS-Gruppe                                                                |                                                                                                                                          | Technik                    |
 | Konfigurationsmanagement     | -           | TOS                                                                       |                                                                                                                                          | Technik                    |
-| Konfigurator                 | -           | Merkmalseingabe                                                           | Ermöglicht Produktkonfiguration über Merkmale; leitet Stücklisten und Arbeitspläne ab.                                                   | Technik                    |
+| Konfigurator                 | -           | Merkmalseingabe                                                           | Ermöglicht Produktkonfiguration über Merkmale und leitet automatisch Folgedokumente ab.                                                  | Technik                    |
 | Kundenbeistellung            | -           | Kundenlieferung                                                           | Kunde liefert Material für einen Auftrag.                                                                                                | Vertrieb                   |
 | Lagerbewegung                | -           | Bestandsbewegung, Materialbewegung                                        | Jede Zu- oder Abgangsbuchung bzw. Umlagerung eines Teils im Lager.                                                                      | Materialwirtschaft |
-| Lagerbewegungsart            | -           | Bewegungsart, Buchungsart                                                 | Klassifizierung einer Lagerbewegung (z. B. Umlagerung, Verschrotten).                                                                   | Materialwirtschaft |
+| Lagerbewegungsart            | -           | Bewegungsart, Buchungsart                                                 | Klassifizierung einer Lagerbewegung nach Art der Buchung.                                                                                | Materialwirtschaft |
 | Lagerort                     | -           | Lagerplatz, Storage Location                                              | Physisch oder logisch definierter Ort im Lager.                                                                                          | Materialwirtschaft |
 | Laufkarte                    | -           | Auftragsdokument, Fertigungskarte                                         | Dokument mit QR-Code zur Identifikation eines technischen Auftrags.                                                                      | Technik                    |
 | Liegezeit                    | -           | Wartezeit                                                                 | Zeit, in der Material zwischen Arbeitsgängen auf Weiterbearbeitung wartet.                                                               | Technik                    |
 | Make-or-Buy                  | MoB         | Eigen- oder Fremdfertigung                                                | Strategische Entscheidung: intern fertigen oder extern beschaffen.                                                                       | Technik                    |
 | Material ausfassen           | -           | Material entnehmen, Kommissionieren                                       | MDE-gestützte Entnahme von Material aus dem Lager.                                                                                       | Materialwirtschaft |
-| MDE-App                      | -           | Scanner-App, Lager-App, Mobile ERP-App                                    | Android-App für materialwirtschaftliche Transaktionen in SIVAS.ERP.                                                                      | Materialwirtschaft |
+| MDE-App                      | -           | Scanner-App, Lager-App, Mobile ERP-App                                    | Mobile App für materialwirtschaftliche Transaktionen in SIVAS.ERP.                                                                       | Materialwirtschaft |
 | Merkmal                      | -           | Attribut, Eigenschaft                                                     | Erkennbare Eigenschaft, die eine Sache von anderen unterscheidet.                                                                        | Technik                    |
 | Merkmalsausprägung           | -           | Ausprägung, Merkmalswert                                                  | Spezifischer Wert, den ein Merkmal annehmen kann.                                                                                        | Technik                    |
 | Positionsmenge               | -           | Menge                                                                     |                                                                                                                                          |                            |
@@ -164,7 +164,7 @@ Die folgende Tabelle hilft dir, Begriffe aus der Anfrage semantisch einzuordnen.
 | Serviceeinsatz               | -           | Montageeinsatz                                                            | Geplanter Außeneinsatz, bei dem Servicemitarbeiter Leistungen beim Kunden erbringen.                                                     | Service                    |
 | Serviceticket                | -           | Ticket, Supportanfrage, Incident, Servicefall                             | Dokumentierte Anfrage zur Bearbeitung eines Problems durch den Support.                                                                  | Service                    |
 | SIVAS                        | -           | SIVAS.ERP, ERP                                                            |                                                                                                                                          |                            |
-| Sofortabgang                 | -           | Direktentnahme, automatischer Abgang                                      | Automatische Entnahmebuchung bei Lagerzugang.                                                                                            | Materialwirtschaft |
+| Sofortabgang                 | -           | Direktentnahme, automatischer Abgang                                      | Begriff aus der Materialwirtschaft im Zusammenhang mit Fehlteilen und Lagerzugängen.                                                     | Materialwirtschaft |
 | Sperrlager                   | -           | Quarantänelager                                                           | Lagerort für gesperrte Teile.                                                                                                            | Materialwirtschaft |
 | Stammarbeitsplan             | -           | Musterarbeitsplan, Referenzarbeitsplan                                    |                                                                                                                                          | Technik                    |
 | Status                       | -           | Zustand, Stadium, Prozessschritt                                          |                                                                                                                                          |                            |
@@ -187,58 +187,6 @@ Die folgende Tabelle hilft dir, Begriffe aus der Anfrage semantisch einzuordnen.
 | Wareneingang                 | WE          | Goods Receipt, Gütereingang, Materialeingang                              | Buchung des Zugangs bestellter Teile ins ERP.                                                                                            | Materialwirtschaft |
 | Wechselkurs                  | -           | Währungskurs                                                              | Preis, zu dem eine Währung in eine andere umgetauscht wird.                                                                              | Vertrieb                   |
 | Workflow-Meldung             | WF-Meldung  | Automatisierte Nachricht, Prozessbenachrichtigung, Workflow-Event         | Mitteilung im Rahmen eines automatisierten Workflows innerhalb eines IT-Systems.                                                         |                            |
-
----
-
-# Beispiele
-
-Beispiel 1
-Frage: Wie buche ich einen Wareneingang?
-Kategorie: Materialwirtschaft
-
-Beispiel 2
-Frage: Wie lege ich einen Lieferanten an?
-Kategorie: Materialwirtschaft
-
-Beispiel 3
-Frage: Wie erstelle ich ein Serviceticket?
-Kategorie: Service
-
-Beispiel 4
-Frage: Wie plane ich einen Serviceeinsatz?
-Kategorie: Service
-
-Beispiel 5
-Frage: Wie ändere ich einen Arbeitsplan?
-Kategorie: Technik
-
-Beispiel 6
-Frage: Wie füge ich einen Arbeitsgang hinzu?
-Kategorie: Technik
-
-Beispiel 7
-Frage: Wie erstelle ich ein Angebot?
-Kategorie: Vertrieb
-
-Beispiel 8
-Frage: Wie bearbeite ich einen Kundenauftrag?
-Kategorie: Vertrieb
-
-Beispiel 9
-Frage: Wie buche ich eine Lagerumlagerung zwischen zwei Lagerorten?
-Kategorie: Materialwirtschaft
-
-Beispiel 10
-Frage: Wo finde ich den Bestellwunsch für ein fehlendes Teil?
-Kategorie: Materialwirtschaft
-
-Beispiel 11
-Frage: Wie erfasse ich einen Wareneingang für eine Bestellung?
-Kategorie: Materialwirtschaft
-
-Beispiel 12
-Frage: Wie lege ich eine Reservierung für einen technischen Auftrag an?
-Kategorie: Materialwirtschaft
 
 ---
 
