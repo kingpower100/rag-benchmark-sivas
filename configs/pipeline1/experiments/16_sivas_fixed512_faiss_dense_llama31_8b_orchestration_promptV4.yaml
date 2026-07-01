@@ -1,0 +1,7 @@
+extends: "14_sivas_fixed512_faiss_dense_qwen25_promptV4.yaml"
+
+experiment:
+  experiment_id: "16_sivas_fixed512_faiss_dense_llama31_8b_orchestration_promptV4"
+
+orchestration:
+  model_name: "llama3.1:8b"

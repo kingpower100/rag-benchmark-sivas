@@ -1,0 +1,7 @@
+extends: "14_sivas_fixed512_faiss_dense_qwen25_promptV4.yaml"
+
+experiment:
+  experiment_id: "15_sivas_fixed512_faiss_dense_qwen25_orchestration_promptV4"
+
+orchestration:
+  model_name: "qwen2.5:7b"

@@ -10,19 +10,31 @@
 - Gebe das Ergebnis als `cleaned_question` zurück.
 - Gebe **nur dann** einen leeren String zurück, wenn die Frage bereits auf Deutsch ist **und** Rechtschreibung, Grammatik **und** Groß-/Kleinschreibung vollständig korrekt sind.
 
-## 2. Ermitteln der Kategorie.
-- Nutze ausschließlich die Properties `ModuleName`, `ProgramName`, `Role`, `RoleDescription`, `Frage` aus der Anfrage.
-### Entscheidungsregeln
-1. Ermittle zunächst alle relevanten Fachbegriffe aus der Anfrage.
-2. Vergleiche diese mit den Begriffen und Synonymen der folgenden Tabelle.
-3. Berücksichtige zusätzlich `ModuleName`, `ProgramName`, `Role` und `RoleDescription` als Kontext.
-4. Wähle genau einen Wert aus der Liste `CategoryNames`, wenn die verfügbaren Informationen eindeutig auf eine Kategorie hinweisen.
-5. Sind mehrere Kategorien gleichermaßen plausibel oder reichen die Informationen nicht für eine eindeutige Zuordnung aus, gib einen leeren String zurück.
-6. Nutze ausschließlich die bereitgestellten Informationen und leite keine zusätzlichen Annahmen ab.
-- Die folgende Tabelle hilft dir, Begriffe aus der Anfrage semantisch einzuordnen. Sie dient **nur zur Orientierung**.
-- Wähle anhand dieser Informationen genau einen Wert aus der Liste `CategoryNames` und gebe ihn als name zurück.
-- Der zurückgegebene Wert muss exakt so geschrieben sein wie in CategoryNames. Jede andere Ausgabe ist ungültig.
-- Wenn du keinen eindeutigen Treffer findest, gebe einen leeren String zurück.
+## 2. Ermitteln der Kategorie
+
+Ziel:
+Ordne die Anfrage einer Kategorie aus `CategoryNames` zu. Nutze die bereitgestellten Informationen maximal aus.
+
+Entscheidungsregeln
+
+1. Extrahiere alle relevanten Fachbegriffe aus:
+   - Frage
+   - ModuleName
+   - ProgramName
+   - Role
+   - RoleDescription
+
+2. Vergleiche diese mit der Begriffstabelle.
+
+3. Wähle die Kategorie mit der höchsten semantischen Übereinstimmung.
+
+4. Nutze den Kontext aus ModuleName, ProgramName, Role und RoleDescription aktiv, wenn die Frage allein nicht eindeutig ist.
+
+5. Gib nur dann einen leeren String zurück, wenn nach Auswertung aller verfügbaren Informationen keine Kategorie eindeutig wahrscheinlicher ist als alle anderen.
+
+6. Vermeide unnötige leere Rückgaben. Wenn eine Kategorie eindeutig am besten passt, gib diese zurück.
+
+7. Gib ausschließlich einen Namen aus CategoryNames zurück.
 
 | Korrekter Begriff            | Abkürzungen | Synonyme                                                 | Beschreibung                                             |
 | -------------------------------- | --------------- | ------------------------------------------------------------ | ------------------------------------------------------------ |
