@@ -4,7 +4,14 @@ from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator
 
 from src.pipeline1.config_loader import load_pipeline_config_payload
 
-FIXED_ORCHESTRATION_MODEL = "mistral-small"
+DEFAULT_ORCHESTRATION_MODEL = "mistral-small"
+ALLOWED_ORCHESTRATION_MODELS = frozenset(
+    {
+        "mistral-small",
+        "qwen2.5:7b",
+        "llama3.1:8b",
+    }
+)
 
 
 class StrictConfigModel(BaseModel):
@@ -144,7 +151,7 @@ class RerankerConfig(StrictConfigModel):
 
 class OrchestrationConfig(StrictConfigModel):
     provider: Literal["ollama"] = "ollama"
-    model_name: str = Field(default=FIXED_ORCHESTRATION_MODEL, validation_alias=AliasChoices("model_name", "model"))
+    model_name: str = Field(default=DEFAULT_ORCHESTRATION_MODEL, validation_alias=AliasChoices("model_name", "model"))
     base_url: str = "http://localhost:11434"
     fixed: bool = True
     tasks: list[Literal["clean_question", "detect_category"]] = Field(
@@ -165,9 +172,10 @@ class OrchestrationConfig(StrictConfigModel):
 
     @field_validator("model_name")
     @classmethod
-    def ensure_fixed_model(cls, value: str) -> str:
-        if value != FIXED_ORCHESTRATION_MODEL:
-            raise ValueError(f"Orchestration model is fixed across experiments: {FIXED_ORCHESTRATION_MODEL}")
+    def ensure_allowed_model(cls, value: str) -> str:
+        if value not in ALLOWED_ORCHESTRATION_MODELS:
+            allowed = ", ".join(sorted(ALLOWED_ORCHESTRATION_MODELS))
+            raise ValueError(f"Unsupported orchestration.model_name '{value}'. Allowed values: {allowed}")
         return value
 
     @field_validator("tasks")

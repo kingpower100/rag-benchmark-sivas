@@ -5,6 +5,22 @@ from src.pipeline1.schemas.config_schema import PipelineConfig
 from src.pipeline2.schemas.eval_config_schema import EvalConfig
 
 
+def _minimal_pipeline1_payload(orchestration_model: str) -> dict:
+    return {
+        "experiment": {"experiment_id": "exp", "output_dir": "runs"},
+        "data": {"documents_path": "documents.jsonl", "questions_path": "questions.jsonl"},
+        "chunking": {"strategy": "fixed_word", "chunk_size": 10, "chunk_overlap": 0},
+        "embedding": {"provider": "sentence_transformers", "model_name": "fake"},
+        "index": {"type": "faiss", "metric": "cosine"},
+        "retrieval": {"retriever_type": "dense", "top_k": 1, "fetch_k": 1},
+        "reranker": {"enabled": False},
+        "orchestration": {"model_name": orchestration_model},
+        "generation": {"provider": "ollama", "model_name": "fake", "system_prompt": "Use context."},
+        "telemetry": {"estimate_cost": False},
+        "runtime": {"resume": False, "overwrite": True},
+    }
+
+
 def test_pipeline1_sivas_baseline_config_loads():
     cfg = PipelineConfig.from_yaml("configs/pipeline1/experiments/11_sivas_fixed512_faiss_dense_mistralsmall_baseline.yaml")
 
@@ -65,6 +81,18 @@ def test_pipeline1_unknown_config_fields_fail():
 
     with pytest.raises(ValidationError, match="fake_knob"):
         PipelineConfig.model_validate(payload)
+
+
+@pytest.mark.parametrize("model_name", ["mistral-small", "qwen2.5:7b", "llama3.1:8b"])
+def test_pipeline1_orchestration_model_allowlist_accepts_phase2_models(model_name):
+    cfg = PipelineConfig.model_validate(_minimal_pipeline1_payload(model_name))
+
+    assert cfg.orchestration.model_name == model_name
+
+
+def test_pipeline1_orchestration_model_allowlist_rejects_invalid_model():
+    with pytest.raises(ValidationError, match="Unsupported orchestration.model_name 'invalid-model'"):
+        PipelineConfig.model_validate(_minimal_pipeline1_payload("invalid-model"))
 
 
 def test_pipeline2_unknown_config_fields_fail():
