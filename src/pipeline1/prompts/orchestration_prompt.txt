@@ -1,6 +1,13 @@
 # Deine Aufgaben
 1. Bereinigen der gestellten Frage.
 2. Ermitteln der Kategorie.
+# Primäres Ziel
+
+Deine wichtigste Aufgabe ist die korrekte Zuordnung jeder Anfrage zu genau einer Kategorie aus `CategoryNames`.
+
+Versuche immer zuerst, die fachlich passendste Kategorie zu bestimmen.
+
+Eine leere Kategorie ist ausschließlich dann zulässig, wenn nach vollständiger Auswertung aller verfügbaren Informationen keine fachlich plausible Kategorie aus `CategoryNames` existiert.
 
 # Workflow
 ## 1. Bereinigen der gestellten Frage.
@@ -24,17 +31,28 @@ Entscheidungsregeln
    - Role
    - RoleDescription
 
-2. Vergleiche diese mit der Begriffstabelle.
+2. Vergleiche diese mit der gesamten Begriffstabelle.
 
-3. Wähle die Kategorie mit der höchsten semantischen Übereinstimmung.
+3. Berücksichtige dabei:
+   - Korrekter Begriff
+   - Abkürzungen
+   - Synonyme
+   - Beschreibungen
+   - semantische Ähnlichkeit
 
-4. Nutze den Kontext aus ModuleName, ProgramName, Role und RoleDescription aktiv, wenn die Frage allein nicht eindeutig ist.
+4. Nutze den gesamten verfügbaren Kontext aktiv.
 
-5. Gib nur dann einen leeren String zurück, wenn nach Auswertung aller verfügbaren Informationen keine Kategorie eindeutig wahrscheinlicher ist als alle anderen.
+5. Wähle die Kategorie mit der höchsten fachlichen und semantischen Übereinstimmung.
 
-6. Vermeide unnötige leere Rückgaben. Wenn eine Kategorie eindeutig am besten passt, gib diese zurück.
+6. Falls mehrere Kategorien möglich erscheinen, wähle die spezifischste und fachlich passendste Kategorie.
 
-7. Gib ausschließlich einen Namen aus CategoryNames zurück.
+7. Verlange keine absolute Sicherheit. Wähle die wahrscheinlichste passende Kategorie, sofern sie fachlich plausibel ist.
+
+8. Gib nur dann einen leeren String zurück, wenn nach vollständiger Auswertung aller Informationen keine Kategorie aus `CategoryNames` fachlich plausibel ist.
+
+9. Kurze, unvollständige oder mehrdeutige Fragen sind kein ausreichender Grund für eine leere Kategorie.
+
+10. Gib ausschließlich einen Namen aus `CategoryNames` zurück.
 
 | Korrekter Begriff            | Abkürzungen | Synonyme                                                 | Beschreibung                                             |
 | -------------------------------- | --------------- | ------------------------------------------------------------ | ------------------------------------------------------------ |
@@ -103,6 +121,17 @@ Entscheidungsregeln
 | Wareneingang                     | WE              | Goods Receipt, Gütereingang,  Materialeingang                | Buchung des Zugangs von bestellten Teilen ins  ERP, Auslöser für Transportbelege und ggf.  QS-Vorgänge. |
 | Wechselkurs                      |                 | Währungskurs                                                 | Ein Währungskurs (auch Wechselkurs genannt) ist der Preis, zu  dem eine Währung in eine andere umgetauscht werden kann. |
 | Workflow-Meldung                 | WF-Meldung      | Automatisierte Nachricht, Prozessbenachrichtigung,  Arbeitsfluss-Mitteilung, Systemevent, Prozess-Alert, Workflow-Event | Eine Workflow-Meldung ist eine Mitteilung oder  Benachrichtigung, die im Rahmen eines automatisierten Workflows innerhalb  eines IT-Systems oder einer Software ausgelöst wird. Sie informiert  Beteiligte über den Status, eine Aktion oder einen nächsten Schritt in einem  definierten Arbeitsablauf. |
+Nutze die Begriffstabelle aktiv.
+
+Berücksichtige nicht nur exakte Worttreffer, sondern ebenfalls:
+
+- Synonyme
+- Abkürzungen
+- verwandte ERP-Fachbegriffe
+- fachliche Beschreibungen
+- semantische Zusammenhänge
+
+Eine Anfrage kann auch dann zu einer Kategorie gehören, wenn der exakte Begriff nicht vorkommt.
 ## WICHTIG – Ausgabeformat
 
 Die Antwort wird **direkt von einem JSON-Parser (`json.loads()`) verarbeitet.**
