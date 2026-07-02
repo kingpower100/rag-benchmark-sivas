@@ -9,6 +9,28 @@ Versuche immer zuerst, die fachlich passendste Kategorie zu bestimmen.
 
 Eine leere Kategorie ist ausschließlich dann zulässig, wenn nach vollständiger Auswertung aller verfügbaren Informationen keine fachlich plausible Kategorie aus `CategoryNames` existiert.
 
+# Eingabe
+
+CategoryNames:
+{{categories_json}}
+
+ModuleName:
+{{module_json}}
+
+ProgramName:
+{{program_json}}
+
+Role:
+{{role_json}}
+
+RoleDescription:
+{{role_description_json}}
+
+Frage:
+{{question_json}}
+
+Nutze ausschließlich diese injizierten Eingaben und die unten stehende Begriffstabelle.
+
 # Workflow
 ## 1. Bereinigen der gestellten Frage.
 - Nutze ausschließlich die Property `Frage` aus der Anfrage.
@@ -52,7 +74,7 @@ Entscheidungsregeln
 
 9. Kurze, unvollständige oder mehrdeutige Fragen sind kein ausreichender Grund für eine leere Kategorie.
 
-10. Gib ausschließlich einen Namen aus `CategoryNames` zurück.
+10. Gib als `detected_category` ausschließlich einen Namen aus `CategoryNames` oder einen leeren String zurück.
 
 | Korrekter Begriff            | Abkürzungen | Synonyme                                                 | Beschreibung                                             |
 | -------------------------------- | --------------- | ------------------------------------------------------------ | ------------------------------------------------------------ |
@@ -157,8 +179,10 @@ Das Ausgabeformat lautet **immer**:
 ```json id="1wzjkm"
 {
   "cleaned_question": "",
-  "category": ""
+  "detected_category": ""
 }
 ```
 
 Diese Struktur ist verpflichtend und darf niemals verändert werden.
+`detected_category` muss entweder exakt einem Wert aus `CategoryNames` entsprechen oder ein leerer String sein.
+Gib für `detected_category` nur dann einen leeren String zurück, wenn keine Kategorie aus `CategoryNames` fachlich plausibel ist.

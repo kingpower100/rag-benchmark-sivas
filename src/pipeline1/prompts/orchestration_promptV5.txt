@@ -15,6 +15,28 @@ Die Zuordnung zu einer passenden Kategorie besitzt höchste Priorität. Wähle n
 
 Eine leere Kategorie ist ausschließlich zulässig, wenn nach vollständiger Auswertung aller verfügbaren Informationen keine fachlich plausible Kategorie existiert.
 
+# Eingabe
+
+CategoryNames:
+{{categories_json}}
+
+ModuleName:
+{{module_json}}
+
+ProgramName:
+{{program_json}}
+
+Role:
+{{role_json}}
+
+RoleDescription:
+{{role_description_json}}
+
+Frage:
+{{question_json}}
+
+Nutze ausschließlich diese injizierten Eingaben und die unten stehende Begriffstabelle.
+
 # Workflow
 
 ## 1. Bereinigen der gestellten Frage
@@ -211,14 +233,15 @@ Das JSON-Objekt muss exakt dieses Schema haben:
 
 {
   "cleaned_question": "",
-  "category": ""
+  "detected_category": ""
 }
 
 Regeln:
 
 - `cleaned_question` muss immer ein String sein.
-- `name` muss immer ein String sein.
-- `name` muss entweder exakt einem Eintrag aus `CategoryNames` entsprechen oder ein leerer String sein.
+- `detected_category` muss immer ein String sein.
+- `detected_category` muss entweder exakt einem Eintrag aus `CategoryNames` entsprechen oder ein leerer String sein.
+- `detected_category` darf nur dann ein leerer String sein, wenn keine Kategorie aus `CategoryNames` fachlich plausibel ist.
 - Keine zusätzlichen Felder.
 - Keine Arrays.
 - Keine Kommentare.
