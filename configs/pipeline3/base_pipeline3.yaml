@@ -1,0 +1,59 @@
+pipeline3:
+  run_id: "pipeline3_baseline"
+  output_dir: "data/eval/runs/pipeline3"
+  overwrite: true
+  save_csv: true
+  version: "1.0.0"
+  prompt_version: "v2"
+
+inputs:
+  pipeline1_results_path: "data/runs/pipeline1/11_sivas_fixed512_faiss_dense_mistralsmall_baseline/results.jsonl"
+  questions_path: "data/raw/questions_fixed.jsonl"
+  qa_path: "data/raw/qa_ground_truth_fixed.jsonl"
+  gold_contexts_path: "data/raw/qa_ground_truth_fixed.jsonl"
+
+judge:
+  model: "qwen2.5:14b"
+  base_url: "http://localhost:11434"
+  temperature: 0.0
+  max_retries: 3
+  timeout_seconds: 120
+  prompt_version: "v2"
+
+ragas:
+  enabled: true
+  llm_base_url: "http://localhost:11434/v1"
+  llm_model: "qwen2.5:14b"
+  llm_temperature: 0.0
+  embeddings_model: "intfloat/multilingual-e5-large"
+  timeout_seconds: 300
+  metrics:
+    faithfulness: true
+    answer_relevancy: true
+    context_precision: true
+    context_recall: true
+
+llm_judge:
+  enabled: true
+  metrics:
+    correctness: true
+    faithfulness: true
+    relevancy: true
+    completeness: true
+    hallucination: true
+    context_relevance: true
+  scoring:
+    scale_min: 0
+    scale_max: 5
+  weights:
+    correctness: 0.25
+    faithfulness: 0.20
+    relevancy: 0.20
+    completeness: 0.15
+    hallucination: 0.10
+    context_relevance: 0.10
+
+runtime:
+  parallel_workers: 1
+  batch_size: 10
+  save_raw_outputs: true

@@ -1,0 +1,106 @@
+from __future__ import annotations
+
+import pytest
+
+from src.pipeline3.aggregation.summarizer import summarize_semantic_metrics
+
+
+def _make_row(qid="q1", **kwargs):
+    defaults = {
+        "question_id": qid,
+        "judge_success": True,
+        "judge_correctness": 4,
+        "judge_faithfulness": 5,
+        "judge_relevancy": 4,
+        "judge_completeness": 3,
+        "judge_hallucination": 1,
+        "judge_context_relevance": 4,
+        "judge_overall_score": 4.0,
+        "ragas_faithfulness": 0.8,
+        "ragas_context_precision": 0.7,
+    }
+    defaults.update(kwargs)
+    return defaults
+
+
+def test_empty_rows_returns_zero_count():
+    summary = summarize_semantic_metrics([])
+    assert summary["n_questions"] == 0
+
+
+def test_single_row_means_equal_values():
+    row = _make_row()
+    summary = summarize_semantic_metrics([row])
+    assert summary["n_questions"] == 1
+    assert summary["mean_judge_correctness"] == pytest.approx(4.0)
+    assert summary["mean_ragas_faithfulness"] == pytest.approx(0.8)
+
+
+def test_mean_computed_over_multiple_rows():
+    rows = [
+        _make_row("q1", judge_correctness=4),
+        _make_row("q2", judge_correctness=2),
+    ]
+    summary = summarize_semantic_metrics(rows)
+    assert summary["mean_judge_correctness"] == pytest.approx(3.0)
+
+
+def test_none_values_excluded_from_mean():
+    rows = [
+        _make_row("q1", ragas_faithfulness=0.8),
+        _make_row("q2", ragas_faithfulness=None),
+    ]
+    summary = summarize_semantic_metrics(rows)
+    assert summary["mean_ragas_faithfulness"] == pytest.approx(0.8)
+
+
+def test_all_none_values_give_none_mean():
+    rows = [
+        _make_row("q1", ragas_faithfulness=None),
+        _make_row("q2", ragas_faithfulness=None),
+    ]
+    summary = summarize_semantic_metrics(rows)
+    assert summary.get("mean_ragas_faithfulness") is None
+
+
+def test_judge_success_rate_computed():
+    rows = [
+        _make_row("q1", judge_success=True),
+        _make_row("q2", judge_success=False),
+    ]
+    summary = summarize_semantic_metrics(rows)
+    assert summary["judge_success_rate"] == pytest.approx(0.5)
+    assert summary["judge_success_count"] == 1
+    assert summary["judge_failure_count"] == 1
+
+
+def test_all_judge_failures():
+    rows = [
+        _make_row("q1", judge_success=False),
+        _make_row("q2", judge_success=False),
+    ]
+    summary = summarize_semantic_metrics(rows)
+    assert summary["judge_success_rate"] == pytest.approx(0.0)
+    assert summary["judge_failure_count"] == 2
+
+
+def test_all_judge_successes():
+    rows = [_make_row("q1"), _make_row("q2")]
+    summary = summarize_semantic_metrics(rows)
+    assert summary["judge_success_rate"] == pytest.approx(1.0)
+    assert summary["judge_failure_count"] == 0
+
+
+def test_mean_judge_overall_score():
+    rows = [
+        _make_row("q1", judge_overall_score=3.0),
+        _make_row("q2", judge_overall_score=5.0),
+    ]
+    summary = summarize_semantic_metrics(rows)
+    assert summary["mean_judge_overall_score"] == pytest.approx(4.0)
+
+
+def test_n_questions_matches_row_count():
+    rows = [_make_row(f"q{i}") for i in range(7)]
+    summary = summarize_semantic_metrics(rows)
+    assert summary["n_questions"] == 7
