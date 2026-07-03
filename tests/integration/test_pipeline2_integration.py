@@ -12,9 +12,17 @@ class FakeBertScorer:
 
     def score(self, generated_answer: str, ground_truth_answer: str) -> dict[str, float]:
         if not generated_answer.strip() or not ground_truth_answer.strip():
-            return {"bertscore_precision": 0.0, "bertscore_recall": 0.0, "bertscore_f1": 0.0}
+            return {
+                "official_bertscore_precision": 0.0,
+                "official_bertscore_recall": 0.0,
+                "official_bertscore_f1": 0.0,
+            }
         value = 1.0 if generated_answer.strip() == ground_truth_answer.strip() else 0.25
-        return {"bertscore_precision": value, "bertscore_recall": value, "bertscore_f1": value}
+        return {
+            "official_bertscore_precision": value,
+            "official_bertscore_recall": value,
+            "official_bertscore_f1": value,
+        }
 
 
 def _write_jsonl(path: Path, rows: list[dict]) -> None:
@@ -82,6 +90,7 @@ embedding_similarity:
   provider: deterministic_hash
   model_name: unit-test
   dimensions: 64
+  offline_mode: true
 """,
             encoding="utf-8",
         )
@@ -95,21 +104,21 @@ embedding_similarity:
         assert row["context_precision_at_3"] == 0.5
         assert row["mrr_at_3"] == 0.5
         assert row["raw_duplicate_rate"] == 1 / 3
-        assert row["bertscore_precision"] == 1.0
-        assert row["bertscore_recall"] == 1.0
-        assert row["bertscore_f1"] == 1.0
-        assert row["bow_token_overlap_similarity"] is not None
+        assert row["official_bertscore_precision"] == 1.0
+        assert row["official_bertscore_recall"] == 1.0
+        assert row["official_bertscore_f1"] == 1.0
+        assert row["hashed_embedding_cosine_similarity"] is not None
         assert row["embedding_similarity"] is None
         assert row["non_empty_answer_rate"] == 1.0
 
         summary = json.loads((run_dir / "summary_metrics.json").read_text(encoding="utf-8"))
         summary_row = summary["summary_by_experiment"][0]
-        assert summary_row["mean_bertscore_precision"] == 1.0
-        assert summary_row["mean_bertscore_recall"] == 1.0
-        assert summary_row["mean_bertscore_f1"] == 1.0
+        assert summary_row["mean_official_bertscore_precision"] == 1.0
+        assert summary_row["mean_official_bertscore_recall"] == 1.0
+        assert summary_row["mean_official_bertscore_f1"] == 1.0
         assert summary["metric_priority"]["primary_metrics"] == [
-            "bertscore_f1",
-            "embedding_similarity",
+            "official_bertscore_f1",
+            "hashed_embedding_cosine_similarity",
             "category_accuracy",
             "category_coverage",
         ]
@@ -119,7 +128,7 @@ embedding_similarity:
         assert manifest["row_counts"]["pipeline1_results"] == 1
         assert manifest["metric_runtime"]["bert_score"]["model_name"] == "fake-bert"
         assert manifest["metric_runtime"]["embedding_similarity"]["provider"] == "deterministic_hash"
-        assert manifest["metric_priority"]["primary_metrics"][0] == "bertscore_f1"
+        assert manifest["metric_priority"]["primary_metrics"][0] == "official_bertscore_f1"
 
         audit = json.loads((run_dir / "audit_report.json").read_text(encoding="utf-8"))
         assert audit["metric_runtime"]["bert_score"]["device_used"] == "cpu"
@@ -158,6 +167,9 @@ evaluation:
 inputs:
   rag_outputs:
     - "{(workspace / 'missing_results.jsonl').as_posix()}"
+embedding_similarity:
+  provider: deterministic_hash
+  offline_mode: true
 """,
             encoding="utf-8",
         )
@@ -223,6 +235,7 @@ embedding_similarity:
   provider: deterministic_hash
   model_name: unit-test
   dimensions: 64
+  offline_mode: true
 """,
             encoding="utf-8",
         )
@@ -234,7 +247,7 @@ embedding_similarity:
         assert row["answer_match_status"] == "match"
         assert row["retrieval_eval_ids"] == ["sivas_manual_01.md"]
         assert row["hit_at_1"] == 1.0
-        assert row["bertscore_f1"] == 1.0
+        assert row["official_bertscore_f1"] == 1.0
     finally:
         if workspace.exists():
             shutil.rmtree(workspace)

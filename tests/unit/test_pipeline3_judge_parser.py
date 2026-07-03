@@ -46,6 +46,22 @@ def test_missing_key_fails():
     assert "correctness" in result.error
 
 
+def test_extra_key_fails():
+    data = json.loads(_VALID_RESPONSE)
+    data["unexpected"] = 1
+    result = parse_judge_response(json.dumps(data))
+    assert result.success is False
+    assert "Unexpected keys" in result.error
+
+
+def test_wrong_key_name_fails_as_missing_and_extra():
+    data = json.loads(_VALID_RESPONSE)
+    data["context_relevancy"] = data.pop("context_relevance")
+    result = parse_judge_response(json.dumps(data))
+    assert result.success is False
+    assert "context_relevance" in result.error
+
+
 def test_out_of_range_score_fails():
     data = json.loads(_VALID_RESPONSE)
     data["correctness"] = 10

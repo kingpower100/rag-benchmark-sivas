@@ -45,11 +45,14 @@ class SentenceTransformerAnswerEmbedder:
     metric_name: str = "embedding_similarity"
     is_semantic: bool = True
 
-    def __init__(self, model_name: str) -> None:
+    def __init__(self, model_name: str, device: str = "cuda", require_cuda: bool = True) -> None:
         from sentence_transformers import SentenceTransformer
 
         self.model_name = model_name
-        self.model = SentenceTransformer(model_name)
+        self.requested_device = device
+        self.require_cuda = require_cuda
+        self._validate_device_selection(device)
+        self.model = SentenceTransformer(model_name, device=device)
         self.device = str(getattr(self.model, "device", "unknown"))
 
     def encode(self, text: str) -> list[float]:
@@ -57,10 +60,35 @@ class SentenceTransformerAnswerEmbedder:
         return self.model.encode([text or ""], normalize_embeddings=True)[0].tolist()
 
 
+    def _validate_device_selection(self, device: str) -> None:
+        requested_cuda = str(device).startswith("cuda")
+        if self.require_cuda and not requested_cuda:
+            raise RuntimeError(
+                "embedding_similarity.require_cuda=true requires embedding_similarity.device to be cuda or cuda:N"
+            )
+        if requested_cuda or self.require_cuda:
+            try:
+                import torch
+            except Exception as ex:
+                raise RuntimeError(
+                    f"embedding similarity requires CUDA but torch could not be imported: {ex}"
+                ) from ex
+            if not torch.cuda.is_available() or torch.cuda.device_count() == 0:
+                raise RuntimeError(
+                    "embedding similarity requested CUDA but torch reports no available CUDA device"
+                )
+
+
 @lru_cache(maxsize=8)
-def build_answer_embedder(provider: str, model_name: str, dimensions: int) -> AnswerEmbedder:
+def build_answer_embedder(
+    provider: str,
+    model_name: str,
+    dimensions: int,
+    device: str = "cuda",
+    require_cuda: bool = True,
+) -> AnswerEmbedder:
     if provider == "sentence_transformers":
-        return SentenceTransformerAnswerEmbedder(model_name)
+        return SentenceTransformerAnswerEmbedder(model_name, device=device, require_cuda=require_cuda)
     if provider == "deterministic_hash":
         return DeterministicHashEmbedder(model_name=model_name, dimensions=dimensions)
     raise ValueError(f"Unsupported embedding similarity provider: {provider!r}")
@@ -91,6 +119,8 @@ def embedding_model_metadata(
             _package_version("sentence-transformers") if provider == "sentence_transformers" else "n/a"
         ),
         "model_revision": "unknown",
+        "requested_device": str(getattr(embedder, "requested_device", "unknown")) if embedder is not None else "unknown",
+        "require_cuda": bool(getattr(embedder, "require_cuda", False)) if embedder is not None else False,
         "device_used": str(getattr(embedder, "device", "unknown")) if embedder is not None else "unknown",
     }
 

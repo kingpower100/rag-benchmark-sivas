@@ -64,6 +64,8 @@ class EmbeddingSimilarityConfig(StrictEvalConfigModel):
     model_name: str = "hashing-bow-v1"
     dimensions: int = Field(default=256, gt=0)
     enabled: bool = True
+    device: str = "cuda"
+    require_cuda: bool = True
     # Set offline_mode=true to explicitly allow deterministic_hash in non-production runs.
     # EvaluationOrchestrator.run() raises if enabled=True, provider=deterministic_hash, offline_mode=False.
     offline_mode: bool = False

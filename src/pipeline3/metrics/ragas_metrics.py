@@ -66,6 +66,8 @@ class RagasEvaluator:
         try:
             embeddings = self._build_embeddings()
         except Exception as ex:
+            if self._cfg.require_cuda:
+                raise
             logger.warning(
                 "Could not build RAGAS embeddings, AnswerRelevancy will be skipped: %s", ex
             )
@@ -149,7 +151,9 @@ class RagasEvaluator:
         from sentence_transformers import SentenceTransformer
         from ragas.embeddings import LangchainEmbeddingsWrapper
 
-        model = SentenceTransformer(self._cfg.embeddings_model)
+        device = str(self._cfg.embeddings_device)
+        self._validate_embedding_device(device)
+        model = SentenceTransformer(self._cfg.embeddings_model, device=device)
 
         class _STAdapter:
             def __init__(self, _model: Any) -> None:
@@ -162,6 +166,24 @@ class RagasEvaluator:
                 return self._m.encode([text], show_progress_bar=False)[0].tolist()
 
         return LangchainEmbeddingsWrapper(_STAdapter(model))
+
+    def _validate_embedding_device(self, device: str) -> None:
+        requested_cuda = device.startswith("cuda")
+        if self._cfg.require_cuda and not requested_cuda:
+            raise RuntimeError(
+                "ragas.require_cuda=true requires ragas.embeddings_device to be cuda or cuda:N"
+            )
+        if requested_cuda or self._cfg.require_cuda:
+            try:
+                import torch
+            except Exception as ex:
+                raise RuntimeError(
+                    f"ragas embeddings require CUDA but torch could not be imported: {ex}"
+                ) from ex
+            if not torch.cuda.is_available() or torch.cuda.device_count() == 0:
+                raise RuntimeError(
+                    "ragas embeddings requested CUDA but torch reports no available CUDA device"
+                )
 
     def _build_metrics(self, llm: Any, embeddings: Any) -> list[Any]:
         metrics: list[Any] = []

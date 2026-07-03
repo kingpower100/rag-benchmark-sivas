@@ -16,6 +16,6 @@ tiktoken==0.7.0
 requests==2.32.3
 elasticsearch==8.15.1
 pytest==8.3.3
-ragas==0.1.21
+ragas==0.1.22
 datasets==2.21.0
 langchain-openai==0.1.25

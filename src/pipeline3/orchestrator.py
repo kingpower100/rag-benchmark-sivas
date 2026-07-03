@@ -75,6 +75,11 @@ class Pipeline3Orchestrator:
         if ragas_results.skipped:
             reason = ragas_results.error or "disabled by config"
             print(f"       RAGAS skipped: {reason}")
+            if cfg.ragas.enabled and cfg.ragas.fail_on_ragas_error:
+                raise RuntimeError(
+                    "RAGAS evaluation failed or was skipped while "
+                    f"ragas.fail_on_ragas_error=true: {reason}"
+                )
         else:
             print(f"       RAGAS completed with metrics: {ragas_results.enabled_metrics}")
 
@@ -303,6 +308,9 @@ def _build_manifest(
                 k for k, v in cfg.llm_judge.metrics.model_dump().items() if v
             ],
             "enabled_ragas_metrics": ragas_results_enabled,
+            "ragas_embeddings_model": cfg.ragas.embeddings_model,
+            "ragas_embeddings_device": cfg.ragas.embeddings_device,
+            "ragas_require_cuda": cfg.ragas.require_cuda,
             "metric_weights": cfg.llm_judge.weights.model_dump(),
             "evaluation_timestamp_utc": datetime.fromtimestamp(
                 end_time, timezone.utc
@@ -347,6 +355,10 @@ def _build_manifest(
         },
         "ragas_stats": {
             "enabled": cfg.ragas.enabled,
+            "fail_on_ragas_error": cfg.ragas.fail_on_ragas_error,
+            "embeddings_model": cfg.ragas.embeddings_model,
+            "embeddings_device": cfg.ragas.embeddings_device,
+            "require_cuda": cfg.ragas.require_cuda,
             "skipped": ragas_skipped,
             "error": ragas_error,
             "enabled_metrics": ragas_results_enabled,

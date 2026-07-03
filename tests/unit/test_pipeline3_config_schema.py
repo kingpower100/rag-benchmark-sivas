@@ -74,6 +74,13 @@ def test_default_ragas_metrics_all_enabled():
     assert cfg.ragas.metrics.context_recall is True
 
 
+def test_default_ragas_requires_explicit_cuda_and_fail_on_error():
+    cfg = Pipeline3Config.model_validate(_VALID_CONFIG)
+    assert cfg.ragas.embeddings_device == "cuda"
+    assert cfg.ragas.require_cuda is True
+    assert cfg.ragas.fail_on_ragas_error is True
+
+
 def test_default_output_dir():
     cfg = Pipeline3Config.model_validate(_VALID_CONFIG)
     assert cfg.pipeline3.output_dir == "data/eval/runs/pipeline3"

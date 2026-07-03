@@ -246,6 +246,8 @@ class EvaluationOrchestrator:
                 cfg.embedding_similarity.provider,
                 cfg.embedding_similarity.model_name,
                 cfg.embedding_similarity.dimensions,
+                cfg.embedding_similarity.device,
+                cfg.embedding_similarity.require_cuda,
             )
         if not cfg.evaluation.retrieval_only and cfg.bert_score.enabled:
             bert_scorer = build_bert_score_scorer(

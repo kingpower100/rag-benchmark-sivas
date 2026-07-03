@@ -82,6 +82,13 @@ def parse_judge_response(
             error=f"Missing keys in judge response: {sorted(missing)}",
             raw_text=raw_text,
         )
+    extra = set(data.keys()) - ALL_REQUIRED_KEYS
+    if extra:
+        return ParseResult(
+            success=False,
+            error=f"Unexpected keys in judge response: {sorted(extra)}",
+            raw_text=raw_text,
+        )
     for key in REQUIRED_SCORE_KEYS:
         val = data[key]
         if not isinstance(val, (int, float)):

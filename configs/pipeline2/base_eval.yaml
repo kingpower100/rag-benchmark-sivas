@@ -37,6 +37,8 @@ embedding_similarity:
   model_name: intfloat/multilingual-e5-large
   dimensions: 1024
   enabled: true
+  device: cuda
+  require_cuda: true
 bert_score:
   enabled: true
   model_name: bert-base-multilingual-cased
