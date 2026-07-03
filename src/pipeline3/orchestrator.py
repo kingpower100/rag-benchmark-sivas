@@ -219,7 +219,6 @@ def _build_per_question(
             "judge_success": False,
             "judge_correctness": None,
             "judge_faithfulness": None,
-            "judge_relevancy": None,
             "judge_completeness": None,
             "judge_hallucination": None,
             "judge_context_relevance": None,
@@ -230,8 +229,6 @@ def _build_per_question(
             "judge_latency_ms": None,
             "ragas_faithfulness": None,
             "ragas_answer_relevancy": None,
-            "ragas_context_precision": None,
-            "ragas_context_recall": None,
         }
 
         judge_result = judge_by_id.get(qid)
@@ -242,7 +239,6 @@ def _build_per_question(
             output["judge_success"] = True
             output["judge_correctness"] = resp.correctness
             output["judge_faithfulness"] = resp.faithfulness
-            output["judge_relevancy"] = resp.relevancy
             output["judge_completeness"] = resp.completeness
             output["judge_hallucination"] = resp.hallucination
             output["judge_context_relevance"] = resp.context_relevance

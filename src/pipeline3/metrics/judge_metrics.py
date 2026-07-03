@@ -18,7 +18,6 @@ def compute_weighted_overall_score(
     weighted_sum = (
         response.correctness / scale_max * weights.correctness
         + response.faithfulness / scale_max * weights.faithfulness
-        + response.relevancy / scale_max * weights.relevancy
         + response.completeness / scale_max * weights.completeness
         + hallucination_contribution * weights.hallucination
         + response.context_relevance / scale_max * weights.context_relevance
@@ -30,7 +29,6 @@ def enabled_judge_metric_names(metrics_cfg: Any) -> list[str]:
     mapping = {
         "correctness": metrics_cfg.correctness,
         "faithfulness": metrics_cfg.faithfulness,
-        "relevancy": metrics_cfg.relevancy,
         "completeness": metrics_cfg.completeness,
         "hallucination": metrics_cfg.hallucination,
         "context_relevance": metrics_cfg.context_relevance,

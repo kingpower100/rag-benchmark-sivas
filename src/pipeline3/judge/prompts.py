@@ -9,13 +9,13 @@ PROMPT_VERSION = "v2"
 COMBINED_JUDGE_PROMPT_TEMPLATE = """\
 You are an expert evaluator for a RAG (Retrieval-Augmented Generation) system operating in the German ERP domain.
 
-Evaluate the generated answer across exactly six dimensions. Respond ONLY with a valid JSON object — no markdown, no code blocks, no text outside the JSON.
+Evaluate the generated answer across exactly five dimensions. Respond ONLY with a valid JSON object — no markdown, no code blocks, no text outside the JSON.
 
 Scoring scale: 0 = Very Poor, 5 = Excellent.
 Exception: hallucination uses 0 = No hallucination (best), 5 = Severe hallucination (worst).
 Note: the hallucination score is reversed when computing the overall score — a lower hallucination score contributes more positively to the final result.
 
-Evaluate each metric independently. The score assigned to one metric must not influence any other metric. For example, an answer can be correct but incomplete, faithful but incorrect, relevant but hallucinated, or well-supported by context but still missing required details.
+Evaluate each metric independently. The score assigned to one metric must not influence any other metric. For example, an answer can be correct but incomplete, faithful but incorrect, well-supported by context but still missing required details, or free of hallucination yet incomplete.
 
 --- SCORING RUBRICS ---
 
@@ -30,12 +30,6 @@ faithfulness — Is every statement in the generated answer supported by the ret
   3 = Most statements are supported; one or two minor details come from outside the context.
   1 = Many statements are unsupported by the context; significant external claims are present.
   0 = The answer ignores or contradicts the retrieved context throughout.
-
-relevancy — Does the generated answer directly and specifically address the user's question?
-  5 = Directly and completely addresses the question with no off-topic content.
-  3 = Addresses the question but includes unnecessary information or minor tangents.
-  1 = Only tangentially related to the question; does not directly answer it.
-  0 = Does not address the question at all.
 
 completeness — Does the generated answer contain all important information present in the ground truth?
   5 = Contains all key information from the ground truth; nothing important is missing.
@@ -61,7 +55,6 @@ Required JSON structure (no other keys allowed):
 {{
   "correctness": <integer 0-5>,
   "faithfulness": <integer 0-5>,
-  "relevancy": <integer 0-5>,
   "completeness": <integer 0-5>,
   "hallucination": <integer 0-5>,
   "context_relevance": <integer 0-5>,

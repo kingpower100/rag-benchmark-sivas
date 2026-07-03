@@ -192,8 +192,6 @@ class RagasEvaluator:
             from ragas.metrics import (
                 Faithfulness,
                 AnswerRelevancy,
-                ContextPrecision,
-                ContextRecall,
             )
         except ImportError as ex:
             logger.error("Could not import RAGAS metric classes: %s", ex)
@@ -201,10 +199,6 @@ class RagasEvaluator:
 
         if cfg_metrics.faithfulness:
             metrics.append(Faithfulness(llm=llm))
-        if cfg_metrics.context_precision:
-            metrics.append(ContextPrecision(llm=llm))
-        if cfg_metrics.context_recall:
-            metrics.append(ContextRecall(llm=llm))
         if cfg_metrics.answer_relevancy:
             if embeddings is not None:
                 metrics.append(AnswerRelevancy(llm=llm, embeddings=embeddings))

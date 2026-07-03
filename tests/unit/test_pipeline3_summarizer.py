@@ -11,13 +11,12 @@ def _make_row(qid="q1", **kwargs):
         "judge_success": True,
         "judge_correctness": 4,
         "judge_faithfulness": 5,
-        "judge_relevancy": 4,
         "judge_completeness": 3,
         "judge_hallucination": 1,
         "judge_context_relevance": 4,
         "judge_overall_score": 4.0,
         "ragas_faithfulness": 0.8,
-        "ragas_context_precision": 0.7,
+        "ragas_answer_relevancy": 0.9,
     }
     defaults.update(kwargs)
     return defaults
@@ -104,3 +103,11 @@ def test_n_questions_matches_row_count():
     rows = [_make_row(f"q{i}") for i in range(7)]
     summary = summarize_semantic_metrics(rows)
     assert summary["n_questions"] == 7
+
+
+def test_removed_metrics_not_in_summary():
+    rows = [_make_row()]
+    summary = summarize_semantic_metrics(rows)
+    assert "mean_judge_relevancy" not in summary
+    assert "mean_ragas_context_precision" not in summary
+    assert "mean_ragas_context_recall" not in summary

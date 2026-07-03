@@ -37,8 +37,6 @@ class P3JudgeConfig(StrictP3ConfigModel):
 class P3RagasMetricsConfig(StrictP3ConfigModel):
     faithfulness: bool = True
     answer_relevancy: bool = True
-    context_precision: bool = True
-    context_recall: bool = True
 
 
 class P3RagasConfig(StrictP3ConfigModel):
@@ -57,7 +55,6 @@ class P3RagasConfig(StrictP3ConfigModel):
 class P3JudgeMetricsConfig(StrictP3ConfigModel):
     correctness: bool = True
     faithfulness: bool = True
-    relevancy: bool = True
     completeness: bool = True
     hallucination: bool = True
     context_relevance: bool = True
@@ -69,11 +66,10 @@ class P3ScoringConfig(StrictP3ConfigModel):
 
 
 class P3WeightsConfig(StrictP3ConfigModel):
-    correctness: float = 0.25
-    faithfulness: float = 0.20
-    relevancy: float = 0.20
-    completeness: float = 0.15
-    hallucination: float = 0.10
+    correctness: float = 0.30
+    faithfulness: float = 0.25
+    completeness: float = 0.20
+    hallucination: float = 0.15
     context_relevance: float = 0.10
 
     @model_validator(mode="after")
@@ -81,7 +77,6 @@ class P3WeightsConfig(StrictP3ConfigModel):
         total = (
             self.correctness
             + self.faithfulness
-            + self.relevancy
             + self.completeness
             + self.hallucination
             + self.context_relevance

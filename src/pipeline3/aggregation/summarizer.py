@@ -6,7 +6,6 @@ from typing import Any
 _JUDGE_COLS = frozenset({
     "judge_correctness",
     "judge_faithfulness",
-    "judge_relevancy",
     "judge_completeness",
     "judge_hallucination",
     "judge_context_relevance",
@@ -16,8 +15,6 @@ _JUDGE_COLS = frozenset({
 _RAGAS_PREFIXES = (
     "ragas_faithfulness",
     "ragas_answer_relevancy",
-    "ragas_context_precision",
-    "ragas_context_recall",
 )
 
 

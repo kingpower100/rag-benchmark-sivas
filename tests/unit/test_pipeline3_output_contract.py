@@ -79,15 +79,11 @@ llm_judge:
                     "question_id": "q1",
                     "ragas_faithfulness": 1.0,
                     "ragas_answer_relevancy": 1.0,
-                    "ragas_context_precision": 1.0,
-                    "ragas_context_recall": 1.0,
                 }
             ],
             enabled_metrics=[
                 "faithfulness",
                 "answer_relevancy",
-                "context_precision",
-                "context_recall",
             ],
         ),
     )
@@ -95,7 +91,6 @@ llm_judge:
     judge_response = JudgeResponse(
         correctness=5,
         faithfulness=5,
-        relevancy=5,
         completeness=5,
         hallucination=0,
         context_relevance=5,

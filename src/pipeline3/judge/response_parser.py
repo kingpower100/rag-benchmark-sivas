@@ -10,7 +10,6 @@ logger = logging.getLogger("pipeline3.judge")
 REQUIRED_SCORE_KEYS = frozenset({
     "correctness",
     "faithfulness",
-    "relevancy",
     "completeness",
     "hallucination",
     "context_relevance",
@@ -26,7 +25,6 @@ ALL_REQUIRED_KEYS = REQUIRED_SCORE_KEYS | {"overall_score", "reasoning"}
 class JudgeResponse:
     correctness: int
     faithfulness: int
-    relevancy: int
     completeness: int
     hallucination: int
     context_relevance: int
@@ -38,7 +36,6 @@ class JudgeResponse:
         return {
             "judge_correctness": self.correctness,
             "judge_faithfulness": self.faithfulness,
-            "judge_relevancy": self.relevancy,
             "judge_completeness": self.completeness,
             "judge_hallucination": self.hallucination,
             "judge_context_relevance": self.context_relevance,
@@ -116,7 +113,6 @@ def parse_judge_response(
     response = JudgeResponse(
         correctness=int(data["correctness"]),
         faithfulness=int(data["faithfulness"]),
-        relevancy=int(data["relevancy"]),
         completeness=int(data["completeness"]),
         hallucination=int(data["hallucination"]),
         context_relevance=int(data["context_relevance"]),

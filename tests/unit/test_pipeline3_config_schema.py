@@ -34,7 +34,6 @@ def test_weights_must_sum_to_one():
         P3WeightsConfig(
             correctness=0.5,
             faithfulness=0.5,
-            relevancy=0.5,
             completeness=0.5,
             hallucination=0.5,
             context_relevance=0.5,
@@ -43,17 +42,15 @@ def test_weights_must_sum_to_one():
 
 def test_weights_summing_to_one_accepted():
     w = P3WeightsConfig(
-        correctness=0.25,
-        faithfulness=0.20,
-        relevancy=0.20,
-        completeness=0.15,
-        hallucination=0.10,
+        correctness=0.30,
+        faithfulness=0.25,
+        completeness=0.20,
+        hallucination=0.15,
         context_relevance=0.10,
     )
     total = (
         w.correctness
         + w.faithfulness
-        + w.relevancy
         + w.completeness
         + w.hallucination
         + w.context_relevance
@@ -66,12 +63,12 @@ def test_judge_temperature_must_be_non_negative():
         P3JudgeConfig(temperature=-0.1)
 
 
-def test_default_ragas_metrics_all_enabled():
+def test_default_ragas_metrics_faithfulness_and_answer_relevancy_only():
     cfg = Pipeline3Config.model_validate(_VALID_CONFIG)
     assert cfg.ragas.metrics.faithfulness is True
     assert cfg.ragas.metrics.answer_relevancy is True
-    assert cfg.ragas.metrics.context_precision is True
-    assert cfg.ragas.metrics.context_recall is True
+    assert not hasattr(cfg.ragas.metrics, "context_precision")
+    assert not hasattr(cfg.ragas.metrics, "context_recall")
 
 
 def test_default_ragas_requires_explicit_cuda_and_fail_on_error():

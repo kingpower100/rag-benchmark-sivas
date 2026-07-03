@@ -15,7 +15,6 @@ def _make_response(**kwargs) -> JudgeResponse:
     defaults = dict(
         correctness=5,
         faithfulness=5,
-        relevancy=5,
         completeness=5,
         hallucination=0,
         context_relevance=5,
@@ -40,15 +39,14 @@ def test_zero_scores_give_only_hallucination_contribution():
     response = _make_response(
         correctness=0,
         faithfulness=0,
-        relevancy=0,
         completeness=0,
         hallucination=0,
         context_relevance=0,
     )
     score = compute_weighted_overall_score(response, _DEFAULT_WEIGHTS, _DEFAULT_SCORING)
-    # Only hallucination contributes (inverted, 0=best): weight=0.10, scale=5
-    # contribution = (5-0)/5 * 0.10 * 5 = 1.0 * 0.10 * 5 = 0.5
-    assert score == pytest.approx(0.1 * 5.0, abs=0.01)
+    # Only hallucination contributes (inverted, 0=best): weight=0.15, scale=5
+    # contribution = (5-0)/5 * 0.15 * 5 = 1.0 * 0.15 * 5 = 0.75
+    assert score == pytest.approx(0.15 * 5.0, abs=0.01)
 
 
 def test_max_hallucination_reduces_score():
@@ -67,7 +65,6 @@ def test_weighted_sum_correctness_only():
     weights = P3WeightsConfig(
         correctness=1.0,
         faithfulness=0.0,
-        relevancy=0.0,
         completeness=0.0,
         hallucination=0.0,
         context_relevance=0.0,
@@ -75,7 +72,6 @@ def test_weighted_sum_correctness_only():
     response = _make_response(
         correctness=3,
         faithfulness=0,
-        relevancy=0,
         completeness=0,
         hallucination=5,
         context_relevance=0,
@@ -91,11 +87,16 @@ def test_enabled_judge_metric_names_all_enabled():
     assert set(names) == {
         "correctness",
         "faithfulness",
-        "relevancy",
         "completeness",
         "hallucination",
         "context_relevance",
     }
+
+
+def test_enabled_judge_metric_names_does_not_include_relevancy():
+    cfg = P3JudgeMetricsConfig()
+    names = enabled_judge_metric_names(cfg)
+    assert "relevancy" not in names
 
 
 def test_enabled_judge_metric_names_some_disabled():
@@ -107,6 +108,6 @@ def test_enabled_judge_metric_names_some_disabled():
 
 
 def test_score_result_is_within_scale_range():
-    response = _make_response(correctness=3, faithfulness=3, relevancy=3, completeness=3, hallucination=2, context_relevance=3)
+    response = _make_response(correctness=3, faithfulness=3, completeness=3, hallucination=2, context_relevance=3)
     score = compute_weighted_overall_score(response, _DEFAULT_WEIGHTS, _DEFAULT_SCORING)
     assert _DEFAULT_SCORING.scale_min <= score <= _DEFAULT_SCORING.scale_max

@@ -20,7 +20,6 @@ from src.pipeline3.stages.judge_stage import _evaluate_single
 _VALID_RESPONSE = json.dumps({
     "correctness": 4,
     "faithfulness": 4,
-    "relevancy": 5,
     "completeness": 3,
     "hallucination": 1,
     "context_relevance": 4,
@@ -33,7 +32,6 @@ _INVALID_JSON = "This is definitely not valid JSON."
 _MISSING_KEY_RESPONSE = json.dumps({
     "correctness": 4,
     # faithfulness missing
-    "relevancy": 5,
     "completeness": 3,
     "hallucination": 1,
     "context_relevance": 4,
@@ -167,7 +165,7 @@ class TestParseRetry:
 
         assert result.success is True
         assert result.response is not None
-        assert result.response.relevancy == 5
+        assert result.response.correctness == 4
         assert result.retry_count == 1
         assert client.generate.call_count == 2
 
@@ -207,11 +205,12 @@ class TestOfficialOverallScore:
         assert result.success is True
         # LLM said 4.0; weighted formula gives a different deterministic value.
         assert result.llm_overall_score == pytest.approx(4.0)
-        # Deterministic: correctness=4,faith=4,rel=5,comp=3,hall=1,ctx=4 with default weights
+        # Deterministic: correctness=4, faithfulness=4, completeness=3, hallucination=1, ctx=4
+        # Default weights: correctness=0.30, faithfulness=0.25, completeness=0.20, hallucination=0.15, ctx=0.10
         # hall_contrib=(5-1)/5=0.8
-        # weighted=(4/5*0.25)+(4/5*0.20)+(5/5*0.20)+(3/5*0.15)+(0.8*0.10)+(4/5*0.10)
-        # =0.200+0.160+0.200+0.090+0.080+0.080 = 0.810 * 5 = 4.05
-        assert result.response.overall_score == pytest.approx(4.05, abs=0.01)
+        # weighted=(4/5*0.30)+(4/5*0.25)+(3/5*0.20)+(0.8*0.15)+(4/5*0.10)
+        # =0.240+0.200+0.120+0.120+0.080 = 0.760 * 5 = 3.80
+        assert result.response.overall_score == pytest.approx(3.80, abs=0.01)
         assert result.response.overall_score != pytest.approx(4.0, abs=0.001)
 
     def test_llm_overall_score_is_none_on_failure(self):

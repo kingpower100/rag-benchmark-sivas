@@ -13,7 +13,6 @@ _VALID_RESPONSE = json.dumps(
     {
         "correctness": 5,
         "faithfulness": 4,
-        "relevancy": 5,
         "completeness": 4,
         "hallucination": 0,
         "context_relevance": 5,
@@ -93,6 +92,16 @@ def test_response_to_dict_has_judge_prefix():
     d = result.response.to_dict()
     assert "judge_correctness" in d
     assert "judge_overall_score" in d
+    assert "judge_relevancy" not in d
+
+
+def test_relevancy_key_rejected_as_extra():
+    """Responses containing the removed 'relevancy' key must be rejected."""
+    data = json.loads(_VALID_RESPONSE)
+    data["relevancy"] = 3
+    result = parse_judge_response(json.dumps(data))
+    assert result.success is False
+    assert "Unexpected" in result.error
 
 
 def test_extract_json_block_from_clean_json():
