@@ -46,6 +46,7 @@ class RagasEvaluator:
     def _run_ragas(self, rows: list[RagasRow]) -> RagasResults:
         try:
             from ragas import evaluate as ragas_evaluate
+            from ragas.run_config import RunConfig
             from ragas.llms import LangchainLLMWrapper
             from ragas.embeddings import LangchainEmbeddingsWrapper
             from langchain_openai import ChatOpenAI
@@ -101,7 +102,16 @@ class RagasEvaluator:
         )
 
         try:
-            result = ragas_evaluate(dataset=dataset, metrics=metrics)
+            result = ragas_evaluate(
+                dataset=dataset,
+                metrics=metrics,
+                run_config=RunConfig(
+                    timeout=self._cfg.timeout_seconds,
+                    max_retries=3,
+                    max_wait=20,
+                    max_workers=1,
+                ),
+            )
         except Exception as ex:
             logger.error("ragas.evaluate() failed: %s", ex, exc_info=True)
             return RagasResults(error=str(ex), skipped=True)

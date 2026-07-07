@@ -43,7 +43,7 @@ class P3RagasConfig(StrictP3ConfigModel):
     enabled: bool = True
     fail_on_ragas_error: bool = True
     llm_base_url: str = "http://localhost:11434/v1"
-    llm_model: str = "qwen2.5:14b"
+    llm_model: str = "qwen2.5:7b-instruct"
     llm_temperature: float = Field(default=0.0, ge=0.0, le=2.0)
     embeddings_model: str = "intfloat/multilingual-e5-large"
     embeddings_device: str = "cuda"
