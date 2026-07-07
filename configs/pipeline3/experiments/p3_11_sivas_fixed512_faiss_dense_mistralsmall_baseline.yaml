@@ -7,4 +7,4 @@ inputs:
   pipeline1_results_path: "data/runs/pipeline1/11_sivas_fixed512_faiss_dense_mistralsmall_baseline/results.jsonl"
 
 ragas:
-  enabled: false
+  enabled: true
