@@ -32,7 +32,7 @@ services:
       interval: 10s
       timeout: 10s
       retries: 20
-    kibana:
+  kibana:
       image: docker.elastic.co/kibana/kibana:8.15.1
       container_name: rag-benchmark-kibana
       depends_on:
