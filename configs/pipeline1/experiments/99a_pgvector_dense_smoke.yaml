@@ -31,6 +31,9 @@ experiment:
   experiment_id: "99a_pgvector_dense_smoke"
   output_dir: "data/runs/pipeline1"
 
+embedding:
+  cache_dir: ".cache/sentence-transformers"
+
 index:
   type: pgvector
   metric: cosine
