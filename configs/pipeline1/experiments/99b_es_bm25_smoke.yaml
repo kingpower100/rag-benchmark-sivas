@@ -1,0 +1,65 @@
+# Smoke-test configuration for the Elasticsearch BM25 retrieval backend.
+#
+# Purpose:
+#   Validates that the ElasticsearchBM25Retriever can connect to a running ES
+#   instance, query the pre-built BM25 index, and produce Pipeline 1 output
+#   that is format-compatible with Pipeline 2 evaluation.
+#   This experiment is NOT part of the benchmark series (experiments 11–18).
+#   It exists only to verify the ES backend before launching a full benchmark run.
+#
+# Retrieval backend: Elasticsearch BM25 (German analyzer, k1=1.5, b=0.75)
+# Dense index:       FAISS (inherited from base; reuses embedding cache from exp 11–18)
+#                    The FAISS index is built/loaded as usual but is NOT used for
+#                    retrieval — the bm25 retriever_type bypasses it entirely.
+#
+# Prerequisites:
+#   1. Elasticsearch is running and reachable via $ELASTICSEARCH_URL.
+#   2. The BM25 index has been created and populated:
+#        python scripts/init_elasticsearch.py --host "$ELASTICSEARCH_URL" --index rag_benchmark_chunks
+#        python scripts/index_elasticsearch.py --config configs/pipeline1/experiments/99b_es_bm25_smoke.yaml
+#   3. The ELASTICSEARCH_URL environment variable is exported:
+#        export ELASTICSEARCH_URL="http://localhost:9201"   # adjust port as needed
+
+extends: "../base.yaml"
+
+experiment:
+  experiment_id: "99b_es_bm25_smoke"
+  output_dir: "data/runs/pipeline1"
+
+# Dense vector index — kept as faiss to reuse the existing embedding cache.
+# The BM25 retriever does not use this index at query time; it queries ES directly.
+index:
+  type: faiss
+  metric: cosine
+  dense_dim: 1024
+
+retrieval:
+  retriever_type: "bm25"
+  top_k: 5
+  fetch_k: 20
+  category_field: "kategorie"
+  fallback_to_global: true
+
+  bm25:
+    backend: "elasticsearch"
+    # host_env is used instead of a hardcoded host so the same YAML works across
+    # environments (local dev, CI, remote server) without modification.
+    # On the remote server: export ELASTICSEARCH_URL="http://localhost:9201"
+    # In Docker containers: export ELASTICSEARCH_URL="http://elasticsearch:9200"
+    host_env: "ELASTICSEARCH_URL"
+    index_name: "rag_benchmark_chunks"
+    analyzer: "german"
+    rebuild_index: false
+    allow_fallback: false
+
+  metadata_boosting:
+    enabled: false
+  metadata_filtering:
+    enabled: false
+
+runtime:
+  save_csv: true
+  log_level: "INFO"
+  resume: false
+  overwrite: true
+  cache_mismatch_policy: "raise"

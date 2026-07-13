@@ -125,4 +125,11 @@ See `infra/docker/README.md` for full details, teardown instructions, and troubl
 
 `qa_ground_truth_fixed.jsonl` is evaluation-only and must not be used by Pipeline 1.
 
+**********
+cd ~/SIVAS/rag-benchmark-sivas
+source .venv/bin/activate
 
+export PGVECTOR_DSN="postgresql://rag:rag@localhost:5432/rag"
+export ELASTICSEARCH_URL="http://localhost:9201"
+echo $PGVECTOR_DSN
+echo $ELASTICSEARCH_URL
