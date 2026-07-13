@@ -10,6 +10,7 @@ overwrites existing documents without duplicating them.
 from __future__ import annotations
 
 import argparse
+import os
 import sys
 from pathlib import Path
 
@@ -45,11 +46,27 @@ def main() -> None:
     chunks = chunking_output.chunks
     print(f"  {len(chunks)} chunks produced.")
 
-    host = cfg.bm25.host if hasattr(cfg, "bm25") else cfg.retrieval.bm25.host
-    index_name = cfg.retrieval.bm25.index_name
-    k1 = cfg.retrieval.bm25.k1
-    b = cfg.retrieval.bm25.b
-    analyzer = cfg.retrieval.bm25.analyzer
+    bm25_cfg = cfg.retrieval.bm25
+    host_env = bm25_cfg.host_env
+    if host_env:
+        host = os.environ.get(host_env, "").strip()
+        if not host:
+            print(
+                f"ERROR: bm25.host_env is set to '{host_env}' but the environment "
+                f"variable is missing or empty. Export it before running:\n"
+                f"  export {host_env}=http://<host>:<port>",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+    else:
+        host = bm25_cfg.host
+
+    index_name = bm25_cfg.index_name
+    k1 = bm25_cfg.k1
+    b = bm25_cfg.b
+    analyzer = bm25_cfg.analyzer
+
+    print(f"Elasticsearch host: {host}")
 
     try:
         from elasticsearch import Elasticsearch
