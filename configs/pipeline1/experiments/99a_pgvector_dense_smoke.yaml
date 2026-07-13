@@ -33,6 +33,8 @@ experiment:
 
 embedding:
   cache_dir: ".cache/sentence-transformers"
+  device: "cpu"
+  require_cuda: false
 
 index:
   type: pgvector
