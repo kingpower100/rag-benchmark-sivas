@@ -24,7 +24,7 @@ services:
       - xpack.security.enabled=false
       - ES_JAVA_OPTS=-Xms1g -Xmx1g
     ports:
-      - "9200:9200"
+      - "9200:9201"
     volumes:
       - esdata:/usr/share/elasticsearch/data
     healthcheck:
