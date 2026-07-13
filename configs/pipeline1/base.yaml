@@ -70,7 +70,7 @@ generation:
   model_name: "gemma3:1b"
   base_url: "http://localhost:11434"
   temperature: 0.0
-  max_tokens: 16
+  max_tokens: 256
   timeout_s: 300
   include_metadata_headers: true
   max_prompt_tokens: 8192

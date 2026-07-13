@@ -60,8 +60,22 @@ class EmbeddingConfig(StrictConfigModel):
     cache_dir: Optional[str] = None
 
 
+class PgvectorConfig(StrictConfigModel):
+    dsn_env: str = "PGVECTOR_DSN"
+    schema_name: str = "rag"
+    table_name: str = "chunk_embeddings"
+    index_type: Literal["exact", "hnsw", "ivfflat"] = "hnsw"
+    rebuild_index: bool = False
+    hnsw_m: int = Field(default=16, gt=0)
+    hnsw_ef_construction: int = Field(default=64, gt=0)
+    hnsw_ef_search: int = Field(default=40, gt=0)
+    ivfflat_lists: int = Field(default=100, gt=0)
+    pool_min: int = Field(default=1, gt=0)
+    pool_max: int = Field(default=5, gt=0)
+
+
 class IndexConfig(StrictConfigModel):
-    type: Literal["faiss", "elasticsearch"]
+    type: Literal["faiss", "elasticsearch", "pgvector"]
     metric: Literal["cosine", "l2"] = "cosine"
     host: str = "http://localhost:9200"
     index_name: str = "sivas_fixed512_bge_small"
@@ -82,6 +96,7 @@ class IndexConfig(StrictConfigModel):
     username: Optional[str] = None
     password: Optional[str] = None
     api_key: Optional[str] = None
+    pgvector: Optional[PgvectorConfig] = None
 
 
 class MetadataBoostingConfig(StrictConfigModel):
@@ -106,17 +121,20 @@ class BM25Config(StrictConfigModel):
     enabled: bool = True
     backend: Literal["local", "elasticsearch"] = "local"
     host: str = "http://localhost:9200"
+    host_env: Optional[str] = None
     index_name: str = "rag_benchmark_chunks"
     rebuild_index: bool = False
     allow_fallback: bool = False
     k1: float = Field(default=1.5, gt=0)
     b: float = Field(default=0.75, ge=0, le=1)
+    analyzer: str = "german"
 
 
 class HybridConfig(StrictConfigModel):
     rrf_k: int = Field(default=60, gt=0)
     dense_weight: float = Field(default=1.0, ge=0)
     bm25_weight: float = Field(default=1.0, ge=0)
+    dense_backend: Literal["faiss", "pgvector"] = "faiss"
 
 
 class RetrievalConfig(StrictConfigModel):
@@ -242,6 +260,7 @@ class PipelineConfig(StrictConfigModel):
     def validate_index_retriever_compatibility(self) -> "PipelineConfig":
         retriever_type = self.retrieval.retriever_type
         index_type = self.index.type
+
         if index_type == "faiss" and retriever_type == "elasticsearch_dense":
             raise ValueError(
                 "Unsupported index/retriever combination: index.type='faiss' cannot be used with "
@@ -254,6 +273,25 @@ class PipelineConfig(StrictConfigModel):
                 "retrieval.retriever_type='dense'. Use retrieval.retriever_type='elasticsearch_dense' "
                 "or 'hybrid_rrf'."
             )
+        if index_type == "pgvector" and retriever_type == "elasticsearch_dense":
+            raise ValueError(
+                "Unsupported index/retriever combination: index.type='pgvector' cannot be used with "
+                "retrieval.retriever_type='elasticsearch_dense'."
+            )
+        if index_type == "pgvector" and self.index.pgvector is None:
+            raise ValueError(
+                "index.type='pgvector' requires index.pgvector configuration block."
+            )
+        if retriever_type == "hybrid_rrf":
+            dense_backend = self.retrieval.hybrid.dense_backend
+            if dense_backend == "pgvector" and index_type != "pgvector":
+                raise ValueError(
+                    f"retrieval.hybrid.dense_backend='pgvector' requires index.type='pgvector', got '{index_type}'."
+                )
+            if dense_backend == "faiss" and index_type not in ("faiss",):
+                raise ValueError(
+                    f"retrieval.hybrid.dense_backend='faiss' requires index.type='faiss', got '{index_type}'."
+                )
         return self
 
     @classmethod

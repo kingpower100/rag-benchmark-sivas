@@ -13,7 +13,11 @@ from src.pipeline1.schemas.chunk import ChunkRecord
 from src.pipeline1.schemas.retrieval import RetrievalItem
 
 
-_TOKEN_RE = re.compile(r"[a-z0-9]+")
+# re.UNICODE is the default for str in Python 3, but stated explicitly so the
+# intent is clear: German Umlauts (ä ö ü ß Ä Ö Ü) must be part of their token.
+# [^\W_]+ matches Unicode word chars minus underscore — letters, digits, accented
+# chars — across every script the ERP corpus may contain.
+_TOKEN_RE = re.compile(r"[^\W_]+", re.UNICODE)
 
 
 class BM25Retriever(BaseRetriever):

@@ -5,6 +5,14 @@ from src.pipeline1.schemas.retrieval import RetrievalItem
 from src.pipeline1.utils.ids import stable_retrieved_document_id
 
 
+def _is_pgvector_retriever(dense_retriever) -> bool:
+    try:
+        from src.pipeline1.retrieval.pgvector_dense_retriever import PgvectorDenseRetriever
+        return isinstance(dense_retriever, PgvectorDenseRetriever)
+    except ImportError:
+        return False
+
+
 class CategoryAwareDenseRetriever(BaseRetriever):
     def __init__(
         self,
@@ -18,12 +26,14 @@ class CategoryAwareDenseRetriever(BaseRetriever):
         self.active_category: str | None = None
         self.last_dense_candidates: list[RetrievalItem] = []
         self.last_retrieval_diagnostics: dict = {}
+
+        self._pgvector_mode = _is_pgvector_retriever(dense_retriever)
+
         # Per-category FAISS retrievers built from pre-computed embeddings.
-        # When embeddings is None the retriever falls back to global search + post-hoc
-        # category filter, which preserves full backwards-compatibility with tests and
-        # any caller that does not supply embeddings.
+        # Skipped in pgvector mode — category scoping happens via SQL WHERE clause.
+        # When embeddings is None and not pgvector, falls back to global search + post-hoc filter.
         self._category_retrievers: dict[str, object] = {}
-        if embeddings is not None:
+        if embeddings is not None and not self._pgvector_mode:
             self._build_category_retrievers(embeddings, index_metric)
 
     def _build_category_retrievers(self, embeddings, index_metric: str) -> None:
@@ -54,12 +64,36 @@ class CategoryAwareDenseRetriever(BaseRetriever):
 
     def set_active_category(self, category: str | None) -> None:
         self.active_category = str(category).strip() if category else None
+        if self._pgvector_mode and hasattr(self.dense_retriever, "set_active_category"):
+            self.dense_retriever.set_active_category(self.active_category)
 
     def retrieve(self, question: str, top_k: int) -> list[RetrievalItem]:
+        if self._pgvector_mode:
+            return self._retrieve_pgvector(question, top_k)
+        return self._retrieve_faiss(question, top_k)
+
+    def _retrieve_pgvector(self, question: str, top_k: int) -> list[RetrievalItem]:
+        candidates = self.dense_retriever.retrieve(question, top_k)
+        self.last_dense_candidates = list(getattr(self.dense_retriever, "last_dense_candidates", candidates))
+        diagnostics = dict(getattr(self.dense_retriever, "last_retrieval_diagnostics", {}) or {})
+        diagnostics.update(
+            {
+                "category_filter_field": self.category_field,
+                "detected_category": self.active_category,
+                "category_filter_applied": bool(self.active_category),
+                "category_fallback_used": False,
+                "category_filter_fallback": False,
+                "retrieval_backend": "pgvector_category" if self.active_category else "pgvector",
+                "category_index_used": bool(self.active_category),
+            }
+        )
+        selected = candidates[:top_k]
+        diagnostics.update(_result_payload(selected, self.category_field))
+        self.last_retrieval_diagnostics = diagnostics
+        return selected
+
+    def _retrieve_faiss(self, question: str, top_k: int) -> list[RetrievalItem]:
         if self.active_category and self.active_category in self._category_retrievers:
-            # TRUE CATEGORY-SCOPED: search only within this category's dedicated FAISS index.
-            # No global index is consulted; only chunks belonging to the predicted category
-            # are ranked, so no globally-high-scoring off-category chunks can displace them.
             cat_retriever = self._category_retrievers[self.active_category]
             candidates = cat_retriever.retrieve(question, top_k)
             self.last_dense_candidates = list(getattr(cat_retriever, "last_dense_candidates", candidates))
@@ -72,13 +106,12 @@ class CategoryAwareDenseRetriever(BaseRetriever):
                     "category_fallback_used": False,
                     "category_filter_fallback": False,
                     "retrieval_backend": "category_faiss",
+                    "category_index_used": True,
                 }
             )
             selected = candidates[:top_k]
 
         elif self.active_category:
-            # Category was requested but no per-category retriever exists (embeddings were
-            # not provided at construction time). Fall back to global search + post-hoc filter.
             candidates = self.dense_retriever.retrieve(question, top_k)
             self.last_dense_candidates = list(getattr(self.dense_retriever, "last_dense_candidates", candidates))
             diagnostics = dict(getattr(self.dense_retriever, "last_retrieval_diagnostics", {}) or {})
@@ -96,13 +129,13 @@ class CategoryAwareDenseRetriever(BaseRetriever):
                     "category_fallback_used": False,
                     "category_filter_fallback": False,
                     "retrieval_backend": "dense_post_filter",
+                    "category_index_used": False,
                     "category_matches": len(category_matches),
                     "global_candidates": len(candidates),
                 }
             )
 
         else:
-            # No active category: full global retrieval.
             candidates = self.dense_retriever.retrieve(question, top_k)
             self.last_dense_candidates = list(getattr(self.dense_retriever, "last_dense_candidates", candidates))
             diagnostics = dict(getattr(self.dense_retriever, "last_retrieval_diagnostics", {}) or {})
@@ -114,6 +147,7 @@ class CategoryAwareDenseRetriever(BaseRetriever):
                     "category_filter_applied": False,
                     "category_fallback_used": False,
                     "category_filter_fallback": False,
+                    "category_index_used": False,
                 }
             )
 

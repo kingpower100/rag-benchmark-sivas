@@ -134,6 +134,7 @@ class RetrievalStage(BaseStage):
             )
             category_filter_applied = False
             category_fallback_used = False
+            fallback_reason: str | None = None
             retrieval_mode = self.cfg.retrieval.retriever_type
             number_of_category_results = 0
             number_of_global_fallback_results = 0
@@ -163,6 +164,7 @@ class RetrievalStage(BaseStage):
                         )
                     if not enough_retrieved_chunks:
                         category_fallback_used = True
+                        fallback_reason = "insufficient_category_results"
                         retrieval_mode = "global_fallback"
                         retriever.set_active_category(None)
                         raw_retrieved, retrieved, retrieval_warnings, reranker_used = retrieve_top_k_unique_contexts(
@@ -176,6 +178,7 @@ class RetrievalStage(BaseStage):
                         number_of_global_fallback_results = len(retrieved)
                 else:
                     category_fallback_used = True
+                    fallback_reason = query.category_validation_reason or "category_not_validated"
                     retrieval_mode = "global_fallback"
                     retriever.set_active_category(None)
                     raw_retrieved, retrieved, retrieval_warnings, reranker_used = retrieve_top_k_unique_contexts(
@@ -240,6 +243,12 @@ class RetrievalStage(BaseStage):
                     ],
                     "reranked_candidate_ids": [item.chunk_id for item in reranked_candidates],
                     "final_candidate_ids": [item.chunk_id for item in retrieved],
+                    # Fields required for per-question output records.
+                    "retriever_type": self.cfg.retrieval.retriever_type,
+                    "retrieval_scope": "category" if (category_filter_applied and not category_fallback_used) else "global",
+                    "category_index_used": bool(retrieval_diagnostics.get("category_index_used", False)),
+                    "fallback_used": category_fallback_used,
+                    "fallback_reason": fallback_reason,
                 }
             )
             retrieval_time_ms = (time.perf_counter() - retrieval_start) * 1000

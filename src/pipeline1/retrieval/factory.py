@@ -1,3 +1,5 @@
+import os
+
 from src.pipeline1.retrieval.bm25_retriever import BM25Retriever
 from src.pipeline1.retrieval.category_aware_dense_retriever import CategoryAwareDenseRetriever
 from src.pipeline1.retrieval.dense_retriever import DenseRetriever
@@ -42,7 +44,24 @@ def build_retriever(config: RetrievalConfig, embedder, index, chunks, embeddings
 
 
 def _build_dense_retriever(config: RetrievalConfig, embedder, index, chunks):
-    if getattr(index, "uses_external_storage", False):
+    from src.pipeline1.indexing.pgvector_index import PgvectorIndex
+
+    if isinstance(index, PgvectorIndex):
+        from src.pipeline1.retrieval.pgvector_dense_retriever import PgvectorDenseRetriever
+
+        return PgvectorDenseRetriever(
+            embedder=embedder,
+            index=index,
+            chunks=chunks,
+            fetch_k=config.fetch_k,
+            metadata_boosting=config.metadata_boosting,
+            metadata_filtering=config.metadata_filtering,
+            category_field=config.category_field,
+        )
+
+    from src.pipeline1.indexing.elasticsearch_index import ElasticsearchIndex
+
+    if isinstance(index, ElasticsearchIndex):
         return ElasticsearchDenseRetriever(
             embedder=embedder,
             index=index,
@@ -52,6 +71,7 @@ def _build_dense_retriever(config: RetrievalConfig, embedder, index, chunks):
             metadata_boosting=config.metadata_boosting,
             metadata_filtering=config.metadata_filtering,
         )
+
     return DenseRetriever(
         embedder=embedder,
         index=index,
@@ -65,14 +85,18 @@ def _build_dense_retriever(config: RetrievalConfig, embedder, index, chunks):
 def _build_bm25_retriever(config: RetrievalConfig, chunks):
     if config.bm25.backend == "local":
         return BM25Retriever(chunks=chunks, k1=config.bm25.k1, b=config.bm25.b)
+    host = config.bm25.host
+    if config.bm25.host_env:
+        host = os.environ.get(config.bm25.host_env, host)
     try:
         return ElasticsearchBM25Retriever(
             chunks=chunks,
-            host=config.bm25.host,
+            host=host,
             index_name=config.bm25.index_name,
             k1=config.bm25.k1,
             b=config.bm25.b,
             rebuild_index=config.bm25.rebuild_index,
+            analyzer=config.bm25.analyzer,
         )
     except ElasticsearchBM25Error:
         if config.bm25.allow_fallback:

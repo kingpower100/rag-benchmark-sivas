@@ -1,5 +1,7 @@
 extends: "11_sivas_fixed512_faiss_dense_mistralsmall_baseline.yaml"
 
+# Varies: orchestration PROMPT (V1). Orchestration model = mistral-small. Generation model = qwen2.5:7b.
+
 experiment:
   experiment_id: "12_sivas_fixed512_faiss_dense_mistralsmall_promptV1"
 

@@ -1,4 +1,38 @@
 services:
+  postgres:
+    image: pgvector/pgvector:pg16
+    container_name: rag-benchmark-postgres
+    environment:
+      POSTGRES_USER: rag
+      POSTGRES_PASSWORD: rag
+      POSTGRES_DB: rag
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U rag"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:8.13.4
+    container_name: rag-benchmark-elasticsearch
+    environment:
+      - discovery.type=single-node
+      - xpack.security.enabled=false
+      - ES_JAVA_OPTS=-Xms512m -Xmx512m
+    ports:
+      - "9200:9200"
+    volumes:
+      - esdata:/usr/share/elasticsearch/data
+    healthcheck:
+      test: ["CMD-SHELL", "curl -s http://localhost:9200/_cluster/health | grep -q '\"status\":\"green\"\\|\"status\":\"yellow\"'"]
+      interval: 10s
+      timeout: 10s
+      retries: 20
+
   pipeline1:
     build:
       context: ../..
@@ -8,6 +42,8 @@ services:
     environment:
       # Use host machine Ollama from inside container.
       OLLAMA_BASE_URL: "http://host.docker.internal:11434"
+      # pgvector connection string (used when index.type=pgvector).
+      PGVECTOR_DSN: "postgresql://rag:rag@postgres:5432/rag"
     volumes:
       # Input files stay on host and are mounted read-only.
       - ../../data/raw:/app/data/raw:ro
@@ -17,3 +53,12 @@ services:
       - ../../data/processed:/app/data/processed
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      elasticsearch:
+        condition: service_healthy
+
+volumes:
+  pgdata:
+  esdata:

@@ -21,15 +21,18 @@ class ElasticsearchBM25Retriever(BaseRetriever):
         b: float = 0.75,
         rebuild_index: bool = False,
         client: Any | None = None,
+        analyzer: str = "german",
     ) -> None:
         self.chunks = chunks
         self.host = host
         self.index_name = index_name
         self.k1 = k1
         self.b = b
+        self.analyzer = analyzer
         self.client = client or self._build_client(host)
         self.chunk_by_id = {chunk.chunk_id: chunk for chunk in chunks}
         self.last_bm25_candidates: list[RetrievalItem] = []
+        self.last_retrieval_diagnostics: dict = {}
         self._ensure_available()
         self._ensure_index(rebuild_index)
 
@@ -47,6 +50,14 @@ class ElasticsearchBM25Retriever(BaseRetriever):
         hits = response.get("hits", {}).get("hits", [])
         rows = [self._hit_to_item(hit) for hit in hits]
         self.last_bm25_candidates = rows
+        self.last_retrieval_diagnostics = {
+            "backend": "elasticsearch_bm25",
+            "index_name": self.index_name,
+            "host": self.host,
+            "analyzer": self.analyzer,
+            "hits_count": len(hits),
+            "top_k": top_k,
+        }
         return rows
 
     def extract_query_metadata(self, question: str):
@@ -104,7 +115,7 @@ class ElasticsearchBM25Retriever(BaseRetriever):
                 "properties": {
                     "context_id": {"type": "keyword"},
                     "chunk_id": {"type": "keyword"},
-                    "cleaned_context": {"type": "text"},
+                    "cleaned_context": {"type": "text", "analyzer": self.analyzer},
                     "file_name": {"type": "keyword"},
                     "document_id": {"type": "keyword"},
                     "metadata": {"type": "object", "enabled": True},

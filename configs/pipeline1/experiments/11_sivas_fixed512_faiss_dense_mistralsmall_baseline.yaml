@@ -1,5 +1,18 @@
 extends: "../base.yaml"
 
+# NAMING NOTE — "mistralsmall" in all experiment IDs (11–15, 18) refers exclusively to
+# the ORCHESTRATION model (mistral-small), which performs category routing / topic
+# classification before retrieval.  It does NOT refer to the answer-generation model.
+#
+# Answer-generation model (the LLM that produces RAG answers) is qwen2.5:7b in ALL
+# experiments in this series.
+#
+# Experiment series overview:
+#   Exp 11          — baseline (default orchestration prompt, no prompt engineering)
+#   Exp 12–15, 18  — vary the ORCHESTRATION PROMPT (V1–V5); orchestration model = mistral-small
+#   Exp 16          — vary the ORCHESTRATION MODEL (qwen2.5:7b); prompt = V4
+#   Exp 17          — vary the ORCHESTRATION MODEL (llama3.1:8b); prompt = V4
+
 experiment:
   experiment_id: "11_sivas_fixed512_faiss_dense_mistralsmall_baseline"
   random_seed: 42
@@ -53,7 +66,7 @@ reranker:
 
 orchestration:
   fixed: true
-  model_name: "mistral-small"
+  model_name: "mistral-small"   # category-routing model (classifies question topic)
   base_url: "http://localhost:11434"
   temperature: 0.0
   max_tokens: 256
@@ -62,7 +75,7 @@ orchestration:
 generation:
   configurable: true
   provider: "ollama"
-  model_name: "qwen2.5:7b"
+  model_name: "qwen2.5:7b"      # answer-generation model (produces the RAG answer)
   base_url: "http://localhost:11434"
   temperature: 0.0
   max_tokens: 256

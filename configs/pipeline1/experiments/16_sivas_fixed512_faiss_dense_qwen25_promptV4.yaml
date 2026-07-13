@@ -1,7 +1,12 @@
 extends: "15_sivas_fixed512_faiss_dense_mistralsmall_promptV4.yaml"
 
+# Varies: ORCHESTRATION MODEL (qwen2.5:7b replaces mistral-small for category routing).
+# Orchestration prompt = V4 (inherited from exp 15).
+# Generation model (answer generation) = qwen2.5:7b (unchanged — inherited from exp 11).
+# Compare against exp 15 to isolate the effect of the orchestration model choice.
+
 experiment:
   experiment_id: "16_sivas_fixed512_faiss_dense_qwen25_promptV4"
 
 orchestration:
-  model_name: "qwen2.5:7b"
+  model_name: "qwen2.5:7b"   # category-routing model changed from mistral-small

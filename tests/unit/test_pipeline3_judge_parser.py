@@ -45,12 +45,15 @@ def test_missing_key_fails():
     assert "correctness" in result.error
 
 
-def test_extra_key_fails():
+def test_extra_key_is_ignored():
+    # LLMs often include extra keys like "explanation" or "thoughts"; the parser
+    # must silently ignore them as long as all required keys are present and valid.
     data = json.loads(_VALID_RESPONSE)
     data["unexpected"] = 1
     result = parse_judge_response(json.dumps(data))
-    assert result.success is False
-    assert "Unexpected keys" in result.error
+    assert result.success is True
+    assert result.response is not None
+    assert result.response.correctness == 5
 
 
 def test_wrong_key_name_fails_as_missing_and_extra():
@@ -95,13 +98,16 @@ def test_response_to_dict_has_judge_prefix():
     assert "judge_relevancy" not in d
 
 
-def test_relevancy_key_rejected_as_extra():
-    """Responses containing the removed 'relevancy' key must be rejected."""
+def test_relevancy_key_as_extra_is_ignored():
+    """The old 'relevancy' key is not a required field.  When it appears alongside
+    all required keys the parser must succeed, extracting only the required fields."""
     data = json.loads(_VALID_RESPONSE)
     data["relevancy"] = 3
     result = parse_judge_response(json.dumps(data))
-    assert result.success is False
-    assert "Unexpected" in result.error
+    assert result.success is True
+    assert result.response is not None
+    # The correct field is context_relevance; relevancy is an extra that was dropped.
+    assert result.response.context_relevance == data["context_relevance"]
 
 
 def test_extract_json_block_from_clean_json():

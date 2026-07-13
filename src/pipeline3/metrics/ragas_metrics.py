@@ -94,6 +94,7 @@ class RagasEvaluator:
 
         dataset = Dataset.from_dict(
             {
+                "question_id": [r.question_id for r in rows],
                 "question": [r.question for r in rows],
                 "answer": [r.answer for r in rows],
                 "contexts": [r.contexts if r.contexts else [""] for r in rows],
@@ -137,18 +138,58 @@ class RagasEvaluator:
                 valid_counts[f"ragas_{col}"] = 0
                 logger.warning("RAGAS metric '%s' column missing from result dataframe", col)
 
-        per_row = []
-        for i, row in enumerate(rows):
-            row_metrics: dict[str, Any] = {"question_id": row.question_id}
-            for metric_name in enabled_names:
-                col = metric_name
-                if col in result_df.columns:
-                    val = result_df.iloc[i][col]
-                    # NaN check: NaN != NaN is True
-                    row_metrics[f"ragas_{col}"] = None if val != val else float(val)
-                else:
-                    row_metrics[f"ragas_{col}"] = None
-            per_row.append(row_metrics)
+        # Prefer question_id-based join (Option A) so row reordering inside RAGAS
+        # cannot silently assign metrics to the wrong question.
+        # Fall back to positional mapping only when RAGAS strips the column, and
+        # only after asserting that the row count is unchanged (Option B guard).
+        if "question_id" in result_df.columns:
+            result_by_id: dict[str, Any] = {
+                str(qid): result_df.iloc[idx]
+                for idx, qid in enumerate(result_df["question_id"])
+            }
+            per_row = []
+            for row in rows:
+                row_metrics: dict[str, Any] = {"question_id": row.question_id}
+                result_row = result_by_id.get(str(row.question_id))
+                if result_row is None:
+                    logger.warning(
+                        "RAGAS: question_id %s missing from result dataframe",
+                        row.question_id,
+                    )
+                for metric_name in enabled_names:
+                    col = metric_name
+                    if result_row is not None and col in result_df.columns:
+                        val = result_row[col]
+                        # NaN check: NaN != NaN is True
+                        row_metrics[f"ragas_{col}"] = None if val != val else float(val)
+                    else:
+                        row_metrics[f"ragas_{col}"] = None
+                per_row.append(row_metrics)
+        else:
+            # question_id was not preserved by this RAGAS version; require exact
+            # row-count match before falling back to positional indexing.
+            if len(result_df) != len(rows):
+                raise RuntimeError(
+                    f"RAGAS returned {len(result_df)} rows for {len(rows)} input rows "
+                    "and did not preserve question_id. Cannot safely map results to "
+                    "questions — check RAGAS version compatibility."
+                )
+            logger.warning(
+                "RAGAS did not preserve question_id column; using positional mapping. "
+                "Verify RAGAS version compatibility."
+            )
+            per_row = []
+            for i, row in enumerate(rows):
+                row_metrics = {"question_id": row.question_id}
+                for metric_name in enabled_names:
+                    col = metric_name
+                    if col in result_df.columns:
+                        val = result_df.iloc[i][col]
+                        # NaN check: NaN != NaN is True
+                        row_metrics[f"ragas_{col}"] = None if val != val else float(val)
+                    else:
+                        row_metrics[f"ragas_{col}"] = None
+                per_row.append(row_metrics)
 
         return RagasResults(
             rows=per_row,

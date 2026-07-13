@@ -194,7 +194,7 @@ def run_pipeline(config_path: str) -> Path:
     index = build_index(cfg.index)
     if hasattr(index, "set_chunks"):
         index.set_chunks(chunks)
-    index_suffix = ".elasticsearch" if getattr(index, "uses_external_storage", False) else ".faiss"
+    index_suffix = f".{cfg.index.type}" if cfg.index.type != "faiss" else ".faiss"
     index_path = cache_dir / "indexes" / f"{index_key}{index_suffix}"
     print(f"[6/10] Building/loading {cfg.index.type} index")
     index_start = time.perf_counter()
@@ -222,12 +222,12 @@ def run_pipeline(config_path: str) -> Path:
                 index.build(embeddings)
                 index.save(str(index_path))
                 cache_validation["index"] = "rebuilt_after_mismatch"
-            logger.info("Loaded FAISS index: %s", index_path)
+            logger.info("Loaded %s index: %s", cfg.index.type, index_path)
         else:
             index.build(embeddings)
             index.save(str(index_path))
             cache_validation["index"] = "built"
-            logger.info("Built FAISS index: %s", index_path)
+            logger.info("Built %s index: %s", cfg.index.type, index_path)
     event_writer.write(
         stage="indexing",
         event_type=EventType.INDEX_BUILD_END,
