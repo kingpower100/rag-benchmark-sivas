@@ -54,6 +54,58 @@ Expected Pipeline 2 output:
 - `data/eval/runs/pipeline2/11_sivas_fixed512_faiss_dense_mistralsmall_baseline_eval/summary_by_experiment.csv`
 - `data/eval/runs/pipeline2/11_sivas_fixed512_faiss_dense_mistralsmall_baseline_eval/eval_manifest.json`
 
+## Docker Services (pgvector and Elasticsearch backends)
+
+The pgvector and Elasticsearch retrieval backends require two Docker services.
+The FAISS baseline needs no external services.
+
+### Start services
+
+```bash
+cd infra/docker
+docker compose up -d postgres elasticsearch
+docker compose ps
+```
+
+### Verify health
+
+```bash
+# PostgreSQL
+docker exec rag-benchmark-postgres pg_isready -U rag -d rag
+docker exec rag-benchmark-postgres psql -U rag -d rag -c "CREATE EXTENSION IF NOT EXISTS vector;"
+docker exec rag-benchmark-postgres psql -U rag -d rag -c "\dx"
+
+# Elasticsearch
+curl -s http://localhost:9200/_cluster/health | python3 -m json.tool
+```
+
+### Environment variables
+
+```bash
+export PGVECTOR_DSN="postgresql://rag:rag@localhost:5432/rag"
+export ELASTICSEARCH_URL="http://localhost:9200"
+```
+
+### Quick service check (no data modification)
+
+```bash
+python scripts/check_backend_services.py
+```
+
+### Initialize schema and build indexes
+
+```bash
+# Schema/index creation (idempotent):
+python scripts/init_pgvector.py
+python scripts/init_elasticsearch.py --host http://localhost:9200 --index rag_benchmark_chunks
+
+# Index documents (requires a pgvector or ES YAML config):
+python scripts/index_pgvector.py      --config configs/pipeline1/experiments/<pgvector_config>.yaml
+python scripts/index_elasticsearch.py --config configs/pipeline1/experiments/<es_bm25_config>.yaml
+```
+
+See `infra/docker/README.md` for full details, teardown instructions, and troubleshooting.
+
 ## Data Format
 
 `kb_documents_fixed.jsonl` requires:

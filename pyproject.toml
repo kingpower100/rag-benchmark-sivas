@@ -25,6 +25,7 @@ dependencies = [
   "tiktoken==0.7.0",
   "requests==2.32.3",
   "elasticsearch==8.15.1",
+  "psycopg2-binary>=2.9",
   "pytest==8.3.3",
   "bert-score>=0.3.0",
 ]
