@@ -49,7 +49,7 @@ services:
       context: ../..
       dockerfile: infra/docker/Dockerfile
     container_name: rag-benchmark-pipeline1
-    command: ["python", "-m", "src.pipeline1.main", "--config", "configs/pipeline1/experiments/11_sivas_fixed512_faiss_dense_mistralsmall_baseline.yaml"]
+    command: ["python", "-m", "src.pipeline1.main", "--config", "configs/pipeline1/experiments/91_sivas_fixed512_faiss_dense_mistralsmall_prompt_v0.yaml"]
     environment:
       # Use host machine Ollama from inside container.
       OLLAMA_BASE_URL: "http://host.docker.internal:11434"
