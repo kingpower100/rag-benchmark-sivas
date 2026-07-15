@@ -37,6 +37,7 @@ class P3JudgeConfig(StrictP3ConfigModel):
 class P3RagasMetricsConfig(StrictP3ConfigModel):
     faithfulness: bool = True
     answer_relevancy: bool = True
+    context_recall: bool = False
 
 
 class P3RagasConfig(StrictP3ConfigModel):

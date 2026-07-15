@@ -1,0 +1,10 @@
+extends: "../base_pipeline3.yaml"
+
+pipeline3:
+  run_id: "91_sivas_fixed512_faiss_dense_mistralsmall_prompt_v0"
+
+inputs:
+  pipeline1_results_path: "data/runs/pipeline1/91_sivas_fixed512_faiss_dense_mistralsmall_prompt_v0/results.jsonl"
+
+ragas:
+  enabled: true

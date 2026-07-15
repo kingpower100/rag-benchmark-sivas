@@ -1,4 +1,4 @@
-# Docker Infrastructure
+﻿# Docker Infrastructure
 
 Manages two external services used by the pgvector and Elasticsearch retrieval backends.
 
@@ -86,8 +86,8 @@ python scripts/init_elasticsearch.py --host http://localhost:9200 --index rag_be
 Then index documents:
 
 ```bash
-python scripts/index_pgvector.py      --config configs/pipeline1/experiments/99a_pgvector_dense_smoke.yaml
-python scripts/index_elasticsearch.py --config configs/pipeline1/experiments/99b_es_bm25_smoke.yaml
+python scripts/index_pgvector.py      --config configs/pipeline1/smoke/smoke_pgvector_dense.yaml
+python scripts/index_elasticsearch.py --config configs/pipeline1/smoke/smoke_elasticsearch_bm25.yaml
 ```
 
 For a quick service connectivity check without touching data:

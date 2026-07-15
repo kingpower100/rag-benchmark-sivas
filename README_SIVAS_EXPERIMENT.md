@@ -1,8 +1,8 @@
-# SIVAS ERP RAG Benchmark — Remote Server Experiment Guide
+﻿# SIVAS ERP RAG Benchmark — Remote Server Experiment Guide
 
 > **WARNING: Never use synthetic, fake, or dummy data for benchmark results.**
 > The Pipeline 1 output directory must be empty before the first real run.
-> Any `results.jsonl` file in `data/runs/pipeline1/11_sivas_fixed512_faiss_dense_mistralsmall_baseline/`
+> Any `results.jsonl` file in `data/runs/pipeline1/91_sivas_fixed512_faiss_dense_mistralsmall_prompt_v0/`
 > that was not produced by a full Pipeline 1 run on the DGX server is invalid
 > and must be deleted before you start.
 
@@ -40,7 +40,7 @@ Pipeline 2 reads `questions_fixed.jsonl` only for three-way ID alignment validat
 
 | Config | Path |
 |---|---|
-| Pipeline 1 experiment | `configs/pipeline1/experiments/11_sivas_fixed512_faiss_dense_mistralsmall_baseline.yaml` |
+| Pipeline 1 experiment | `configs/pipeline1/experiments/91_sivas_fixed512_faiss_dense_mistralsmall_prompt_v0.yaml` |
 | Pipeline 2 evaluation | `configs/pipeline2/base_eval.yaml` |
 
 Pipeline 1 config inherits from `configs/pipeline1/base.yaml` via `extends:`.
@@ -52,15 +52,15 @@ Key Pipeline 1 settings:
 - Retrieval: `category_aware_dense`, top-k=5
 - Orchestration LLM: `mistral-small` via Ollama
 - Generation LLM: `qwen2.5:7b` via Ollama
-- Output: `data/runs/pipeline1/11_sivas_fixed512_faiss_dense_mistralsmall_baseline/`
+- Output: `data/runs/pipeline1/91_sivas_fixed512_faiss_dense_mistralsmall_prompt_v0/`
 - Resume: enabled (`resume: true`, `overwrite: false`)
 
 Key Pipeline 2 settings:
-- Reads: `data/runs/pipeline1/11_sivas_fixed512_faiss_dense_mistralsmall_baseline/results.jsonl`
+- Reads: `data/runs/pipeline1/91_sivas_fixed512_faiss_dense_mistralsmall_prompt_v0/results.jsonl`
 - Ground truth: `data/raw/qa_ground_truth_fixed.jsonl`
 - Retrieval eval field: `retrieved_file_names`
 - Metrics at k: 1, 3, 5
-- Output: `data/eval/runs/pipeline2/11_sivas_fixed512_faiss_dense_mistralsmall_baseline_eval/`
+- Output: `data/eval/runs/pipeline2/91_sivas_fixed512_faiss_dense_mistralsmall_prompt_v0_eval/`
 
 ---
 
@@ -206,21 +206,21 @@ python scripts/test_ollama.py --base-url http://localhost:11434
 ### Step 1: Verify output directory is empty
 
 ```bash
-ls data/runs/pipeline1/11_sivas_fixed512_faiss_dense_mistralsmall_baseline/
+ls data/runs/pipeline1/91_sivas_fixed512_faiss_dense_mistralsmall_prompt_v0/
 ```
 
 Must be empty (or contain only `.gitkeep`). If `results.jsonl` exists from a previous session, verify it is a real run (check `experiment_id` in the first line). Any synthetic file must be deleted:
 
 ```bash
 # Only if the file is synthetic/incomplete:
-rm data/runs/pipeline1/11_sivas_fixed512_faiss_dense_mistralsmall_baseline/results.jsonl
+rm data/runs/pipeline1/91_sivas_fixed512_faiss_dense_mistralsmall_prompt_v0/results.jsonl
 ```
 
 ### Step 2: Run Pipeline 1
 
 ```bash
 python -m src.pipeline1.main \
-  --config configs/pipeline1/experiments/11_sivas_fixed512_faiss_dense_mistralsmall_baseline.yaml
+  --config configs/pipeline1/experiments/91_sivas_fixed512_faiss_dense_mistralsmall_prompt_v0.yaml
 ```
 
 Expected runtime: 30–120 minutes depending on GPU availability and Ollama generation speed.
@@ -230,7 +230,7 @@ Pipeline 1 supports resume (`resume: true` in the config). If interrupted, rerun
 Expected output files:
 
 ```
-data/runs/pipeline1/11_sivas_fixed512_faiss_dense_mistralsmall_baseline/
+data/runs/pipeline1/91_sivas_fixed512_faiss_dense_mistralsmall_prompt_v0/
 ├── results.jsonl          # one row per question (96 rows for full SIVAS)
 ├── results.csv            # same data as CSV
 ├── run_manifest.json      # run metadata and config hash
@@ -242,20 +242,20 @@ data/runs/pipeline1/11_sivas_fixed512_faiss_dense_mistralsmall_baseline/
 
 ```bash
 # Must output 96
-wc -l data/runs/pipeline1/11_sivas_fixed512_faiss_dense_mistralsmall_baseline/results.jsonl
+wc -l data/runs/pipeline1/91_sivas_fixed512_faiss_dense_mistralsmall_prompt_v0/results.jsonl
 
 # Inspect first row
-head -n 1 data/runs/pipeline1/11_sivas_fixed512_faiss_dense_mistralsmall_baseline/results.jsonl | python -m json.tool | head -20
+head -n 1 data/runs/pipeline1/91_sivas_fixed512_faiss_dense_mistralsmall_prompt_v0/results.jsonl | python -m json.tool | head -20
 
 # Check experiment_id is NOT synthetic
 python -c "
 import json
-r = json.loads(open('data/runs/pipeline1/11_sivas_fixed512_faiss_dense_mistralsmall_baseline/results.jsonl').readline())
+r = json.loads(open('data/runs/pipeline1/91_sivas_fixed512_faiss_dense_mistralsmall_prompt_v0/results.jsonl').readline())
 eid = r.get('experiment_id', '')
 ans = r.get('generated_answer', '')
 print('experiment_id:', eid)
 print('answer[:80]:', ans[:80])
-assert eid == '11_sivas_fixed512_faiss_dense_mistralsmall_baseline', f'Wrong experiment_id: {eid}'
+assert eid == '91_sivas_fixed512_faiss_dense_mistralsmall_prompt_v0', f'Wrong experiment_id: {eid}'
 assert 'Synthetische' not in ans, 'Synthetic answer detected!'
 print('OK: Real Pipeline 1 output confirmed.')
 "
@@ -274,21 +274,21 @@ Expected runtime: under 2 minutes (no model inference in Pipeline 2).
 
 ```bash
 # Per-question results (must be 96 rows)
-wc -l data/eval/runs/pipeline2/11_sivas_fixed512_faiss_dense_mistralsmall_baseline_eval/per_question.jsonl
+wc -l data/eval/runs/pipeline2/91_sivas_fixed512_faiss_dense_mistralsmall_prompt_v0_eval/per_question.jsonl
 
 # Summary metrics
-cat data/eval/runs/pipeline2/11_sivas_fixed512_faiss_dense_mistralsmall_baseline_eval/summary_metrics.json | python -m json.tool
+cat data/eval/runs/pipeline2/91_sivas_fixed512_faiss_dense_mistralsmall_prompt_v0_eval/summary_metrics.json | python -m json.tool
 
 # Leaderboard
-cat data/eval/runs/pipeline2/11_sivas_fixed512_faiss_dense_mistralsmall_baseline_eval/leaderboard.csv
+cat data/eval/runs/pipeline2/91_sivas_fixed512_faiss_dense_mistralsmall_prompt_v0_eval/leaderboard.csv
 
 # Category breakdown
-cat data/eval/runs/pipeline2/11_sivas_fixed512_faiss_dense_mistralsmall_baseline_eval/summary_by_category.csv
+cat data/eval/runs/pipeline2/91_sivas_fixed512_faiss_dense_mistralsmall_prompt_v0_eval/summary_by_category.csv
 
 # Audit verdict
 python -c "
 import json
-r = json.loads(open('data/eval/runs/pipeline2/11_sivas_fixed512_faiss_dense_mistralsmall_baseline_eval/eval_manifest.json').read())
+r = json.loads(open('data/eval/runs/pipeline2/91_sivas_fixed512_faiss_dense_mistralsmall_prompt_v0_eval/eval_manifest.json').read())
 print('final_verdict:', r['final_verdict'])
 print('strict_audit_pass:', r['strict_audit_pass'])
 print('total_questions:', r['total_questions'])
@@ -302,7 +302,7 @@ print('total_questions:', r['total_questions'])
 ### Pipeline 2 output directory
 
 ```
-data/eval/runs/pipeline2/11_sivas_fixed512_faiss_dense_mistralsmall_baseline_eval/
+data/eval/runs/pipeline2/91_sivas_fixed512_faiss_dense_mistralsmall_prompt_v0_eval/
 ├── per_question.jsonl          # per-question metric rows
 ├── per_question.csv            # same as CSV
 ├── per_question_metrics.jsonl  # metrics-only rows (no raw text)
@@ -401,7 +401,7 @@ Must output a line inside `resolve_ground_truth_answer()`.
 **Fix:** Delete the partial results and rerun, or set `resume: true` (already the default in the experiment config) and rerun to pick up where it stopped:
 ```bash
 python -m src.pipeline1.main \
-  --config configs/pipeline1/experiments/11_sivas_fixed512_faiss_dense_mistralsmall_baseline.yaml
+  --config configs/pipeline1/experiments/91_sivas_fixed512_faiss_dense_mistralsmall_prompt_v0.yaml
 ```
 
 ### `final_verdict: invalid` in eval_manifest.json

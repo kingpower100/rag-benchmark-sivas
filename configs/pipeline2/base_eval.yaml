@@ -1,14 +1,14 @@
 evaluation:
-  eval_run_id: "11_sivas_fixed512_faiss_dense_mistralsmall_baseline_eval"
+  eval_run_id: "91_sivas_fixed512_faiss_dense_mistralsmall_prompt_v0_eval"
   output_dir: "data/eval/runs/pipeline2"
   retrieval_only: false
   retrieval_eval_field: "retrieved_file_names"
   max_generation_failure_rate: 0.05
   strict_failure_threshold: false
 inputs:
-  pipeline1_results_path: "data/runs/pipeline1/11_sivas_fixed512_faiss_dense_mistralsmall_baseline/results.jsonl"
+  pipeline1_results_path: "data/runs/pipeline1/91_sivas_fixed512_faiss_dense_mistralsmall_prompt_v0/results.jsonl"
   rag_outputs:
-    - "data/runs/pipeline1/11_sivas_fixed512_faiss_dense_mistralsmall_baseline/results.jsonl"
+    - "data/runs/pipeline1/91_sivas_fixed512_faiss_dense_mistralsmall_prompt_v0/results.jsonl"
   questions_path: "data/raw/questions_fixed.jsonl"
   qa_path: "data/raw/qa_ground_truth_fixed.jsonl"
   gold_contexts_path: "data/raw/qa_ground_truth_fixed.jsonl"

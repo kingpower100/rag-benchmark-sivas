@@ -26,7 +26,7 @@ class EvaluationConfig(StrictEvalConfigModel):
 
 
 class InputsConfig(StrictEvalConfigModel):
-    pipeline1_results_path: str = "data/runs/pipeline1/11_sivas_fixed512_faiss_dense_mistralsmall_baseline/results.jsonl"
+    pipeline1_results_path: str = "data/runs/pipeline1/91_sivas_fixed512_faiss_dense_mistralsmall_prompt_v0/results.jsonl"
     rag_outputs: list[str] = Field(default_factory=list)
     questions_path: str = "data/raw/questions_fixed.jsonl"
     qa_path: str = "data/raw/qa_ground_truth_fixed.jsonl"

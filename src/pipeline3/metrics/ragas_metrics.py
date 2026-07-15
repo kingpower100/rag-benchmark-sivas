@@ -243,6 +243,7 @@ class RagasEvaluator:
             from ragas.metrics import (
                 Faithfulness,
                 AnswerRelevancy,
+                ContextRecall,
             )
         except ImportError as ex:
             logger.error("Could not import RAGAS metric classes: %s", ex)
@@ -255,4 +256,8 @@ class RagasEvaluator:
                 metrics.append(AnswerRelevancy(llm=llm, embeddings=embeddings))
             else:
                 logger.warning("AnswerRelevancy skipped: embeddings not available")
+        if cfg_metrics.context_recall:
+            # ContextRecall uses EvaluationMode.qcg (question + contexts + ground_truth).
+            # It requires only an LLM — no embeddings needed.
+            metrics.append(ContextRecall(llm=llm))
         return metrics

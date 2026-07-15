@@ -15,6 +15,7 @@ _JUDGE_COLS = frozenset({
 _RAGAS_PREFIXES = (
     "ragas_faithfulness",
     "ragas_answer_relevancy",
+    "ragas_context_recall",
 )
 
 

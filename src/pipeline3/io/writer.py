@@ -30,6 +30,7 @@ PER_QUESTION_FIELDS = [
     "judge_latency_ms",
     "ragas_faithfulness",
     "ragas_answer_relevancy",
+    "ragas_context_recall",
 ]
 
 
@@ -114,6 +115,7 @@ def _build_report_markdown(manifest: dict[str, Any], summary: dict[str, Any]) ->
     ragas_metrics = [
         "ragas_faithfulness",
         "ragas_answer_relevancy",
+        "ragas_context_recall",
     ]
     for metric in ragas_metrics:
         val = summary.get(f"mean_{metric}")

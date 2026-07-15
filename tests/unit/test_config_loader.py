@@ -22,9 +22,9 @@ def _minimal_pipeline1_payload(orchestration_model: str) -> dict:
 
 
 def test_pipeline1_sivas_baseline_config_loads():
-    cfg = PipelineConfig.from_yaml("configs/pipeline1/experiments/11_sivas_fixed512_faiss_dense_mistralsmall_baseline.yaml")
+    cfg = PipelineConfig.from_yaml("configs/pipeline1/experiments/91_sivas_fixed512_faiss_dense_mistralsmall_prompt_v0.yaml")
 
-    assert cfg.experiment.experiment_id == "11_sivas_fixed512_faiss_dense_mistralsmall_baseline"
+    assert cfg.experiment.experiment_id == "91_sivas_fixed512_faiss_dense_mistralsmall_prompt_v0"
     assert cfg.data.dataset_schema == "sivas"
     assert cfg.data.documents_path == "data/raw/kb_documents_fixed.jsonl"
     assert cfg.data.questions_path == "data/raw/questions_fixed.jsonl"
@@ -53,15 +53,15 @@ def test_pipeline1_base_uses_sivas_defaults_and_safe_run_defaults():
 def test_pipeline2_base_uses_sivas_defaults():
     cfg = EvalConfig.from_yaml("configs/pipeline2/base_eval.yaml")
 
-    assert cfg.evaluation.eval_run_id == "11_sivas_fixed512_faiss_dense_mistralsmall_baseline_eval"
+    assert cfg.evaluation.eval_run_id == "91_sivas_fixed512_faiss_dense_mistralsmall_prompt_v0_eval"
     assert cfg.inputs.qa_path == "data/raw/qa_ground_truth_fixed.jsonl"
     assert cfg.inputs.questions_path == "data/raw/questions_fixed.jsonl"
     assert (
         cfg.inputs.pipeline1_results_path
-        == "data/runs/pipeline1/11_sivas_fixed512_faiss_dense_mistralsmall_baseline/results.jsonl"
+        == "data/runs/pipeline1/91_sivas_fixed512_faiss_dense_mistralsmall_prompt_v0/results.jsonl"
     )
     assert cfg.inputs.rag_outputs == [
-        "data/runs/pipeline1/11_sivas_fixed512_faiss_dense_mistralsmall_baseline/results.jsonl"
+        "data/runs/pipeline1/91_sivas_fixed512_faiss_dense_mistralsmall_prompt_v0/results.jsonl"
     ]
 
 

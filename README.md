@@ -16,21 +16,30 @@ The active raw files are:
 
 Pipeline 1 uses only `kb_documents_fixed.jsonl` and `questions_fixed.jsonl`. Pipeline 2 uses `qa_ground_truth_fixed.jsonl` for offline evaluation.
 
+## Benchmark Experiment Groups
+
+Benchmark configs are grouped by pipeline under `configs/pipeline*/experiments/`.
+
+- `91-96`: Prompt Benchmarking, with `91_sivas_fixed512_faiss_dense_mistralsmall_prompt_v0.yaml` as the baseline and prompt V1-V5 variants through `96_sivas_fixed512_faiss_dense_mistralsmall_prompt_v5.yaml`.
+- `97-98`: LLM Benchmarking, holding Prompt V4 fixed and varying the orchestration model with Qwen2.5 and Llama 3.1.
+
+Smoke tests live separately under `configs/pipeline*/smoke/` and are excluded from benchmark leaderboards.
+
 ## Active Pipeline 1 Config
 
-- `configs/pipeline1/experiments/11_sivas_fixed512_faiss_dense_mistralsmall_baseline.yaml`
+- `configs/pipeline1/experiments/91_sivas_fixed512_faiss_dense_mistralsmall_prompt_v0.yaml`
 
 Baseline run command:
 
 ```bash
-python -m src.pipeline1.main --config configs/pipeline1/experiments/11_sivas_fixed512_faiss_dense_mistralsmall_baseline.yaml
+python -m src.pipeline1.main --config configs/pipeline1/experiments/91_sivas_fixed512_faiss_dense_mistralsmall_prompt_v0.yaml
 ```
 
 Expected Pipeline 1 output:
 
-- `data/runs/pipeline1/11_sivas_fixed512_faiss_dense_mistralsmall_baseline/results.jsonl`
-- `data/runs/pipeline1/11_sivas_fixed512_faiss_dense_mistralsmall_baseline/run_manifest.json`
-- `data/runs/pipeline1/11_sivas_fixed512_faiss_dense_mistralsmall_baseline/logs.txt`
+- `data/runs/pipeline1/91_sivas_fixed512_faiss_dense_mistralsmall_prompt_v0/results.jsonl`
+- `data/runs/pipeline1/91_sivas_fixed512_faiss_dense_mistralsmall_prompt_v0/run_manifest.json`
+- `data/runs/pipeline1/91_sivas_fixed512_faiss_dense_mistralsmall_prompt_v0/logs.txt`
 
 Pipeline 1 requires the configured local generation service and embedding dependencies at runtime. Cleanup and static checks must not start services, load models, build indexes, or execute retrieval/generation.
 
@@ -40,19 +49,19 @@ Pipeline 2 defaults are SIVAS-first:
 
 - `configs/pipeline2/base_eval.yaml`
 - `qa_path: data/raw/qa_ground_truth_fixed.jsonl`
-- `pipeline1_results_path: data/runs/pipeline1/11_sivas_fixed512_faiss_dense_mistralsmall_baseline/results.jsonl`
+- `pipeline1_results_path: data/runs/pipeline1/91_sivas_fixed512_faiss_dense_mistralsmall_prompt_v0/results.jsonl`
 
 Run evaluation only after Pipeline 1 has produced `results.jsonl`:
 
 ```bash
-python -m src.pipeline2.main --config configs/pipeline2/base_eval.yaml
+python -m src.pipeline2.main --config configs/pipeline2/experiments/91_sivas_fixed512_faiss_dense_mistralsmall_prompt_v0.yaml
 ```
 
 Expected Pipeline 2 output:
 
-- `data/eval/runs/pipeline2/11_sivas_fixed512_faiss_dense_mistralsmall_baseline_eval/per_question.jsonl`
-- `data/eval/runs/pipeline2/11_sivas_fixed512_faiss_dense_mistralsmall_baseline_eval/summary_by_experiment.csv`
-- `data/eval/runs/pipeline2/11_sivas_fixed512_faiss_dense_mistralsmall_baseline_eval/eval_manifest.json`
+- `data/eval/runs/pipeline2/91_sivas_fixed512_faiss_dense_mistralsmall_prompt_v0_eval/per_question.jsonl`
+- `data/eval/runs/pipeline2/91_sivas_fixed512_faiss_dense_mistralsmall_prompt_v0_eval/summary_by_experiment.csv`
+- `data/eval/runs/pipeline2/91_sivas_fixed512_faiss_dense_mistralsmall_prompt_v0_eval/eval_manifest.json`
 
 ## Docker Services (pgvector and Elasticsearch backends)
 
@@ -100,8 +109,8 @@ python scripts/init_pgvector.py
 python scripts/init_elasticsearch.py --host http://localhost:9200 --index rag_benchmark_chunks
 
 # Index documents (requires a pgvector or ES YAML config):
-python scripts/index_pgvector.py      --config configs/pipeline1/experiments/<pgvector_config>.yaml
-python scripts/index_elasticsearch.py --config configs/pipeline1/experiments/<es_bm25_config>.yaml
+python scripts/index_pgvector.py      --config configs/pipeline1/smoke/smoke_pgvector_dense.yaml
+python scripts/index_elasticsearch.py --config configs/pipeline1/smoke/smoke_elasticsearch_bm25.yaml
 ```
 
 See `infra/docker/README.md` for full details, teardown instructions, and troubleshooting.

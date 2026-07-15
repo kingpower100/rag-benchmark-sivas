@@ -1,0 +1,9 @@
+extends: "../base_eval.yaml"
+
+evaluation:
+  eval_run_id: "91_sivas_fixed512_faiss_dense_mistralsmall_prompt_v0_eval"
+
+inputs:
+  pipeline1_results_path: "data/runs/pipeline1/91_sivas_fixed512_faiss_dense_mistralsmall_prompt_v0/results.jsonl"
+  rag_outputs:
+    - "data/runs/pipeline1/91_sivas_fixed512_faiss_dense_mistralsmall_prompt_v0/results.jsonl"

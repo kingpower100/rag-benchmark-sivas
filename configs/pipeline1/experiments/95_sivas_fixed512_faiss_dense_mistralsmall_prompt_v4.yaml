@@ -1,0 +1,10 @@
+extends: "91_sivas_fixed512_faiss_dense_mistralsmall_prompt_v0.yaml"
+
+# Varies: orchestration PROMPT (V4). Orchestration model = mistral-small. Generation model = qwen2.5:7b.
+
+experiment:
+  experiment_id: "95_sivas_fixed512_faiss_dense_mistralsmall_prompt_v4"
+
+orchestration:
+  prompt_path: "src/pipeline1/prompts/orchestration_promptV4.txt"
+  prompt_version: "orchestration_promptV4"

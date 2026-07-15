@@ -1,0 +1,25 @@
+pipeline2_runs_dir: data/eval/runs/pipeline2
+pipeline3_runs_dir: data/eval/runs/pipeline3
+output_dir: data/eval/runs/pipeline4
+run_id: pipeline4_default
+
+# Options: retrieval_only | overall_rag
+ranking_mode: retrieval_only
+
+retrieval_score_weights:
+  recall_at_5: 0.35
+  mrr_at_5: 0.25
+  ndcg_at_5: 0.20
+  context_precision_at_5: 0.20
+
+rqi_weights:
+  correctness: 0.25
+  faithfulness: 0.25
+  context_relevance: 0.20
+  recall_at_5: 0.15
+  no_unknown: 0.15
+
+validation:
+  max_generation_failure_rate: 0.05
+  min_judge_success_rate: 0.95
+  max_ragas_nan_rate: 0.10

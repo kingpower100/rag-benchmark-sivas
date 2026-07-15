@@ -7,7 +7,7 @@ pipeline3:
   prompt_version: "v2"
 
 inputs:
-  pipeline1_results_path: "data/runs/pipeline1/11_sivas_fixed512_faiss_dense_mistralsmall_baseline/results.jsonl"
+  pipeline1_results_path: "data/runs/pipeline1/91_sivas_fixed512_faiss_dense_mistralsmall_prompt_v0/results.jsonl"
   questions_path: "data/raw/questions_fixed.jsonl"
   qa_path: "data/raw/qa_ground_truth_fixed.jsonl"
   gold_contexts_path: "data/raw/qa_ground_truth_fixed.jsonl"
@@ -33,6 +33,7 @@ ragas:
   metrics:
     faithfulness: true
     answer_relevancy: true
+    context_recall: false
 
 llm_judge:
   enabled: true

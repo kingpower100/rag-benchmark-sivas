@@ -1,0 +1,7 @@
+extends: "../base_pipeline3.yaml"
+
+pipeline3:
+  run_id: "smoke_elasticsearch_bm25"
+
+inputs:
+  pipeline1_results_path: "data/runs/pipeline1/smoke_elasticsearch_bm25/results.jsonl"

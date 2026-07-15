@@ -63,12 +63,16 @@ def test_judge_temperature_must_be_non_negative():
         P3JudgeConfig(temperature=-0.1)
 
 
-def test_default_ragas_metrics_faithfulness_and_answer_relevancy_only():
+def test_default_ragas_metrics_faithfulness_and_answer_relevancy_enabled():
     cfg = Pipeline3Config.model_validate(_VALID_CONFIG)
     assert cfg.ragas.metrics.faithfulness is True
     assert cfg.ragas.metrics.answer_relevancy is True
     assert not hasattr(cfg.ragas.metrics, "context_precision")
-    assert not hasattr(cfg.ragas.metrics, "context_recall")
+
+
+def test_default_context_recall_disabled():
+    cfg = Pipeline3Config.model_validate(_VALID_CONFIG)
+    assert cfg.ragas.metrics.context_recall is False
 
 
 def test_default_ragas_requires_explicit_cuda_and_fail_on_error():

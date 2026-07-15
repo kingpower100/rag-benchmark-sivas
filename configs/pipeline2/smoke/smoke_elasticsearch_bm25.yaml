@@ -1,0 +1,9 @@
+extends: "../base_eval.yaml"
+
+evaluation:
+  eval_run_id: "smoke_elasticsearch_bm25_eval"
+
+inputs:
+  pipeline1_results_path: "data/runs/pipeline1/smoke_elasticsearch_bm25/results.jsonl"
+  rag_outputs:
+    - "data/runs/pipeline1/smoke_elasticsearch_bm25/results.jsonl"

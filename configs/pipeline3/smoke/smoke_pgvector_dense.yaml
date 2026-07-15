@@ -1,0 +1,7 @@
+extends: "../base_pipeline3.yaml"
+
+pipeline3:
+  run_id: "smoke_pgvector_dense"
+
+inputs:
+  pipeline1_results_path: "data/runs/pipeline1/smoke_pgvector_dense/results.jsonl"

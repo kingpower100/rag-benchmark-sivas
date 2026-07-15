@@ -1,0 +1,7 @@
+extends: "../base_pipeline3.yaml"
+
+pipeline3:
+  run_id: "95_sivas_fixed512_faiss_dense_mistralsmall_prompt_v4"
+
+inputs:
+  pipeline1_results_path: "data/runs/pipeline1/95_sivas_fixed512_faiss_dense_mistralsmall_prompt_v4/results.jsonl"
