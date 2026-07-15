@@ -33,7 +33,7 @@ ragas:
   metrics:
     faithfulness: true
     answer_relevancy: true
-    context_recall: false
+    context_recall: true
 
 llm_judge:
   enabled: true
