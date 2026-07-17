@@ -3,11 +3,11 @@ services:
     image: pgvector/pgvector:pg16
     container_name: rag-benchmark-postgres
     environment:
-      POSTGRES_USER: rag
-      POSTGRES_PASSWORD: rag
-      POSTGRES_DB: rag
+      POSTGRES_USER: ${POSTGRES_USER:-rag}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:-rag}
+      POSTGRES_DB: ${POSTGRES_DB:-rag}
     ports:
-      - "5432:5432"
+      - "${POSTGRES_PORT:-5432}:5432"
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
@@ -54,7 +54,7 @@ services:
       # Use host machine Ollama from inside container.
       OLLAMA_BASE_URL: "http://host.docker.internal:11434"
       # pgvector connection string (used when index.type=pgvector).
-      PGVECTOR_DSN: "postgresql://rag:rag@postgres:5432/rag"
+      PGVECTOR_DSN: "${PGVECTOR_DSN:-postgresql://rag:rag@postgres:5432/rag}"
     volumes:
       # Input files stay on host and are mounted read-only.
       - ../../data/raw:/app/data/raw:ro
