@@ -547,10 +547,28 @@ export ELASTICSEARCH_URL="http://localhost:9201"
 
 **Symptom:** `RuntimeError: CUDA error: no kernel image is available for execution on the device` or torch import errors.
 
+**Background:** torch is treated as a system/environment dependency — it is **not** pinned
+in `requirements.txt` or `requirements-lock.txt`. The project does not dictate which torch
+version the server uses. If the server already has a CUDA-enabled torch, do not reinstall it.
+
 **Fix:**
 1. Verify GPU is recognised: `nvidia-smi`.
-2. Verify PyTorch CUDA version matches the installed driver: `python -c "import torch; print(torch.version.cuda)"`.
-3. Reinstall the correct PyTorch build from `requirements.txt` for the server's CUDA version.
+2. Verify PyTorch CUDA version matches the installed driver:
+   `python -c "import torch; print(torch.version.cuda)"`.
+3. If torch is missing or wrong for the driver, install the correct wheel manually:
+   ```bash
+   pip install torch --index-url https://download.pytorch.org/whl/cu<version>
+   ```
+   See https://pytorch.org/get-started/locally/ for the correct index URL.
+4. After installing the correct torch, install the project **without** letting pip
+   overwrite it:
+   ```bash
+   pip install -r requirements-lock.txt
+   pip install --no-deps -e .
+   ```
+   Do **not** run `pip install -r requirements.txt` after the GPU server already has
+   the correct torch — `requirements-lock.txt` no longer pins torch so it will not
+   downgrade it.
 
 ## Ollama model missing
 

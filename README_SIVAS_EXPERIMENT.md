@@ -113,7 +113,38 @@ faiss-gpu==1.7.4   # for CUDA 11.x
 
 or build from source for CUDA 12.x. For the baseline experiment, `faiss-cpu` is sufficient — the performance bottleneck is Ollama generation, not FAISS search over 65 documents.
 
-### Install commands
+### PyTorch — system dependency
+
+**torch is not pinned by this project.** The remote GPU server already provides a
+CUDA-enabled PyTorch build. Installing the project should not downgrade or replace
+that build.
+
+Recommended workflow on a GPU server that already has the correct torch/CUDA stack:
+
+```bash
+# Install project without pulling its own torch
+pip install -e . --no-deps
+
+# Install remaining project dependencies (torch is not in the lock file)
+pip install -r requirements-lock.txt
+```
+
+If you are setting up a fresh environment that does not yet have torch, install the
+CUDA-compatible wheel **before** the project dependencies:
+
+```bash
+# Example for CUDA 12.8 (adjust the index URL to match the server's CUDA version)
+pip install torch --index-url https://download.pytorch.org/whl/cu128
+
+# Then install the project
+pip install -r requirements-lock.txt
+pip install --no-deps -e .
+```
+
+Check https://pytorch.org/get-started/locally/ for the correct index URL for your
+CUDA version. Do not add `+cuXXX` build tags to requirements files.
+
+### Standard install commands (CPU / CI / local development)
 
 ```bash
 # Clone
@@ -127,7 +158,10 @@ source .venv/bin/activate
 # Upgrade pip
 pip install --upgrade pip
 
-# Install all pinned dependencies
+# Install torch first (without project pulling it in)
+# On a GPU server: torch is already present — skip this step.
+# On CPU / CI: the sentence-transformers and bert-score packages will pull
+# in a compatible CPU torch automatically via their own dependencies.
 pip install -r requirements-lock.txt
 
 # Install project in editable mode (makes src/ importable)
@@ -144,7 +178,8 @@ pydantic==2.8.2
 pydantic-core==2.20.1
 pyyaml==6.0.2
 jsonlines==4.0.0
-torch==2.4.1
+# torch is NOT listed here — it is a system/environment dependency.
+# Install the correct CUDA wheel for your server before running pip install.
 sentence-transformers==3.0.1
 transformers==4.44.2
 huggingface-hub==0.24.6
