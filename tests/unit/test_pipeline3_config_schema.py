@@ -1,9 +1,12 @@
 from __future__ import annotations
 
+from pathlib import Path
+
 import pytest
 
 from src.pipeline3.schemas.pipeline3_config_schema import (
     P3JudgeConfig,
+    P3LLMJudgeConfig,
     P3WeightsConfig,
     Pipeline3Config,
 )
@@ -95,3 +98,33 @@ def test_default_judge_max_retries():
 def test_judge_max_retries_must_be_positive():
     with pytest.raises(Exception):
         P3JudgeConfig(max_retries=0)
+
+
+def test_llm_judge_max_context_chars_default_is_backward_compatible():
+    cfg = Pipeline3Config.model_validate(_VALID_CONFIG)
+    assert cfg.llm_judge.max_context_chars == 6000
+
+
+def test_llm_judge_max_context_chars_accepts_configured_value():
+    payload = {
+        **_VALID_CONFIG,
+        "llm_judge": {
+            "enabled": True,
+            "max_context_chars": 10000,
+        },
+    }
+    cfg = Pipeline3Config.model_validate(payload)
+    assert cfg.llm_judge.max_context_chars == 10000
+
+
+def test_llm_judge_max_context_chars_must_be_positive():
+    with pytest.raises(Exception):
+        P3LLMJudgeConfig(max_context_chars=0)
+
+
+def test_existing_pipeline3_configs_load_successfully():
+    config_dir = Path("configs/pipeline3")
+    config_paths = sorted(config_dir.rglob("*.yaml"))
+    assert config_paths
+    for config_path in config_paths:
+        Pipeline3Config.from_yaml(str(config_path))

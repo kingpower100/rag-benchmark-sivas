@@ -22,6 +22,8 @@ def build_retriever(config: RetrievalConfig, embedder, index, chunks, embeddings
             metadata_boosting=config.metadata_boosting,
             metadata_filtering=config.metadata_filtering,
         )
+    if config.retriever_type == "elasticsearch_hybrid_rrf":
+        return _build_elasticsearch_hybrid_rrf_retriever(config, embedder, index, chunks)
 
     dense_retriever = _build_dense_retriever(config, embedder, index, chunks)
     if config.retriever_type == "category_aware_dense":
@@ -102,3 +104,42 @@ def _build_bm25_retriever(config: RetrievalConfig, chunks):
         if config.bm25.allow_fallback:
             return BM25Retriever(chunks=chunks, k1=config.bm25.k1, b=config.bm25.b)
         raise
+
+
+def _build_elasticsearch_hybrid_rrf_retriever(config: RetrievalConfig, embedder, index, chunks):
+    """Build an ElasticsearchHybridRRFRetriever from config.
+
+    The dense leg is always an ElasticsearchDenseRetriever (the schema validator
+    guarantees index.type='elasticsearch' when this retriever_type is selected).
+    The BM25 leg is constructed from retrieval.bm25 — it can be either the local
+    in-memory BM25Retriever (bm25.backend='local') or ElasticsearchBM25Retriever
+    (bm25.backend='elasticsearch').  No silent FAISS/pgvector fallback occurs.
+    """
+    from src.pipeline1.retrieval.elasticsearch_hybrid_rrf_retriever import (
+        ElasticsearchHybridRRFRetriever,
+    )
+
+    hybrid_cfg = config.hybrid
+    dense_fetch_k = hybrid_cfg.dense_fetch_k if hybrid_cfg.dense_fetch_k else config.fetch_k
+    bm25_fetch_k = hybrid_cfg.bm25_fetch_k if hybrid_cfg.bm25_fetch_k else config.fetch_k
+
+    dense = ElasticsearchDenseRetriever(
+        embedder=embedder,
+        index=index,
+        chunks=chunks,
+        top_k=config.top_k,
+        fetch_k=dense_fetch_k,
+        metadata_boosting=config.metadata_boosting,
+        metadata_filtering=config.metadata_filtering,
+    )
+    bm25 = _build_bm25_retriever(config, chunks)
+    return ElasticsearchHybridRRFRetriever(
+        dense_retriever=dense,
+        bm25_retriever=bm25,
+        fetch_k=config.fetch_k,
+        dense_fetch_k=dense_fetch_k,
+        bm25_fetch_k=bm25_fetch_k,
+        rrf_k=hybrid_cfg.rrf_k,
+        dense_weight=hybrid_cfg.dense_weight,
+        bm25_weight=hybrid_cfg.bm25_weight,
+    )

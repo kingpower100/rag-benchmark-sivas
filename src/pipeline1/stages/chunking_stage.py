@@ -6,6 +6,7 @@ from pathlib import Path
 from src.pipeline1.chunking.fixed_token_chunker import FIXED_TOKEN_CHUNKER_VERSION, FixedTokenChunker
 from src.pipeline1.chunking.fixed_word_chunker import FIXED_WORD_CHUNKER_VERSION, FixedWordChunker
 from src.pipeline1.chunking.sentence_chunker import SENTENCE_CHUNKER_VERSION, SENTENCE_SPLITTER_VERSION, SentenceChunker
+from src.pipeline1.chunking.sivas_character_chunker import SIVAS_CHARACTER_CHUNKER_VERSION, SivasCharacterChunker
 from src.pipeline1.chunking.table_aware_chunker import TABLE_AWARE_CHUNKER_VERSION, TableAwareChunker
 from src.pipeline1.io.jsonl_reader import list_txt_files
 from src.pipeline1.metadata import METADATA_SCHEMA_VERSION
@@ -129,6 +130,9 @@ class ChunkingStage(BaseStage):
         if self.cfg.chunking.strategy == "sentence":
             print("Using sentence-aware chunking with regex sentence boundaries and full-sentence overlap.")
             return SentenceChunker(self.cfg.chunking.chunk_size, self.cfg.chunking.chunk_overlap)
+        if self.cfg.chunking.strategy == "sivas_character":
+            print("Using SIVAS character chunking with exact partner regex and 2048-char ceiling.")
+            return SivasCharacterChunker(max_chars=self.cfg.chunking.max_chunk_chars)
         print("Using table-aware chunking that keeps markdown tables intact when possible.")
         return TableAwareChunker(
             self.cfg.chunking.chunk_size,
@@ -148,6 +152,8 @@ class ChunkingStage(BaseStage):
         elif self.cfg.chunking.strategy == "sentence":
             versions["chunker_implementation"] = SENTENCE_CHUNKER_VERSION
             versions["sentence_splitter"] = SENTENCE_SPLITTER_VERSION
+        elif self.cfg.chunking.strategy == "sivas_character":
+            versions["chunker_implementation"] = SIVAS_CHARACTER_CHUNKER_VERSION
         else:
             versions["chunker_implementation"] = TABLE_AWARE_CHUNKER_VERSION
         return versions

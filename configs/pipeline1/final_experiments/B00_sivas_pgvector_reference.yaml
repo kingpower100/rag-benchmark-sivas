@@ -1,0 +1,177 @@
+# B00 — SIVAS-Compatible Reference Baseline
+#
+# Reproduces the documented SIVAS partner production pipeline:
+#
+#   JSONL documents
+#   → exact SIVAS boundary-regex chunking (2048-char ceiling, zero overlap)
+#   → Mistral Embed API (mistral-embed, 1024 dim)
+#   → PostgreSQL + pgvector (HNSW, cosine)
+#   → category-aware dense retrieval via pgvector SQL WHERE clause
+#   → controlled global pgvector fallback
+#   → local Ollama mistral-small orchestration
+#   → local Ollama mistral-medium generation
+#
+# ============================================================
+# ENVIRONMENT VARIABLES (remote server — never put secrets here)
+# ============================================================
+#
+#   MISTRAL_API_KEY   required only by embedding (MistralEmbedder)
+#   PGVECTOR_DSN      required by indexing and retrieval
+#
+# Orchestration and generation use local Ollama — no Mistral API key needed.
+#
+# ============================================================
+# MODEL NOTES
+# ============================================================
+# orchestration.model_name: "mistral-small" — Ollama model name.
+#   Run: ollama pull mistral-small
+# generation.model_name: "mistral-medium" — Ollama model name.
+#   Run: ollama pull mistral-medium
+
+experiment:
+  experiment_id: "B00_sivas_pgvector_reference"
+  random_seed: 42
+  output_dir: "data/runs/pipeline1"
+
+data:
+  dataset_schema: "sivas"
+  documents_path: "data/raw/kb_documents_fixed.jsonl"
+  questions_path: "data/raw/questions_fixed.jsonl"
+  question_id_field: "question_id"
+  question_field: "frage"
+  document_text_field: "text"
+  allow_document_text_fallback: false
+  allow_unsafe_query_fields: false
+
+# ============================================================
+# Exact SIVAS chunking
+# ============================================================
+# strategy "sivas_character" splits on the documented SIVAS partner regex:
+#   (?<=[.!?;:])\s+|\n\n|\n(?=#{1,6}\s)|\n(?=-\s)
+# Accumulates segments up to max_chunk_chars (2048) characters.
+# chunk_overlap: 0 — SIVAS algorithm contains no overlap step.
+#   (chunk_overlap is a required schema field; 0 is set explicitly here.)
+# chunk_size: 2048 — required by schema; unused by sivas_character strategy.
+#   (The character ceiling is enforced by max_chunk_chars, not chunk_size.)
+chunking:
+  strategy: "sivas_character"
+  chunk_size: 2048
+  chunk_overlap: 0
+  max_chunk_chars: 2048
+  max_chunk_tokens: 1800
+  oversized_chunk_policy: "split"
+  oversized_chunk_warning: true
+
+# ============================================================
+# Mistral Embed API
+# ============================================================
+# provider: "mistral" dispatches to MistralEmbedder.
+# API key is read from MISTRAL_API_KEY (never stored here).
+# mistral-embed produces 1024-dimensional cosine embeddings.
+embedding:
+  provider: "mistral"
+  model_name: "mistral-embed"
+  normalize_embeddings: true
+  batch_size: 32
+  device: "cpu"
+  require_cuda: false
+
+# ============================================================
+# PostgreSQL + pgvector
+# ============================================================
+# DSN is read from PGVECTOR_DSN (never stored here).
+# dense_dim: 1024 matches mistral-embed output dimension.
+index:
+  type: "pgvector"
+  metric: "cosine"
+  dense_dim: 1024
+  index_name: "sivas_b00_mistral_embed_pgvector"
+  pgvector:
+    dsn_env: "PGVECTOR_DSN"
+    schema_name: "rag"
+    table_name: "chunk_embeddings"
+    index_type: "hnsw"
+    rebuild_index: false
+    hnsw_m: 16
+    hnsw_ef_construction: 64
+    hnsw_ef_search: 40
+
+# ============================================================
+# Category-aware dense retrieval via pgvector
+# ============================================================
+# category_aware_dense + pgvector index → PgvectorDenseRetriever
+# SQL WHERE-clause category filtering with controlled global fallback.
+# No FAISS is used anywhere in B00.
+retrieval:
+  retriever_type: "category_aware_dense"
+  top_k: 5
+  fetch_k: 20
+  category_field: "kategorie"
+  fallback_to_global: true
+  metadata_boosting:
+    enabled: false
+  metadata_filtering:
+    enabled: false
+
+reranker:
+  enabled: false
+
+# ============================================================
+# Orchestration — local Ollama, mistral-small
+# ============================================================
+# provider: "ollama" — runs against local Ollama server.
+# Does NOT use the Mistral API. Does NOT require MISTRAL_API_KEY.
+# prompt_version: "v1" — Prompt V1 as documented in SIVAS.
+orchestration:
+  provider: "ollama"
+  model_name: "mistral-small"
+  base_url: "http://localhost:11434"
+  fixed: true
+  tasks:
+    - "clean_question"
+    - "detect_category"
+  prompt_version: "v1"
+
+# ============================================================
+# Generation — local Ollama, mistral-medium
+# ============================================================
+# provider: "ollama" — runs against local Ollama server.
+# Does NOT use the Mistral API. Does NOT require MISTRAL_API_KEY.
+generation:
+  provider: "ollama"
+  model_name: "mistral-medium"
+  base_url: "http://localhost:11434"
+  temperature: 0.0
+  max_tokens: 512
+  timeout_s: 300
+  include_metadata_headers: true
+  max_prompt_tokens: 8192
+  max_context_tokens: 6000
+  max_chunk_tokens: 1800
+  max_context_chars: 24000
+  max_chunk_chars: 8000
+  context_truncation_strategy: "ranked_budget"
+  log_prompt_stats: true
+  system_prompt: |
+    Du bist ein QA-System fuer interne SIVAS/ERP-Wissensdokumente.
+
+    Beantworte die Frage ausschliesslich anhand des abgerufenen Kontexts.
+
+    Regeln:
+    - Gib nur die finale Antwort aus.
+    - Erfinde keine Details.
+    - Nutze Deutsch, sofern die Frage auf Deutsch gestellt ist.
+    - Wenn die Antwort im Kontext nicht enthalten ist, antworte exakt: UNKNOWN
+
+telemetry:
+  estimate_cost: true
+  pricing:
+    input_per_1k_tokens_usd: 0.0
+    output_per_1k_tokens_usd: 0.0
+
+runtime:
+  save_csv: true
+  log_level: "INFO"
+  resume: false
+  overwrite: true
+  cache_mismatch_policy: "raise"

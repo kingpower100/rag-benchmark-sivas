@@ -89,7 +89,11 @@ def _evaluate_single(
     question = str(row.get("question", "")).strip()
     generated_answer = str(row.get("generated_answer", "")).strip()
     context_texts = _extract_context_texts(row)
-    context_str, context_truncated = format_context(context_texts, question_id=qid)
+    context_str, context_truncated = format_context(
+        context_texts,
+        max_chars=llm_judge_cfg.max_context_chars,
+        question_id=qid,
+    )
     qa_row = qa_by_id.get(qid, {})
     ground_truth = _resolve_qa_answer(qa_row)
 

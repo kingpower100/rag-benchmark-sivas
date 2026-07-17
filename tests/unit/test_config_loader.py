@@ -22,7 +22,7 @@ def _minimal_pipeline1_payload(orchestration_model: str) -> dict:
 
 
 def test_pipeline1_sivas_baseline_config_loads():
-    cfg = PipelineConfig.from_yaml("configs/pipeline1/experiments/91_sivas_fixed512_faiss_dense_mistralsmall_prompt_v0.yaml")
+    cfg = PipelineConfig.from_yaml("configs/pipeline1/experiments Orchestration LLM/91_sivas_fixed512_faiss_dense_mistralsmall_prompt_v0.yaml")
 
     assert cfg.experiment.experiment_id == "91_sivas_fixed512_faiss_dense_mistralsmall_prompt_v0"
     assert cfg.data.dataset_schema == "sivas"

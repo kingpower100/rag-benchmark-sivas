@@ -1,0 +1,91 @@
+﻿extends: "../base.yaml"
+
+# NAMING NOTE â€” "mistralsmall" in all experiment IDs (11â€“15, 18) refers exclusively to
+# the ORCHESTRATION model (mistral-small), which performs category routing / topic
+# classification before retrieval.  It does NOT refer to the answer-generation model.
+#
+# Answer-generation model (the LLM that produces RAG answers) is qwen2.5:7b in ALL
+# experiments in this series.
+#
+# Experiment series overview:
+#   Exp 11          â€” baseline (default orchestration prompt, no prompt engineering)
+#   Exp 12â€“15, 18  â€” vary the ORCHESTRATION PROMPT (V1â€“V5); orchestration model = mistral-small
+#   Exp 16          â€” vary the ORCHESTRATION MODEL (qwen2.5:7b); prompt = V4
+#   Exp 17          â€” vary the ORCHESTRATION MODEL (llama3.1:8b); prompt = V4
+
+experiment:
+  experiment_id: "91_sivas_fixed512_faiss_dense_mistralsmall_prompt_v0"
+  random_seed: 42
+  output_dir: "data/runs/pipeline1"
+
+data:
+  dataset_schema: "sivas"
+  documents_path: "data/raw/kb_documents_fixed.jsonl"
+  documents_source_type: "jsonl"
+  questions_path: "data/raw/questions_fixed.jsonl"
+  document_text_field: "text"
+  question_id_field: "question_id"
+  question_field: "frage"
+  allow_document_text_fallback: false
+  allow_unsafe_query_fields: false
+
+chunking:
+  strategy: "fixed_token"
+  chunk_size: 512
+  chunk_overlap: 64
+  tokenizer_name: "cl100k_base"
+
+embedding:
+  provider: "sentence_transformers"
+  model_name: "BAAI/bge-m3"
+  normalize_embeddings: true
+  batch_size: 128
+  device: "cuda"
+  require_cuda: true
+  cache_dir: ".cache/sentence-transformers"
+
+index:
+  type: "faiss"
+  metric: "cosine"
+
+retrieval:
+  retriever_type: "category_aware_dense"
+  top_k: 5
+  fetch_k: 20
+  category_field: "kategorie"
+  fallback_to_global: true
+  metadata_boosting:
+    enabled: false
+  metadata_filtering:
+    enabled: false
+
+reranker:
+  enabled: false
+  model_name: null
+  device: "cuda"
+
+orchestration:
+  fixed: true
+  model_name: "mistral-small"   # category-routing model (classifies question topic)
+  base_url: "http://localhost:11434"
+  temperature: 0.0
+  max_tokens: 256
+  timeout_s: 180
+
+generation:
+  configurable: true
+  provider: "ollama"
+  model_name: "qwen2.5:7b"      # answer-generation model (produces the RAG answer)
+  base_url: "http://localhost:11434"
+  temperature: 0.0
+  max_tokens: 256
+  timeout_s: 180
+  include_metadata_headers: true
+  prompt_path: "src/pipeline1/prompts/answer_generation_sivas_v1.txt"
+
+runtime:
+  save_csv: true
+  log_level: "INFO"
+  resume: true
+  overwrite: false
+  cache_mismatch_policy: "raise"

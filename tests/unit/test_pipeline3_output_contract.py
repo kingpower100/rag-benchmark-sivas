@@ -5,7 +5,7 @@ from pathlib import Path
 
 from src.pipeline3.judge.response_parser import JudgeResponse
 from src.pipeline3.metrics.ragas_metrics import RagasResults
-from src.pipeline3.orchestrator import Pipeline3Orchestrator
+from src.pipeline3.orchestrator import Pipeline3Orchestrator, _build_per_question
 from src.pipeline3.stages.judge_stage import JudgeRowResult, JudgeStageResult
 from src.pipeline3.stages.loader_stage import LoaderResult
 
@@ -143,3 +143,28 @@ llm_judge:
     assert manifest["ragas_stats"]["fail_on_ragas_error"] is True
     assert manifest["ragas_stats"]["embeddings_device"] == "cuda"
     assert manifest["ragas_stats"]["require_cuda"] is True
+
+
+def test_per_question_keeps_ragas_faithfulness_nan_as_none_with_status():
+    rag_rows = [
+        {
+            "question_id": "q1",
+            "experiment_id": "exp",
+            "question": "Question?",
+            "generated_answer": "Answer.",
+        }
+    ]
+    qa_by_id = {"q1": {"answer": "Answer."}}
+    ragas_by_id = {
+        "q1": {
+            "ragas_faithfulness": None,
+            "ragas_faithfulness_status": "no_statements_generated",
+            "ragas_answer_relevancy": 0.75,
+        }
+    }
+
+    rows = _build_per_question(rag_rows, qa_by_id, {}, ragas_by_id)
+
+    assert rows[0]["ragas_faithfulness"] is None
+    assert rows[0]["ragas_faithfulness_status"] == "no_statements_generated"
+    assert rows[0]["ragas_faithfulness"] != 0

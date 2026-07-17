@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import math
+
 import pytest
 
 from src.pipeline3.aggregation.summarizer import summarize_semantic_metrics
@@ -51,6 +53,37 @@ def test_none_values_excluded_from_mean():
     ]
     summary = summarize_semantic_metrics(rows)
     assert summary["mean_ragas_faithfulness"] == pytest.approx(0.8)
+
+
+def test_nan_values_excluded_from_ragas_faithfulness_mean_and_not_zeroed():
+    rows = [
+        _make_row("q1", ragas_faithfulness=0.8),
+        _make_row("q2", ragas_faithfulness=math.nan),
+        _make_row("q3", ragas_faithfulness=1.0),
+    ]
+    summary = summarize_semantic_metrics(rows)
+    assert summary["mean_ragas_faithfulness"] == pytest.approx(0.9)
+    assert summary["mean_ragas_faithfulness"] != pytest.approx(0.6)
+
+
+def test_ragas_faithfulness_coverage_counts_are_reported():
+    rows = [
+        _make_row("q1", ragas_faithfulness=0.8),
+        _make_row(
+            "q2",
+            ragas_faithfulness=None,
+            ragas_faithfulness_status="no_statements_generated",
+        ),
+        _make_row("q3", ragas_faithfulness=1.0),
+        _make_row("q4", ragas_faithfulness=math.nan),
+    ]
+    summary = summarize_semantic_metrics(rows)
+    assert summary["mean_ragas_faithfulness"] == pytest.approx(0.9)
+    assert summary["ragas_faithfulness_valid_rows"] == 2
+    assert summary["ragas_faithfulness_nan_rows"] == 2
+    assert summary["ragas_faithfulness_total_rows"] == 4
+    assert summary["ragas_faithfulness_coverage"] == pytest.approx(0.5)
+    assert summary["ragas_faithfulness_coverage_percentage"] == pytest.approx(50.0)
 
 
 def test_all_none_values_give_none_mean():

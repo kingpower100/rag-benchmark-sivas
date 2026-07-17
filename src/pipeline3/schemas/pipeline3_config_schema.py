@@ -89,6 +89,7 @@ class P3WeightsConfig(StrictP3ConfigModel):
 
 class P3LLMJudgeConfig(StrictP3ConfigModel):
     enabled: bool = True
+    max_context_chars: int = Field(default=6000, gt=0)
     metrics: P3JudgeMetricsConfig = Field(default_factory=P3JudgeMetricsConfig)
     scoring: P3ScoringConfig = Field(default_factory=P3ScoringConfig)
     weights: P3WeightsConfig = Field(default_factory=P3WeightsConfig)

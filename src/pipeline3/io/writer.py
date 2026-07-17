@@ -29,6 +29,7 @@ PER_QUESTION_FIELDS = [
     "judge_retry_count",
     "judge_latency_ms",
     "ragas_faithfulness",
+    "ragas_faithfulness_status",
     "ragas_answer_relevancy",
     "ragas_context_recall",
 ]
@@ -131,8 +132,17 @@ def _build_report_markdown(manifest: dict[str, Any], summary: dict[str, Any]) ->
         lines += ["", "## RAGAS Data Quality Warnings", ""]
         for metric, count in sorted(ragas_nan.items()):
             if count > 0:
+                valid_rows = summary.get(f"{metric}_valid_rows", "n/a")
+                total_rows = summary.get(f"{metric}_total_rows", "n/a")
+                coverage_pct = summary.get(f"{metric}_coverage_percentage")
+                coverage_text = (
+                    f"{coverage_pct:.2f}%"
+                    if isinstance(coverage_pct, float)
+                    else "n/a"
+                )
                 lines.append(
-                    f"- `{metric}`: **{count}** row(s) produced NaN — excluded from mean"
+                    f"- `{metric}`: **{count}** row(s) produced NaN — excluded from mean "
+                    f"(valid={valid_rows}/{total_rows}, coverage={coverage_text})"
                 )
 
     lines += ["", "## Reproducibility", ""]

@@ -1,0 +1,9 @@
+extends: "../base_eval.yaml"
+
+evaluation:
+  eval_run_id: "B00_sivas_pgvector_reference_eval"
+
+inputs:
+  pipeline1_results_path: "data/runs/pipeline1/B00_sivas_pgvector_reference/results.jsonl"
+  rag_outputs:
+    - "data/runs/pipeline1/B00_sivas_pgvector_reference/results.jsonl"

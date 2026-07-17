@@ -1,3 +1,4 @@
+from pathlib import Path
 from typing import Literal, Optional
 
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator, model_validator
@@ -39,7 +40,7 @@ class DataConfig(StrictConfigModel):
 
 
 class ChunkingConfig(StrictConfigModel):
-    strategy: Literal["fixed_token", "fixed_word", "sentence", "table_aware"]
+    strategy: Literal["fixed_token", "fixed_word", "sentence", "table_aware", "sivas_character"]
     chunk_size: int = Field(gt=0)
     chunk_overlap: int = Field(ge=0)
     tokenizer_name: str = "cl100k_base"
@@ -51,7 +52,7 @@ class ChunkingConfig(StrictConfigModel):
 
 
 class EmbeddingConfig(StrictConfigModel):
-    provider: Literal["sentence_transformers"]
+    provider: Literal["sentence_transformers", "mistral"]
     model_name: str
     normalize_embeddings: bool = True
     batch_size: int = 32
@@ -135,10 +136,12 @@ class HybridConfig(StrictConfigModel):
     dense_weight: float = Field(default=1.0, ge=0)
     bm25_weight: float = Field(default=1.0, ge=0)
     dense_backend: Literal["faiss", "pgvector"] = "faiss"
+    dense_fetch_k: Optional[int] = Field(default=None, gt=0)
+    bm25_fetch_k: Optional[int] = Field(default=None, gt=0)
 
 
 class RetrievalConfig(StrictConfigModel):
-    retriever_type: Literal["dense", "bm25", "hybrid_rrf", "elasticsearch_dense", "category_aware_dense"] = Field(
+    retriever_type: Literal["dense", "bm25", "hybrid_rrf", "elasticsearch_dense", "category_aware_dense", "elasticsearch_hybrid_rrf"] = Field(
         default="dense",
         validation_alias=AliasChoices("retriever_type", "type"),
     )
@@ -168,7 +171,7 @@ class RerankerConfig(StrictConfigModel):
 
 
 class OrchestrationConfig(StrictConfigModel):
-    provider: Literal["ollama"] = "ollama"
+    provider: Literal["ollama", "mistral"] = "ollama"
     model_name: str = Field(default=DEFAULT_ORCHESTRATION_MODEL, validation_alias=AliasChoices("model_name", "model"))
     base_url: str = "http://localhost:11434"
     fixed: bool = True
@@ -207,13 +210,14 @@ class OrchestrationConfig(StrictConfigModel):
 
 class GenerationConfig(StrictConfigModel):
     configurable: bool = False
-    provider: Literal["ollama"]
+    provider: Literal["ollama", "mistral"]
     model_name: str
     base_url: str = "http://localhost:11434"
     temperature: float = 0.0
     max_tokens: int = Field(default=512, gt=0)
     timeout_s: int = Field(default=90, gt=0)
-    system_prompt: str
+    system_prompt: Optional[str] = None
+    prompt_path: Optional[str] = None
     include_metadata_headers: bool = False
     max_prompt_tokens: int = Field(default=8192, gt=0)
     max_context_tokens: int = Field(default=6000, gt=0)
@@ -223,6 +227,28 @@ class GenerationConfig(StrictConfigModel):
     context_truncation_strategy: Literal["ranked_budget"] = "ranked_budget"
     log_prompt_stats: bool = True
     include_retrieval_metadata: bool = False
+
+    @model_validator(mode="after")
+    def require_prompt_source(self) -> "GenerationConfig":
+        if self.prompt_path is not None and self.system_prompt is None:
+            resolved = _resolve_project_path(self.prompt_path)
+            if not resolved.is_file():
+                raise ValueError(f"generation.prompt_path is missing or not a file: {resolved}")
+            prompt = resolved.read_text(encoding="utf-8")
+            if not prompt.strip():
+                raise ValueError(f"generation.prompt_path is empty: {resolved}")
+            self.system_prompt = prompt
+        if self.prompt_path is None and not (self.system_prompt or "").strip():
+            raise ValueError("generation requires either system_prompt or prompt_path.")
+        return self
+
+
+def _resolve_project_path(path: str) -> Path:
+    candidate = Path(path)
+    if candidate.is_absolute():
+        return candidate.resolve()
+    project_root = Path(__file__).resolve().parents[3]
+    return (project_root / candidate).resolve()
 
 
 class PricingConfig(StrictConfigModel):
@@ -271,7 +297,7 @@ class PipelineConfig(StrictConfigModel):
             raise ValueError(
                 "Unsupported index/retriever combination: index.type='elasticsearch' cannot be used with "
                 "retrieval.retriever_type='dense'. Use retrieval.retriever_type='elasticsearch_dense' "
-                "or 'hybrid_rrf'."
+                "or 'elasticsearch_hybrid_rrf'."
             )
         if index_type == "pgvector" and retriever_type == "elasticsearch_dense":
             raise ValueError(
@@ -292,6 +318,11 @@ class PipelineConfig(StrictConfigModel):
                 raise ValueError(
                     f"retrieval.hybrid.dense_backend='faiss' requires index.type='faiss', got '{index_type}'."
                 )
+        if retriever_type == "elasticsearch_hybrid_rrf" and index_type != "elasticsearch":
+            raise ValueError(
+                f"retrieval.retriever_type='elasticsearch_hybrid_rrf' requires index.type='elasticsearch', "
+                f"got '{index_type}'. Set index.type='elasticsearch' to use the Elasticsearch hybrid retriever."
+            )
         return self
 
     @classmethod

@@ -228,6 +228,7 @@ def _build_per_question(
             "judge_retry_count": None,
             "judge_latency_ms": None,
             "ragas_faithfulness": None,
+            "ragas_faithfulness_status": None,
             "ragas_answer_relevancy": None,
         }
 
@@ -250,6 +251,8 @@ def _build_per_question(
 
         ragas_row = ragas_by_id.get(qid, {})
         output.update(ragas_row)
+        if output.get("ragas_faithfulness") is None and "ragas_faithfulness" in ragas_row:
+            output["ragas_faithfulness_status"] = "no_statements_generated"
 
         per_question.append(output)
     return per_question

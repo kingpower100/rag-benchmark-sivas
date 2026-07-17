@@ -51,8 +51,8 @@ def _judge_cfg(max_retries: int = 3) -> P3JudgeConfig:
     )
 
 
-def _llm_judge_cfg() -> P3LLMJudgeConfig:
-    return P3LLMJudgeConfig()
+def _llm_judge_cfg(max_context_chars: int = 6000) -> P3LLMJudgeConfig:
+    return P3LLMJudgeConfig(max_context_chars=max_context_chars)
 
 
 def _rag_row() -> dict:
@@ -245,6 +245,7 @@ class TestContextTruncation:
         result = _evaluate_single(_rag_row(), _qa_by_id(), client, _judge_cfg(), _llm_judge_cfg())
 
         assert result.context_truncated is False
+        assert "...[truncated]" not in result.raw_prompt
 
     def test_long_context_sets_truncated_flag(self):
         """Context exceeding max_chars must set context_truncated=True."""
@@ -255,6 +256,45 @@ class TestContextTruncation:
         result = _evaluate_single(row, _qa_by_id(), client, _judge_cfg(), _llm_judge_cfg())
 
         assert result.context_truncated is True
+        assert ("x" * 6000) in result.raw_prompt
+        assert ("x" * 6001) not in result.raw_prompt
+        assert "...[truncated]" in result.raw_prompt
+
+    def test_configured_context_limit_is_used_for_truncation(self):
+        """A configured max_context_chars value must replace the 6000-char default."""
+        row = dict(_rag_row())
+        row["retrieved_context_texts"] = ["x" * 12000]
+        client = _mock_client(_VALID_RESPONSE)
+
+        result = _evaluate_single(
+            row,
+            _qa_by_id(),
+            client,
+            _judge_cfg(),
+            _llm_judge_cfg(max_context_chars=10000),
+        )
+
+        assert result.context_truncated is True
+        assert ("x" * 10000) in result.raw_prompt
+        assert ("x" * 10001) not in result.raw_prompt
+        assert "...[truncated]" in result.raw_prompt
+
+    def test_context_equal_to_configured_limit_is_not_truncated(self):
+        """Only contexts longer than max_context_chars should be truncated."""
+        row = dict(_rag_row())
+        row["retrieved_context_texts"] = ["x" * 10000]
+        client = _mock_client(_VALID_RESPONSE)
+
+        result = _evaluate_single(
+            row,
+            _qa_by_id(),
+            client,
+            _judge_cfg(),
+            _llm_judge_cfg(max_context_chars=10000),
+        )
+
+        assert result.context_truncated is False
+        assert "...[truncated]" not in result.raw_prompt
 
     def test_truncated_flag_false_on_failure(self):
         """context_truncated must be False (no truncation) even when the judge call fails."""

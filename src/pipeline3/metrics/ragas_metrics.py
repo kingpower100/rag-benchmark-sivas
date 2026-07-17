@@ -162,6 +162,10 @@ class RagasEvaluator:
                         val = result_row[col]
                         # NaN check: NaN != NaN is True
                         row_metrics[f"ragas_{col}"] = None if val != val else float(val)
+                        if col == "faithfulness" and val != val:
+                            row_metrics["ragas_faithfulness_status"] = (
+                                "no_statements_generated"
+                            )
                     else:
                         row_metrics[f"ragas_{col}"] = None
                 per_row.append(row_metrics)
@@ -187,6 +191,10 @@ class RagasEvaluator:
                         val = result_df.iloc[i][col]
                         # NaN check: NaN != NaN is True
                         row_metrics[f"ragas_{col}"] = None if val != val else float(val)
+                        if col == "faithfulness" and val != val:
+                            row_metrics["ragas_faithfulness_status"] = (
+                                "no_statements_generated"
+                            )
                     else:
                         row_metrics[f"ragas_{col}"] = None
                 per_row.append(row_metrics)

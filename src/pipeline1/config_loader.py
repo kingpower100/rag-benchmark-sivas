@@ -11,6 +11,7 @@ def load_pipeline_config_payload(config_path: str, validate_unique_experiment_id
     payload = _load_with_extends(config_file)
     payload = _normalize_documents_config(payload)
     payload = _normalize_retrieval_type_alias(payload)
+    payload = _resolve_generation_prompt(payload)
     if validate_unique_experiment_id:
         _validate_experiment_id_matches_config_name(config_file, payload)
         _validate_unique_experiment_id(config_file, payload)
@@ -70,6 +71,31 @@ def _normalize_retrieval_type_alias(payload: dict[str, Any]) -> dict[str, Any]:
     normalized["retriever_type"] = normalized.pop("type")
     payload["retrieval"] = normalized
     return payload
+
+
+def _resolve_generation_prompt(payload: dict[str, Any]) -> dict[str, Any]:
+    generation = payload.get("generation")
+    if not isinstance(generation, dict):
+        return payload
+    prompt_path = generation.get("prompt_path")
+    if not prompt_path:
+        return payload
+    resolved = _resolve_project_path(str(prompt_path))
+    if not resolved.is_file():
+        raise ValueError(f"generation.prompt_path is missing or not a file: {resolved}")
+    prompt = resolved.read_text(encoding="utf-8")
+    if not prompt.strip():
+        raise ValueError(f"generation.prompt_path is empty: {resolved}")
+    payload["generation"] = {**generation, "system_prompt": prompt}
+    return payload
+
+
+def _resolve_project_path(path: str) -> Path:
+    candidate = Path(path)
+    if candidate.is_absolute():
+        return candidate.resolve()
+    project_root = Path(__file__).resolve().parents[2]
+    return (project_root / candidate).resolve()
 
 
 def _validate_unique_experiment_id(config_file: Path, payload: dict[str, Any]) -> None:
