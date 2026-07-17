@@ -173,8 +173,8 @@ orchestration:
 # provider: "ollama" — runs against local Ollama server.
 # Does NOT use the Mistral API. Does NOT require MISTRAL_API_KEY.
 generation:
-  provider: ollama
-  model_name: "mistral-medium-3.5:128b"
+  provider: "ollama"
+  model_name: "mistral-small"
   base_url: "http://localhost:11434"
   temperature: 0.0
   max_tokens: 512
