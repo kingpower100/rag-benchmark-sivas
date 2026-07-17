@@ -9,7 +9,7 @@
 #   → category-aware dense retrieval via pgvector SQL WHERE clause
 #   → controlled global pgvector fallback
 #   → local Ollama mistral-small orchestration
-#   → local Ollama mistral-medium generation
+#   → local Ollama generation (see TEMPORARY IMPLEMENTATION NOTE below)
 #
 # ============================================================
 # ENVIRONMENT VARIABLES (remote server — never put secrets here)
@@ -21,12 +21,32 @@
 # Orchestration and generation use local Ollama — no Mistral API key needed.
 #
 # ============================================================
+# ORIGINAL SIVAS ARCHITECTURE
+# ============================================================
+# The documented SIVAS partner production system uses:
+#   orchestration: mistral-small
+#   generation:    mistral-medium
+#
+# ============================================================
+# TEMPORARY IMPLEMENTATION NOTE
+# ============================================================
+# The original SIVAS reference system uses Mistral Medium for answer generation.
+# For development and framework validation, this implementation temporarily uses
+# Mistral Small as the local generation model.
+#
+# The framework remains fully configurable and can be switched back to
+# Mistral Medium by changing a single line:
+#   generation.model_name: "mistral-medium"
+#
+# No code changes are required — generation is loaded entirely from this YAML.
+#
+# ============================================================
 # MODEL NOTES
 # ============================================================
 # orchestration.model_name: "mistral-small" — Ollama model name.
 #   Run: ollama pull mistral-small
-# generation.model_name: "mistral-medium" — Ollama model name.
-#   Run: ollama pull mistral-medium
+# generation.model_name: "mistral-small" — temporary; original SIVAS uses "mistral-medium".
+#   Run: ollama pull mistral-small
 
 experiment:
   experiment_id: "B00_sivas_pgvector_reference"
@@ -68,13 +88,19 @@ chunking:
 # provider: "mistral" dispatches to MistralEmbedder.
 # API key is read from MISTRAL_API_KEY (never stored here).
 # mistral-embed produces 1024-dimensional cosine embeddings.
+#
+# Fields ignored by provider=mistral (retained for schema compatibility):
+#   normalize_embeddings — not applied locally; the API always returns normalized
+#                          vectors. Only used by local sentence_transformers providers.
+#   device               — not used; all computation runs on Mistral's remote servers.
+#   require_cuda         — not enforced; no local GPU is involved in API-based embedding.
 embedding:
   provider: "mistral"
   model_name: "mistral-embed"
-  normalize_embeddings: true
+  normalize_embeddings: true   # sentence_transformers only — ignored for provider=mistral
   batch_size: 32
-  device: "cpu"
-  require_cuda: false
+  device: "cuda"               # sentence_transformers only — ignored for provider=mistral
+  require_cuda: true           # sentence_transformers only — ignored for provider=mistral
 
 # ============================================================
 # PostgreSQL + pgvector
@@ -121,7 +147,12 @@ reranker:
 # ============================================================
 # provider: "ollama" — runs against local Ollama server.
 # Does NOT use the Mistral API. Does NOT require MISTRAL_API_KEY.
-# prompt_version: "v1" — Prompt V1 as documented in SIVAS.
+# prompt_version: "v1" — metadata label recorded in run manifests only.
+#   It does NOT select the prompt file. File selection is controlled by prompt_path.
+# prompt_path — explicitly pins the prompt file loaded at runtime.
+#   Without this field the loader falls back to orchestration_prompt.txt (the
+#   evolving default). Setting it here ensures B00 always loads the exact V1
+#   prompt regardless of future changes to the default file.
 orchestration:
   provider: "ollama"
   model_name: "mistral-small"
@@ -131,15 +162,19 @@ orchestration:
     - "clean_question"
     - "detect_category"
   prompt_version: "v1"
+  prompt_path: "src/pipeline1/prompts/orchestration_promptV1.txt"
 
 # ============================================================
-# Generation — local Ollama, mistral-medium
+# Generation — local Ollama
+# Original SIVAS system: mistral-medium
+# Temporary development model: mistral-small (see TEMPORARY IMPLEMENTATION NOTE above)
+# To restore original: change model_name to "mistral-medium"
 # ============================================================
 # provider: "ollama" — runs against local Ollama server.
 # Does NOT use the Mistral API. Does NOT require MISTRAL_API_KEY.
 generation:
-  provider: "ollama"
-  model_name: "mistral-medium"
+  provider: ollama
+  model_name: "mistral-medium-3.5:128b"
   base_url: "http://localhost:11434"
   temperature: 0.0
   max_tokens: 512

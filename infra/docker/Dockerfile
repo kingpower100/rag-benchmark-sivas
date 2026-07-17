@@ -18,9 +18,8 @@ RUN mkdir -p /models/huggingface /models/sentence-transformers /app/logs
 COPY pyproject.toml README.md requirements-lock.txt ./
 COPY src ./src
 COPY configs ./configs
-RUN pip install torch==2.4.1 --index-url https://download.pytorch.org/whl/cu121
 RUN python3.11 -m pip install --upgrade pip \
-    && python3.11 -m pip install torch \
+    && python3.11 -m pip install torch==2.5.1 \
          --index-url https://download.pytorch.org/whl/cu121 \
     && python3.11 -m pip install --requirement requirements-lock.txt \
     && python3.11 -m pip install --no-deps -e .

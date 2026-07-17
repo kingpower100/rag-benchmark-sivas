@@ -12,10 +12,19 @@ This document is structured for a **split local/remote workflow**:
 |---|---|---|---|
 | Embedding | Mistral API | `mistral-embed` | Yes — `MISTRAL_API_KEY` |
 | Orchestration | Local Ollama | `mistral-small` | No |
-| Generation | Local Ollama | `mistral-medium` | No |
+| Generation | Local Ollama | `mistral-small` *(temporary — see note below)* | No |
 
 Only embedding calls the Mistral API.
 Orchestration and generation run against the local Ollama server (`http://localhost:11434`).
+
+> **Temporary implementation note:**
+> The original SIVAS reference system uses Mistral Medium for answer generation.
+> For development and framework validation, this implementation temporarily uses
+> Mistral Small as the local generation model.
+> The framework remains fully configurable and can be switched back to Mistral Medium
+> by changing a single line in the B00 Pipeline 1 YAML:
+> `generation.model_name: "mistral-medium"`
+> No code changes are required.
 
 ---
 
@@ -59,7 +68,8 @@ python -c "from src.pipeline1.schemas.config_schema import PipelineConfig; \
 - index.type: pgvector / dsn_env: PGVECTOR_DSN / schema: rag / table: chunk_embeddings
 - retriever_type: category_aware_dense / top_k: 5 / fetch_k: 20
 - orchestration: ollama / mistral-small / http://localhost:11434 (no Mistral API key)
-- generation: ollama / mistral-medium / http://localhost:11434 (no Mistral API key)
+- generation: ollama / mistral-small / http://localhost:11434 (no Mistral API key)
+  (temporary — original SIVAS system uses mistral-medium; change model_name to restore)
 - No FAISS index or retriever configured
 
 ```bash
@@ -127,7 +137,7 @@ git commit -m "Add SIVAS-compatible B00 pgvector baseline
 - MistralGenerator: Mistral chat completions provider
 - Schema: sivas_character strategy, mistral provider; chunk_overlap required (no default)
 - B00 P1 config: mistral-embed + pgvector + category-aware dense
-  orchestration=ollama/mistral-small, generation=ollama/mistral-medium
+  orchestration=ollama/mistral-small, generation=ollama/mistral-small (temporary; original: mistral-medium)
 - B00 P2 eval config: extends base_eval.yaml; all standard metrics
 - B00 P3 eval config: extends base_pipeline3.yaml; matches base judge+RAGAS setup
 - 53 new unit tests (53/53 pass)"
@@ -169,18 +179,24 @@ the existing `OllamaGenerator` — no Mistral client library is needed.
 
 ### C4. Pull required Ollama models for B00
 
-B00 uses local Ollama for orchestration (`mistral-small`) and generation (`mistral-medium`).
-Pull both before running Pipeline 1:
+B00 uses local Ollama for orchestration (`mistral-small`) and generation
+(`mistral-small` — temporary; original SIVAS system uses `mistral-medium`).
 
 ```bash
-ollama pull mistral-small    # orchestration model (clean_question, detect_category)
-ollama pull mistral-medium   # generation model (answer synthesis)
+ollama pull mistral-small    # both orchestration and generation (temporary configuration)
+```
+
+To restore the original SIVAS generation model later:
+
+```bash
+ollama pull mistral-medium
+# Then set generation.model_name: "mistral-medium" in B00_sivas_pgvector_reference.yaml
 ```
 
 Verify:
 
 ```bash
-ollama list | grep -E "mistral-small|mistral-medium"
+ollama list | grep mistral-small
 ```
 
 If `ollama pull` returns a 404 or "model not found" error, the Ollama registry may use
@@ -495,8 +511,7 @@ PGVECTOR_DSN="$PGVECTOR_DSN" python scripts/init_pgvector.py
 curl -s http://localhost:11434/api/tags | python -c "import sys,json; d=json.load(sys.stdin); print('Ollama OK —', len(d.get('models',[])), 'models')"
 
 # ── Step 14: Pull B00 Ollama models ──────────────────────────────────────────
-ollama pull mistral-small    # orchestration: clean_question + detect_category
-ollama pull mistral-medium   # generation: answer synthesis
+ollama pull mistral-small    # orchestration + generation (temporary; see TEMPORARY IMPLEMENTATION NOTE)
 
 # Pull Pipeline 3 judge/RAGAS models (if not already present)
 ollama pull qwen2.5:14b          # LLM judge
@@ -504,7 +519,7 @@ ollama pull qwen2.5:7b-instruct  # RAGAS LLM
 
 # ── Step 15: Verify Ollama models ────────────────────────────────────────────
 ollama list
-# Must show: mistral-small, mistral-medium, qwen2.5:14b, qwen2.5:7b-instruct
+# Must show: mistral-small (used for both orchestration and generation), qwen2.5:14b, qwen2.5:7b-instruct
 
 # ── Step 16: pgvector smoke test (validates infra with sentence_transformers) ─
 PGVECTOR_DSN="$PGVECTOR_DSN" \
