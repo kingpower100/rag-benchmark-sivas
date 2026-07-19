@@ -187,16 +187,7 @@ generation:
   max_chunk_chars: 8000
   context_truncation_strategy: "ranked_budget"
   log_prompt_stats: true
-  system_prompt: |
-    Du bist ein QA-System fuer interne SIVAS/ERP-Wissensdokumente.
-
-    Beantworte die Frage ausschliesslich anhand des abgerufenen Kontexts.
-
-    Regeln:
-    - Gib nur die finale Antwort aus.
-    - Erfinde keine Details.
-    - Nutze Deutsch, sofern die Frage auf Deutsch gestellt ist.
-    - Wenn die Antwort im Kontext nicht enthalten ist, antworte exakt: UNKNOWN
+  prompt_path: "src/pipeline1/prompts/answer_generation_sivas_v1.txt"
 
 telemetry:
   estimate_cost: true
