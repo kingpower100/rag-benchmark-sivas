@@ -1,0 +1,22 @@
+extends: "../base_pipeline3.yaml"
+
+pipeline3:
+  run_id: "C02"
+
+inputs:
+  pipeline1_results_path: "data/runs/pipeline1/C02/results.jsonl"
+
+ragas:
+  enabled: true
+  llm_model: "qwen2.5:7b-instruct"
+  embeddings_model: "intfloat/multilingual-e5-large"
+  metrics:
+    faithfulness: true
+    answer_relevancy: true
+    context_recall: true
+
+judge:
+  model: "qwen2.5:14b"
+
+llm_judge:
+  max_context_chars: 10000

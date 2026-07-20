@@ -36,7 +36,52 @@ Pipeline 2 reads `questions_fixed.jsonl` only for three-way ID alignment validat
 
 ---
 
-## 3. Active Configs
+## 3. Benchmark Configuration Semantics
+
+### Retrieval
+
+`retrieval.fetch_k` is the maximum number of raw backend candidates requested for one retrieval call. It is a hard cap: the runtime must not expand candidate depth beyond this value. `retrieval.top_k` is the maximum number of final contexts after reranking and chunk-ID deduplication. Deduplication, category constraints, metadata filtering, or malformed candidates may produce fewer than `top_k` final contexts.
+
+For category-aware retrieval, global fallback is controlled only by `retrieval.fallback_to_global`. When it is `true`, invalid categories or insufficient category-scoped results may fall back to global retrieval. When it is `false`, no global retrieval is allowed for category-aware routing; the run records the disabled-fallback reason in retrieval diagnostics.
+
+### Sentence Chunking
+
+Sentence chunking preserves sentence boundaries wherever possible. Official configs must state both `chunk_size_unit` and `chunk_overlap_unit`; do not describe a setting such as `512/200` without the units. Supported units are `tokens`, `words`, `sentences`, and `characters`. Token units use the configured `tokenizer_name` as a tiktoken encoding. A single sentence larger than the configured chunk size is emitted as one oversized sentence chunk so the chunker always makes forward progress.
+
+Changing chunk units or tokenizer changes chunk IDs, chunk caches, embeddings, and FAISS index cache keys. Do not reuse old official outputs after changing these fields.
+
+### Configuration Reference
+
+| Field | Type | Runtime effect | Valid values | Default | Backend scope | Deprecated |
+|---|---|---|---|---|---|---|
+| `retrieval.fallback_to_global` | boolean | Enables or forbids global fallback after invalid category or insufficient category results | `true`, `false` | `true` | `category_aware_dense` | No |
+| `retrieval.fetch_k` | integer | Hard maximum raw candidates requested from the retriever backend | `>= top_k` | required | all retrievers | No |
+| `index.dense_dim` | integer | Validated against generated embedding dimension; pgvector/Elasticsearch also use it for vector field dimensions | `> 0` | `384` | all vector backends | No |
+| `index.index_name` | string | Names external Elasticsearch indexes; isolates FAISS cache identity when `index.type: faiss` | non-empty string | `sivas_fixed512_bge_small` | FAISS, Elasticsearch | No |
+| `orchestration.prompt_path` | string | Selects the orchestration prompt file loaded at runtime | existing file path | default prompt path | orchestration | No |
+| `orchestration.prompt_version` | string | Validation label; must match `prompt_path` stem when both are set | matching prompt label | `null` | orchestration | No |
+| `orchestration.tasks` | list | No behavioral control in current fixed orchestration workflow | remove field | fixed default | orchestration | Yes |
+| `generation.configurable` | boolean | No runtime effect | remove field | `false` | generation | Yes |
+| `generation.temperature` | number | Passed to the generation provider | provider-supported number | `0.0` | generation | No |
+| `generation.max_tokens` | integer | Passed to the generation provider as answer token budget | `> 0` | `512` | generation | No |
+| `chunking.tokenizer_name` | string | Used by `fixed_token` chunking, token-based sentence chunking, and prompt/context token budgeting | valid tiktoken encoding | `cl100k_base` | chunking/generation budgeting | No |
+| `chunking.max_chunk_chars` | integer | Enforced by `sivas_character` and `table_aware`; otherwise used for chunk diagnostics and oversized policy checks | `> 0` | `8000` | chunker-dependent | No |
+| `chunking.max_chunk_tokens` | integer | Enforced by `table_aware`; otherwise used for chunk diagnostics and oversized policy checks | `> 0` | `1800` | chunker-dependent | No |
+| `retrieval.bm25.enabled` | boolean | Removed; BM25 activation is controlled only by `retrieval.retriever_type` | remove field | n/a | retrieval | Yes |
+| `bert_score.max_length` | integer | Removed; this framework's official BERTScore wrapper did not consume it | remove field | n/a | Pipeline 2 | Yes |
+| `parent_context.parent_unit` | string | Selects parent context unit | `markdown_section` | `markdown_section` | parent context | No |
+| `parent_context.deduplicate` | boolean | Controls whether repeated parent sections are deduplicated | `true`, `false` | `true` | parent context | No |
+| `parent_context.missing_parent_policy` | string | Controls missing-parent handling | `use_child`, `error` | `use_child` | parent context | No |
+| `parent_context.unique_parent_top_k` | integer | Maximum selected parent contexts | `> 0` | `5` | parent context | No |
+| `parent_context.max_parent_tokens` | integer | Token limit used during parent selection; oversized parents prefer a deeper fitting section when available | `> 0` | `1800` | parent context | No |
+| `parent_context.mapping_policy` | string | Removed; current mapping policy is fixed by the parent-store implementation | remove field | n/a | parent context | Yes |
+| `parent_context.score_policy` | string | Removed; parent score/provenance behavior is fixed to child-trigger provenance | remove field | n/a | parent context | Yes |
+| `parent_context.preserve_child_provenance` | boolean | Removed; child provenance is mandatory for auditability | remove field | n/a | parent context | Yes |
+| `parent_context.oversized_parent_policy` | string | Removed; current behavior always prefers the deepest fitting parent section | remove field | n/a | parent context | Yes |
+
+---
+
+## 4. Active Configs
 
 | Config | Path |
 |---|---|
@@ -64,9 +109,9 @@ Key Pipeline 2 settings:
 
 ---
 
-## 4. Remote Server Setup
+## 5. Remote Server Setup
 
-### 4.1 System requirements
+### 5.1 System requirements
 
 | Requirement | Minimum | Notes |
 |---|---|---|
@@ -78,14 +123,14 @@ Key Pipeline 2 settings:
 | Disk | 10 GB free | Models + index + outputs |
 | Ollama | Latest | Must be installed separately |
 
-### 4.2 System packages (Ubuntu 22.04)
+### 5.2 System packages (Ubuntu 22.04)
 
 ```bash
 sudo apt-get update
 sudo apt-get install -y python3.11 python3.11-venv python3-pip build-essential curl ca-certificates
 ```
 
-### 4.3 Ollama installation
+### 5.3 Ollama installation
 
 ```bash
 curl -fsSL https://ollama.com/install.sh | sh
@@ -93,7 +138,7 @@ curl -fsSL https://ollama.com/install.sh | sh
 
 ---
 
-## 5. Dependency Installation
+## 6. Dependency Installation
 
 ### Python version
 

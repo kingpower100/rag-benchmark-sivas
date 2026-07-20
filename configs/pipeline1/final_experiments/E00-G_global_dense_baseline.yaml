@@ -22,7 +22,9 @@ data:
 chunking:
   strategy: "sentence"
   chunk_size: 512
+  chunk_size_unit: "tokens"
   chunk_overlap: 200
+  chunk_overlap_unit: "tokens"
   tokenizer_name: "cl100k_base"
   allow_word_fallback: false
   max_chunk_chars: 8000
@@ -50,7 +52,6 @@ retrieval:
   top_k: 5
   fetch_k: 20
   category_field: "kategorie"
-  fallback_to_global: false
   metadata_boosting:
     enabled: false
   metadata_filtering:
@@ -73,7 +74,6 @@ orchestration:
   prompt_version: "orchestration_promptV4"
 
 generation:
-  configurable: true
   provider: "ollama"
   model_name: "qwen2.5:7b-instruct"
   base_url: "http://localhost:11434"

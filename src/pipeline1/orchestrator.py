@@ -41,6 +41,8 @@ from src.pipeline1.stages.retrieval_stage import (
     retrieval_diagnostics_from,
     retrieve_top_k_unique_contexts,
 )
+from src.pipeline1.parent_context.parent_store import ParentStore
+from src.pipeline1.stages.parent_context_stage import ParentContextStage
 from src.pipeline1.stages.run_writer_stage import RunWriterStage
 from src.pipeline1.telemetry.logger import build_logger
 from src.pipeline1.utils.hashing import file_sha256, stable_hash_dict
@@ -139,6 +141,31 @@ def run_pipeline(config_path: str) -> Path:
             raise RuntimeError(message)
         logger.warning(message)
 
+    # Build / load parent store (C03 and other parent-context experiments only).
+    parent_store: ParentStore | None = None
+    parent_store_key: str | None = None
+    parent_store_path: Path | None = None
+    parent_store_cache_status: str = "disabled"
+    if cfg.parent_context.enabled:
+        parent_store_key = ParentStore.compute_fingerprint(
+            documents_fingerprint=documents_fingerprint,
+            chunks_key=chunks_key,
+            chunking_config=cfg.chunking.model_dump(),
+        )
+        parent_store_path = cache_dir / "parent_stores" / parent_store_key
+        if parent_store_path.exists() and (parent_store_path / "sections.jsonl").exists():
+            parent_store = ParentStore.load(parent_store_path)
+            parent_store_cache_status = "loaded"
+            logger.info("Loaded parent store: %s", parent_store_path)
+        else:
+            parent_store = ParentStore.build(docs, chunks)
+            errors = parent_store.validate()
+            if errors:
+                raise RuntimeError("Parent store validation failed: " + "; ".join(errors))
+            parent_store.save(parent_store_path)
+            parent_store_cache_status = "built"
+            logger.info("Built parent store: %s", parent_store_path)
+
     print("[5/10] Generating embeddings")
     embedding_start = time.perf_counter()
     event_writer.write(
@@ -156,6 +183,7 @@ def run_pipeline(config_path: str) -> Path:
     embeddings_key = embedding_output.embeddings_key
     embeddings_path = embedding_output.embeddings_path
     cache_validation["embeddings"] = embedding_output.cache_status
+    _validate_configured_dense_dim(cfg, embeddings)
     _print_embedding_runtime_state(cfg, embedder)
     embedding_duration_s = time.perf_counter() - embedding_start
     event_writer.write(
@@ -171,7 +199,7 @@ def run_pipeline(config_path: str) -> Path:
     )
 
     index_config_for_cache = (
-        {"type": cfg.index.type, "metric": cfg.index.metric}
+        {"type": cfg.index.type, "metric": cfg.index.metric, "index_name": cfg.index.index_name}
         if cfg.index.type == "faiss"
         else cfg.index.model_dump()
     )
@@ -296,6 +324,12 @@ def run_pipeline(config_path: str) -> Path:
                 retriever = retrieval_output.retriever
                 final_top_k = retrieval_output.final_top_k
 
+                parent_context_output = ParentContextStage(
+                    cfg,
+                    parent_store=parent_store,
+                    stage_logger=logger,
+                ).run(StageInput({"retrieval_rows": retrieval_output.retrieval_rows}))
+
                 print(f"[10/11] Generating answer for {row_index}/{len(pending_queries)}")
                 generation_output = GenerationStage(
                     cfg,
@@ -303,7 +337,7 @@ def run_pipeline(config_path: str) -> Path:
                     event_writer=event_writer,
                     logger=logger,
                     generator_factory=build_generator,
-                ).run(StageInput({"retrieval_rows": retrieval_output.retrieval_rows, "final_top_k": final_top_k}))
+                ).run(StageInput({"retrieval_rows": parent_context_output.retrieval_rows, "final_top_k": final_top_k}))
                 generation_row = generation_output.generation_rows[0]
                 record = generation_row.output_record
             except Exception as ex:
@@ -400,6 +434,13 @@ def run_pipeline(config_path: str) -> Path:
                 "embeddings": str(embeddings_path),
                 "embeddings_meta": str(embeddings_path.with_suffix(embeddings_path.suffix + ".meta.json")),
                 "index": str(index_path),
+            },
+            "parent_context": {
+                "enabled": cfg.parent_context.enabled,
+                "config": cfg.parent_context.model_dump(),
+                "parent_store_key": parent_store_key,
+                "parent_store_path": str(parent_store_path) if parent_store_path else None,
+                "parent_store_cache_status": parent_store_cache_status,
             },
             "chunker_versions": chunker_versions,
             "metadata_schema_version": METADATA_SCHEMA_VERSION,
@@ -517,21 +558,15 @@ def retrieve_top_k_unique_contexts(
     fetch_k: int,
     max_candidates: int,
 ) -> tuple[list, list, list[str], bool]:
-    candidate_k = max(fetch_k, top_k)
-    raw_retrieved = []
-    retrieved = []
+    candidate_k = fetch_k
     reranker_used = reranker is not None
-    while True:
-        raw_retrieved = retriever.retrieve(question, candidate_k)
-        ranked = reranker.rerank(question, raw_retrieved, top_k) if reranker is not None else raw_retrieved
-        retrieved = dedupe_retrieval_by_chunk_id(ranked, top_k)
-        if len(retrieved) >= top_k or candidate_k >= max_candidates:
-            break
-        candidate_k = min(max_candidates, max(candidate_k + 1, candidate_k * 2))
+    raw_retrieved = retriever.retrieve(question, candidate_k)
+    ranked = reranker.rerank(question, raw_retrieved, top_k) if reranker is not None else raw_retrieved
+    retrieved = dedupe_retrieval_by_chunk_id(ranked, top_k)
     warnings = []
     if len(retrieved) < top_k:
         warnings.append(
-            f"Only {len(retrieved)} unique chunks were available after deduplication; requested top_k={top_k}."
+            f"Only {len(retrieved)} unique chunks were available after deduplication within fetch_k={fetch_k}; requested top_k={top_k}."
         )
     return raw_retrieved, retrieved, warnings, reranker_used
 
@@ -691,7 +726,13 @@ def _build_chunker(cfg: PipelineConfig):
         return FixedWordChunker(cfg.chunking.chunk_size, cfg.chunking.chunk_overlap)
     if cfg.chunking.strategy == "sentence":
         print("Using sentence-aware chunking with regex sentence boundaries and full-sentence overlap.")
-        return SentenceChunker(cfg.chunking.chunk_size, cfg.chunking.chunk_overlap)
+        return SentenceChunker(
+            cfg.chunking.chunk_size,
+            cfg.chunking.chunk_overlap,
+            cfg.chunking.chunk_size_unit or "words",
+            cfg.chunking.chunk_overlap_unit or "sentences",
+            cfg.chunking.tokenizer_name,
+        )
     print("Using table-aware chunking that keeps markdown tables intact when possible.")
     return TableAwareChunker(
         cfg.chunking.chunk_size,
@@ -760,6 +801,16 @@ def _run_compatibility_payload(
         "orchestration": cfg.orchestration.model_dump(),
         "prompt_template_version": PROMPT_TEMPLATE_VERSION,
     }
+
+
+def _validate_configured_dense_dim(cfg: PipelineConfig, embeddings) -> None:
+    observed_dim = int(embeddings.shape[1]) if len(embeddings.shape) > 1 else None
+    if observed_dim != cfg.index.dense_dim:
+        raise RuntimeError(
+            "Embedding dimension mismatch: "
+            f"index.dense_dim={cfg.index.dense_dim} but generated embeddings have dimension={observed_dim}. "
+            "Set index.dense_dim to the embedding model output dimension."
+        )
 
 
 def _prepare_run_dir(run_dir: Path, resume: bool, overwrite: bool) -> None:

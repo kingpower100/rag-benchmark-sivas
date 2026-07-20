@@ -55,6 +55,7 @@ log/
 data/processed/
 data/runs/
 data/eval/
+data/smoke_c03_tmp/
 .project_tmp/
 !data/raw/kb_documents_fixed.jsonl
 !data/raw/questions_fixed.jsonl

@@ -137,6 +137,11 @@ def _resolve_id(row: dict[str, Any]) -> str:
 
 
 def _extract_context_texts(row: dict[str, Any]) -> list[str]:
+    # C03 and later: prefer generation_context_texts (expanded parent sections).
+    gen_texts = row.get("generation_context_texts")
+    if isinstance(gen_texts, list) and any(str(t).strip() for t in gen_texts):
+        return [str(t) for t in gen_texts if str(t).strip()]
+    # Fall back to child retrieval contexts (C00 and older runs).
     texts = row.get("retrieved_context_texts") or row.get("retrieved_chunk_texts")
     if isinstance(texts, list) and any(str(t).strip() for t in texts):
         return [str(t) for t in texts if str(t).strip()]

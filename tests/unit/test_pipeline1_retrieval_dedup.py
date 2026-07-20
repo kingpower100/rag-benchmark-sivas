@@ -19,9 +19,13 @@ def test_dedup_by_chunk_id_preserves_multiple_chunks_from_same_context():
     assert [item.score for item in deduped] == [0.9, 0.8]
 
 
-def test_retrieve_top_k_unique_backfills_from_additional_candidates():
+def test_retrieve_top_k_unique_does_not_backfill_beyond_fetch_k():
     class FakeRetriever:
+        def __init__(self):
+            self.requested = []
+
         def retrieve(self, question, top_k):
+            self.requested.append(top_k)
             items = [
                 RetrievalItem(chunk_id="c1_a", original_context_id="ctx1", text="one", score=0.9, dense_score=0.9),
                 RetrievalItem(chunk_id="c1_b", original_context_id="ctx1", text="one duplicate", score=0.8, dense_score=0.8),
@@ -30,18 +34,21 @@ def test_retrieve_top_k_unique_backfills_from_additional_candidates():
             ]
             return items[:top_k]
 
-    _, retrieved, warnings, _ = retrieve_top_k_unique_contexts(
+    retriever = FakeRetriever()
+
+    raw, retrieved, warnings, _ = retrieve_top_k_unique_contexts(
         "Q?",
-        FakeRetriever(),
+        retriever,
         reranker=None,
         top_k=3,
         fetch_k=2,
         max_candidates=4,
     )
 
-    assert [item.chunk_id for item in retrieved] == ["c1_a", "c1_b", "c2"]
-    assert [item.original_context_id for item in retrieved] == ["ctx1", "ctx1", "ctx2"]
-    assert warnings == []
+    assert retriever.requested == [2]
+    assert [item.chunk_id for item in raw] == ["c1_a", "c1_b"]
+    assert [item.chunk_id for item in retrieved] == ["c1_a", "c1_b"]
+    assert warnings == ["Only 2 unique chunks were available after deduplication within fetch_k=2; requested top_k=3."]
 
 
 def test_no_reranker_still_fetches_raw_fetch_k_candidates():

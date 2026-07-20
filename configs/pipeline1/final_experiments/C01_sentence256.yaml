@@ -1,0 +1,10 @@
+extends: "C00_sentence512_baseline.yaml"
+
+# C01 varies only the sentence chunk size and proportional overlap from C00.
+
+experiment:
+  experiment_id: "C01"
+
+chunking:
+  chunk_size: 256
+  chunk_overlap: 100

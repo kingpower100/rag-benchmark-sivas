@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import re
+from typing import Literal
 
 from tqdm.auto import tqdm
 
@@ -36,13 +37,33 @@ _COMMON_ABBREVIATIONS = {
 
 
 class SentenceChunker(BaseChunker):
-    def __init__(self, chunk_size: int, chunk_overlap: int) -> None:
+    def __init__(
+        self,
+        chunk_size: int,
+        chunk_overlap: int,
+        chunk_size_unit: Literal["tokens", "words", "sentences", "characters"] = "words",
+        chunk_overlap_unit: Literal["tokens", "words", "sentences", "characters"] = "sentences",
+        tokenizer_name: str = "cl100k_base",
+    ) -> None:
+        if chunk_size <= 0:
+            raise ValueError("chunk_size must be > 0")
+        if chunk_overlap < 0:
+            raise ValueError("chunk_overlap must be >= 0")
+        if chunk_overlap >= chunk_size:
+            raise ValueError("chunk_overlap must be < chunk_size")
         self.chunk_size = chunk_size
         self.chunk_overlap = chunk_overlap
+        self.chunk_size_unit = chunk_size_unit
+        self.chunk_overlap_unit = chunk_overlap_unit
+        self.tokenizer_name = tokenizer_name
+        self._encoder = _load_token_encoder(tokenizer_name) if "tokens" in {chunk_size_unit, chunk_overlap_unit} else None
         self.strategy_config = {
             "strategy": "sentence",
             "chunk_size": chunk_size,
             "chunk_overlap": chunk_overlap,
+            "chunk_size_unit": chunk_size_unit,
+            "chunk_overlap_unit": chunk_overlap_unit,
+            "tokenizer_name": tokenizer_name if "tokens" in {chunk_size_unit, chunk_overlap_unit} else None,
             "splitter": SENTENCE_SPLITTER_VERSION,
         }
 
@@ -87,6 +108,8 @@ class SentenceChunker(BaseChunker):
                         subset=doc.metadata.get("subset"),
                         split=doc.metadata.get("split") or doc.metadata.get("source_split"),
                         chunk_index=chunk_index,
+                        chunk_size_unit=self.chunk_size_unit,
+                        chunk_overlap_unit=self.chunk_overlap_unit,
                     ),
                 )
             )
@@ -99,21 +122,44 @@ class SentenceChunker(BaseChunker):
         start = 0
         while start < len(sentences):
             current: list[str] = []
-            current_words = 0
+            current_size = 0
             idx = start
             while idx < len(sentences):
-                sentence_words = _word_count(sentences[idx])
-                if current and current_words + sentence_words > self.chunk_size:
+                sentence_size = _measure(sentences[idx], self.chunk_size_unit, self._encoder)
+                if current and current_size + sentence_size > self.chunk_size:
                     break
                 current.append(sentences[idx])
-                current_words += sentence_words
+                current_size += sentence_size
                 idx += 1
+                if len(current) == 1 and sentence_size > self.chunk_size:
+                    break
             groups.append(current)
             if idx >= len(sentences):
                 break
-            overlap = min(self.chunk_overlap, max(0, len(current) - 1))
-            start = idx - overlap if overlap else idx
+            overlap_sentences = self._overlap_sentence_count(current)
+            start = idx - overlap_sentences if overlap_sentences else idx
         return groups
+
+    def _overlap_sentence_count(self, current: list[str]) -> int:
+        if self.chunk_overlap == 0 or len(current) <= 1:
+            return 0
+        if self.chunk_overlap_unit == "sentences":
+            return min(self.chunk_overlap, len(current) - 1)
+
+        total = 0
+        selected = 0
+        for sentence in reversed(current):
+            sentence_size = _measure(sentence, self.chunk_overlap_unit, self._encoder)
+            if selected and total + sentence_size > self.chunk_overlap:
+                break
+            if not selected and sentence_size > self.chunk_overlap:
+                selected = 1
+                break
+            total += sentence_size
+            selected += 1
+            if selected >= len(current) - 1:
+                break
+        return min(selected, len(current) - 1)
 
 
 def split_sentences(text: str) -> list[str]:
@@ -140,3 +186,28 @@ def _is_common_abbreviation(text: str) -> bool:
 
 def _word_count(text: str) -> int:
     return len(text.split())
+
+
+def _measure(text: str, unit: str, encoder) -> int:
+    if unit == "words":
+        return _word_count(text)
+    if unit == "characters":
+        return len(text)
+    if unit == "sentences":
+        return 1 if text.strip() else 0
+    if unit == "tokens":
+        if encoder is None:
+            raise ValueError("Token-based sentence chunking requires a valid tokenizer.")
+        return len(encoder.encode(text or ""))
+    raise ValueError(f"Unsupported sentence chunk unit: {unit!r}")
+
+
+def _load_token_encoder(tokenizer_name: str):
+    try:
+        import tiktoken
+
+        return tiktoken.get_encoding(tokenizer_name)
+    except Exception as ex:
+        raise ValueError(
+            f"Sentence chunking token units require a valid tiktoken encoding; got {tokenizer_name!r}."
+        ) from ex

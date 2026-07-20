@@ -294,9 +294,8 @@ def test_fetch_k_below_top_k_fails_without_reranking(tmp_path, monkeypatch):
     (tmp_path / "questions.jsonl").write_text('{"question_id":"q1","question":"Q?"}\n', encoding="utf-8")
     monkeypatch.setenv("PIPELINE1_SKIP_OLLAMA_PREFLIGHT", "1")
 
-    errors = run_preflight_checks(_cfg(False, top_k=5, fetch_k=4), tmp_path)
-
-    assert any("must be >= retrieval.top_k" in error for error in errors)
+    with pytest.raises(ValueError, match="fetch_k .* must be >= retrieval.top_k"):
+        _cfg(False, top_k=5, fetch_k=4)
 
 
 def test_require_cuda_true_without_cuda_fails_preflight(tmp_path, monkeypatch):

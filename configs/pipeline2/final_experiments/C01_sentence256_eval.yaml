@@ -1,0 +1,9 @@
+extends: "../base_eval.yaml"
+
+evaluation:
+  eval_run_id: "C01_sentence256_eval"
+
+inputs:
+  pipeline1_results_path: "data/runs/pipeline1/C01/results.jsonl"
+  rag_outputs:
+    - "data/runs/pipeline1/C01/results.jsonl"

@@ -129,7 +129,13 @@ class ChunkingStage(BaseStage):
             return FixedWordChunker(self.cfg.chunking.chunk_size, self.cfg.chunking.chunk_overlap)
         if self.cfg.chunking.strategy == "sentence":
             print("Using sentence-aware chunking with regex sentence boundaries and full-sentence overlap.")
-            return SentenceChunker(self.cfg.chunking.chunk_size, self.cfg.chunking.chunk_overlap)
+            return SentenceChunker(
+                self.cfg.chunking.chunk_size,
+                self.cfg.chunking.chunk_overlap,
+                self.cfg.chunking.chunk_size_unit or "words",
+                self.cfg.chunking.chunk_overlap_unit or "sentences",
+                self.cfg.chunking.tokenizer_name,
+            )
         if self.cfg.chunking.strategy == "sivas_character":
             print("Using SIVAS character chunking with exact partner regex and 2048-char ceiling.")
             return SivasCharacterChunker(max_chars=self.cfg.chunking.max_chunk_chars)

@@ -1,5 +1,7 @@
 from pathlib import Path
-from typing import Literal, Optional
+from typing import Any, Literal, Optional
+
+import warnings
 
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -43,12 +45,35 @@ class ChunkingConfig(StrictConfigModel):
     strategy: Literal["fixed_token", "fixed_word", "sentence", "table_aware", "sivas_character"]
     chunk_size: int = Field(gt=0)
     chunk_overlap: int = Field(ge=0)
+    chunk_size_unit: Optional[Literal["tokens", "words", "sentences", "characters"]] = None
+    chunk_overlap_unit: Optional[Literal["tokens", "words", "sentences", "characters"]] = None
     tokenizer_name: str = "cl100k_base"
     allow_word_fallback: bool = False
     max_chunk_chars: int = Field(default=8000, gt=0)
     max_chunk_tokens: int = Field(default=1800, gt=0)
     oversized_chunk_policy: Literal["split", "warn", "raise"] = "split"
     oversized_chunk_warning: bool = True
+
+    @model_validator(mode="after")
+    def validate_chunk_units(self) -> "ChunkingConfig":
+        if self.chunk_overlap >= self.chunk_size:
+            raise ValueError("chunking.chunk_overlap must be < chunking.chunk_size.")
+        if self.strategy == "sentence":
+            if self.chunk_size_unit is None or self.chunk_overlap_unit is None:
+                warnings.warn(
+                    "Sentence chunking configs without explicit chunk_size_unit/chunk_overlap_unit "
+                    "use legacy units: chunk_size_unit='words', chunk_overlap_unit='sentences'. "
+                    "Official benchmark configs should set both units explicitly.",
+                    DeprecationWarning,
+                    stacklevel=2,
+                )
+                if self.chunk_size_unit is None:
+                    self.chunk_size_unit = "words"
+                if self.chunk_overlap_unit is None:
+                    self.chunk_overlap_unit = "sentences"
+            if "tokens" in (self.chunk_size_unit, self.chunk_overlap_unit):
+                _validate_tiktoken_encoding(self.tokenizer_name)
+        return self
 
 
 class EmbeddingConfig(StrictConfigModel):
@@ -119,7 +144,6 @@ class MetadataFilteringConfig(StrictConfigModel):
 
 
 class BM25Config(StrictConfigModel):
-    enabled: bool = True
     backend: Literal["local", "elasticsearch"] = "local"
     host: str = "http://localhost:9200"
     host_env: Optional[str] = None
@@ -129,6 +153,16 @@ class BM25Config(StrictConfigModel):
     k1: float = Field(default=1.5, gt=0)
     b: float = Field(default=0.75, ge=0, le=1)
     analyzer: str = "german"
+
+    @model_validator(mode="before")
+    @classmethod
+    def reject_removed_enabled(cls, data: Any) -> Any:
+        if isinstance(data, dict) and "enabled" in data:
+            raise ValueError(
+                "Deprecated field: retrieval.bm25.enabled. BM25 activation is controlled only by "
+                "retrieval.retriever_type. Remove retrieval.bm25.enabled from YAML."
+            )
+        return data
 
 
 class HybridConfig(StrictConfigModel):
@@ -153,6 +187,15 @@ class RetrievalConfig(StrictConfigModel):
     metadata_filtering: MetadataFilteringConfig = Field(default_factory=MetadataFilteringConfig)
     bm25: BM25Config = Field(default_factory=BM25Config)
     hybrid: HybridConfig = Field(default_factory=HybridConfig)
+
+    @model_validator(mode="after")
+    def validate_fetch_k_hard_cap(self) -> "RetrievalConfig":
+        if self.fetch_k < self.top_k:
+            raise ValueError(
+                f"retrieval.fetch_k ({self.fetch_k}) must be >= retrieval.top_k ({self.top_k}). "
+                "fetch_k is a strict raw-candidate cap."
+            )
+        return self
 
 
 class RerankerConfig(StrictConfigModel):
@@ -207,9 +250,29 @@ class OrchestrationConfig(StrictConfigModel):
             raise ValueError("Orchestration LLM may only perform clean_question and detect_category.")
         return value
 
+    @model_validator(mode="after")
+    def validate_prompt_version_matches_prompt_path(self) -> "OrchestrationConfig":
+        if "tasks" in self.model_fields_set:
+            warnings.warn(
+                "Deprecated field: orchestration.tasks. The current benchmark orchestration "
+                "workflow is fixed to clean_question and detect_category; remove this field.",
+                DeprecationWarning,
+                stacklevel=2,
+            )
+        if self.prompt_version and self.prompt_path:
+            prompt_stem = Path(self.prompt_path).stem.lower()
+            version = self.prompt_version.lower()
+            normalized_stem = prompt_stem.replace("orchestration_prompt", "")
+            normalized_version = version.replace("orchestration_prompt", "")
+            if prompt_stem != version and normalized_stem != normalized_version:
+                raise ValueError(
+                    "orchestration.prompt_version must match orchestration.prompt_path. "
+                    f"Got prompt_version={self.prompt_version!r}, prompt_path={self.prompt_path!r}."
+                )
+        return self
+
 
 class GenerationConfig(StrictConfigModel):
-    configurable: bool = False
     provider: Literal["ollama", "mistral"]
     model_name: str
     base_url: str = "http://localhost:11434"
@@ -242,6 +305,16 @@ class GenerationConfig(StrictConfigModel):
             raise ValueError("generation requires either system_prompt or prompt_path.")
         return self
 
+    @model_validator(mode="before")
+    @classmethod
+    def reject_removed_configurable(cls, data: Any) -> Any:
+        if isinstance(data, dict) and "configurable" in data:
+            raise ValueError(
+                "Deprecated field: generation.configurable. It had no runtime effect; remove it "
+                "and configure generation.temperature, max_tokens, timeout_s, and prompt_path explicitly."
+            )
+        return data
+
 
 def _resolve_project_path(path: str) -> Path:
     candidate = Path(path)
@@ -249,6 +322,18 @@ def _resolve_project_path(path: str) -> Path:
         return candidate.resolve()
     project_root = Path(__file__).resolve().parents[3]
     return (project_root / candidate).resolve()
+
+
+def _validate_tiktoken_encoding(tokenizer_name: str) -> None:
+    try:
+        import tiktoken
+
+        tiktoken.get_encoding(tokenizer_name)
+    except Exception as ex:
+        raise ValueError(
+            "chunking.tokenizer_name must be a valid tiktoken encoding when sentence "
+            f"chunking uses token units; got {tokenizer_name!r}."
+        ) from ex
 
 
 class PricingConfig(StrictConfigModel):
@@ -269,6 +354,36 @@ class RuntimeConfig(StrictConfigModel):
     cache_mismatch_policy: Literal["raise", "rebuild"] = "raise"
 
 
+class ParentContextConfig(StrictConfigModel):
+    enabled: bool = False
+    parent_unit: Literal["markdown_section"] = "markdown_section"
+    deduplicate: bool = True
+    missing_parent_policy: Literal["use_child", "error"] = "use_child"
+    unique_parent_top_k: int = Field(default=5, gt=0)
+    max_parent_tokens: int = Field(default=1800, gt=0)
+
+    @model_validator(mode="before")
+    @classmethod
+    def reject_removed_policy_fields(cls, data: Any) -> Any:
+        removed = {
+            "mapping_policy",
+            "score_policy",
+            "preserve_child_provenance",
+            "oversized_parent_policy",
+        }
+        if isinstance(data, dict):
+            present = sorted(removed.intersection(data))
+            if present:
+                fields = ", ".join(f"parent_context.{field}" for field in present)
+                raise ValueError(
+                    f"Deprecated parent-context field(s): {fields}. These fields were removed because "
+                    "the current parent-context implementation uses one fixed policy for parent mapping, "
+                    "score propagation, child provenance preservation, and oversized-parent selection. "
+                    "Remove the field(s) from the YAML."
+                )
+        return data
+
+
 class PipelineConfig(StrictConfigModel):
     experiment: ExperimentConfig
     data: DataConfig
@@ -281,6 +396,7 @@ class PipelineConfig(StrictConfigModel):
     generation: GenerationConfig
     telemetry: TelemetryConfig
     runtime: RuntimeConfig
+    parent_context: ParentContextConfig = Field(default_factory=ParentContextConfig)
 
     @model_validator(mode="after")
     def validate_index_retriever_compatibility(self) -> "PipelineConfig":

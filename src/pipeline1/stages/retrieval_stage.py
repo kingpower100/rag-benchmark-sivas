@@ -27,6 +27,8 @@ class RetrievalRow:
     reranker_used: bool
     retrieval_warnings: list[str]
     retrieval_diagnostics: dict
+    generation_contexts: list = field(default_factory=list)
+    parent_context_diagnostics: dict = field(default_factory=dict)
 
     def as_generation_tuple(self) -> tuple:
         return (
@@ -163,8 +165,27 @@ class RetrievalStage(BaseStage):
                             enough_retrieved_chunks,
                         )
                     if not enough_retrieved_chunks:
+                        if self.cfg.retrieval.fallback_to_global:
+                            category_fallback_used = True
+                            fallback_reason = "insufficient_category_results_global_fallback"
+                            retrieval_mode = "global_fallback"
+                            retriever.set_active_category(None)
+                            raw_retrieved, retrieved, retrieval_warnings, reranker_used = retrieve_top_k_unique_contexts(
+                                query.retrieval_question,
+                                retriever,
+                                reranker,
+                                rerank_top_k,
+                                self.cfg.retrieval.fetch_k,
+                                max_candidates=len(self.chunks),
+                            )
+                            number_of_global_fallback_results = len(retrieved)
+                        else:
+                            fallback_reason = "fallback_disabled_insufficient_results"
+                            retrieval_mode = "category_aware_dense_no_fallback"
+                else:
+                    if self.cfg.retrieval.fallback_to_global:
                         category_fallback_used = True
-                        fallback_reason = "insufficient_category_results"
+                        fallback_reason = "invalid_category_global_fallback"
                         retrieval_mode = "global_fallback"
                         retriever.set_active_category(None)
                         raw_retrieved, retrieved, retrieval_warnings, reranker_used = retrieve_top_k_unique_contexts(
@@ -176,20 +197,12 @@ class RetrievalStage(BaseStage):
                             max_candidates=len(self.chunks),
                         )
                         number_of_global_fallback_results = len(retrieved)
-                else:
-                    category_fallback_used = True
-                    fallback_reason = query.category_validation_reason or "category_not_validated"
-                    retrieval_mode = "global_fallback"
-                    retriever.set_active_category(None)
-                    raw_retrieved, retrieved, retrieval_warnings, reranker_used = retrieve_top_k_unique_contexts(
-                        query.retrieval_question,
-                        retriever,
-                        reranker,
-                        rerank_top_k,
-                        self.cfg.retrieval.fetch_k,
-                        max_candidates=len(self.chunks),
-                    )
-                    number_of_global_fallback_results = len(retrieved)
+                    else:
+                        fallback_reason = "fallback_disabled_invalid_category"
+                        retrieval_mode = "category_unavailable_no_fallback"
+                        raw_retrieved = []
+                        retrieved = []
+                        reranker_used = reranker is not None
                     if self.logger:
                         self.logger.info(
                             "retrieval_decision question_id=%s decision='Category Validation' category_validated=false reason=%s",
@@ -230,6 +243,12 @@ class RetrievalStage(BaseStage):
                     "number_of_global_fallback_results": number_of_global_fallback_results,
                     "top_k": final_top_k,
                     "fetch_k": self.cfg.retrieval.fetch_k,
+                    "configured_fetch_k": self.cfg.retrieval.fetch_k,
+                    "raw_candidate_request_k": self.cfg.retrieval.fetch_k,
+                    "actual_raw_candidates_returned": len(raw_retrieved),
+                    "unique_final_contexts": len(retrieved),
+                    "candidate_expansion_enabled": False,
+                    "candidate_expansion_occurred": False,
                     "decision": "Enough Retrieved Chunks?",
                     "retrieved_chunks": [item.chunk_id for item in retrieved],
                     "retrieved_documents": [
@@ -347,21 +366,15 @@ def retrieve_top_k_unique_contexts(
     fetch_k: int,
     max_candidates: int,
 ) -> tuple[list, list, list[str], bool]:
-    candidate_k = max(fetch_k, top_k)
-    raw_retrieved = []
-    retrieved = []
+    candidate_k = fetch_k
     reranker_used = reranker is not None
-    while True:
-        raw_retrieved = retriever.retrieve(question, candidate_k)
-        ranked = reranker.rerank(question, raw_retrieved, top_k) if reranker is not None else raw_retrieved
-        retrieved = dedupe_retrieval_by_chunk_id(ranked, top_k)
-        if len(retrieved) >= top_k or candidate_k >= max_candidates:
-            break
-        candidate_k = min(max_candidates, max(candidate_k + 1, candidate_k * 2))
+    raw_retrieved = retriever.retrieve(question, candidate_k)
+    ranked = reranker.rerank(question, raw_retrieved, top_k) if reranker is not None else raw_retrieved
+    retrieved = dedupe_retrieval_by_chunk_id(ranked, top_k)
     warnings = []
     if len(retrieved) < top_k:
         warnings.append(
-            f"Only {len(retrieved)} unique chunks were available after deduplication; requested top_k={top_k}."
+            f"Only {len(retrieved)} unique chunks were available after deduplication within fetch_k={fetch_k}; requested top_k={top_k}."
         )
     return raw_retrieved, retrieved, warnings, reranker_used
 

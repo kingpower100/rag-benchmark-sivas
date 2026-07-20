@@ -1,0 +1,17 @@
+extends: "C00_sentence512_baseline.yaml"
+
+# C03: parent-context retrieval ablation.
+# Identical to C00 (sentence 512/200, multilingual-e5-small, FAISS cosine, llama3.1:8b
+# orchestration, qwen2.5:7b-instruct generation) except that retrieved child chunks are
+# expanded to their deepest-containing Markdown parent sections before generation.
+
+experiment:
+  experiment_id: "C03"
+
+parent_context:
+  enabled: true
+  parent_unit: markdown_section
+  deduplicate: true
+  missing_parent_policy: use_child
+  unique_parent_top_k: 5
+  max_parent_tokens: 1800

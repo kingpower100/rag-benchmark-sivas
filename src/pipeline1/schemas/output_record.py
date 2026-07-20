@@ -81,6 +81,9 @@ class OutputRecord(BaseModel):
     chunks_after: int | None = None
     chunks_truncated: int | None = None
     chunks_dropped: int | None = None
+    generation_context_texts: list[str] = Field(default_factory=list)
+    parent_context_diagnostics: dict = Field(default_factory=dict)
+    parent_context_enabled: bool = False
     error: Optional[str] = None
 
     def to_export_record(self) -> dict:
@@ -159,6 +162,9 @@ class OutputRecord(BaseModel):
             "estimated_cost": self.estimated_cost,
             "error": self.error,
             "orchestration_error": self.orchestration_error,
+            "generation_context_texts": self.generation_context_texts,
+            "parent_context_diagnostics": self.parent_context_diagnostics,
+            "parent_context_enabled": self.parent_context_enabled,
         }
 
     @model_validator(mode="after")

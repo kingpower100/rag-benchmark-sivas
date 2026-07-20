@@ -158,9 +158,6 @@ orchestration:
   model_name: "mistral-small"
   base_url: "http://localhost:11434"
   fixed: true
-  tasks:
-    - "clean_question"
-    - "detect_category"
   prompt_version: "v1"
   prompt_path: "src/pipeline1/prompts/orchestration_promptV1.txt"
 

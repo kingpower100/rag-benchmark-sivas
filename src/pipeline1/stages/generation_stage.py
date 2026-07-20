@@ -94,15 +94,24 @@ class GenerationStage(BaseStage):
         retrieval_warnings = retrieval_row.retrieval_warnings
         retrieval_diagnostics = retrieval_row.retrieval_diagnostics
 
-        prompt_contexts = dedupe_prompt_contexts(retrieved)
+        # C03: use expanded parent sections; C00 and others: use retrieved children.
+        if self.cfg.parent_context.enabled and retrieval_row.generation_contexts:
+            prompt_contexts = list(retrieval_row.generation_contexts)
+            generation_context_texts = [gc.text for gc in prompt_contexts]
+            parent_context_enabled = True
+        else:
+            prompt_contexts = dedupe_prompt_contexts(retrieved)
+            generation_context_texts = [item.text for item in prompt_contexts]
+            parent_context_enabled = False
         if self.logger:
             self.logger.info(
-                "row_start phase=generation question_id=%s row=%s/%s saved_contexts=%s prompt_contexts=%s",
+                "row_start phase=generation question_id=%s row=%s/%s saved_contexts=%s prompt_contexts=%s parent_context=%s",
                 query.question_id,
                 row_index,
                 total_rows,
                 len(retrieved),
                 len(prompt_contexts),
+                parent_context_enabled,
             )
         retrieval_metadata = None
         if self.cfg.generation.include_retrieval_metadata:
@@ -279,6 +288,9 @@ class GenerationStage(BaseStage):
             chunks_after=prompt_stats.get("chunks_after"),
             chunks_truncated=prompt_stats.get("chunks_truncated"),
             chunks_dropped=prompt_stats.get("chunks_dropped"),
+            generation_context_texts=generation_context_texts,
+            parent_context_diagnostics=retrieval_row.parent_context_diagnostics if parent_context_enabled else {},
+            parent_context_enabled=parent_context_enabled,
             error=error,
         )
         return GenerationRow(

@@ -75,11 +75,18 @@ class BertScoreConfig(StrictEvalConfigModel):
     enabled: bool = False
     model_name: str = "bert-base-multilingual-cased"
     device: str = "auto"
-    # max_length is kept for YAML backward-compatibility; the official bert-score library
-    # selects tokenisation limits internally per model and ignores this field.
-    max_length: int = Field(default=512, gt=0)
     idf: bool = False
     rescale_with_baseline: bool = False
+
+    @model_validator(mode="before")
+    @classmethod
+    def reject_removed_max_length(cls, data: Any) -> Any:
+        if isinstance(data, dict) and "max_length" in data:
+            raise ValueError(
+                "Deprecated field: bert_score.max_length. The official bert-score library ignores this "
+                "setting in this framework; remove bert_score.max_length from YAML."
+            )
+        return data
 
 
 class RuntimeConfig(StrictEvalConfigModel):

@@ -296,7 +296,7 @@ class TestCategoryAwareDenseInvalidCategoryFallback:
         diag = row.retrieval_diagnostics
         assert diag["retrieval_scope"] == "global"
         assert diag["fallback_used"] is True
-        assert diag["fallback_reason"] == "detected_category not found in KB category list"
+        assert diag["fallback_reason"] == "invalid_category_global_fallback"
         assert diag["category_index_used"] is False
         assert diag["retriever_type"] == "category_aware_dense"
 
@@ -317,7 +317,7 @@ class TestCategoryAwareDenseInvalidCategoryFallback:
         diag = output.retrieval_rows[0].retrieval_diagnostics
         assert diag["retrieval_scope"] == "global"
         assert diag["fallback_used"] is True
-        assert diag["fallback_reason"] == "category_not_validated"
+        assert diag["fallback_reason"] == "invalid_category_global_fallback"
 
     def test_fallback_reason_is_none_when_no_fallback(self):
         """When category retrieval succeeds, fallback_reason must be None."""
@@ -380,7 +380,7 @@ class TestCategoryAwareDenseInsufficientResultsFallback:
         diag = row.retrieval_diagnostics
         assert diag["category_fallback_used"] is True
         assert diag["fallback_used"] is True
-        assert diag["fallback_reason"] == "insufficient_category_results"
+        assert diag["fallback_reason"] == "insufficient_category_results_global_fallback"
         assert diag["retrieval_scope"] == "global"
         assert diag["retrieval_mode"] == "global_fallback"
         assert diag["number_of_category_results"] < 3  # triggered fallback

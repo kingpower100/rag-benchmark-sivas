@@ -43,7 +43,6 @@ bert_score:
   enabled: true
   model_name: bert-base-multilingual-cased
   device: auto
-  max_length: 512
 runtime:
   overwrite: true
   save_csv: true

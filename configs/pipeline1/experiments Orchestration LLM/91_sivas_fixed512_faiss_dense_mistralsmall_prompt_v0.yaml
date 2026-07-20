@@ -73,7 +73,6 @@ orchestration:
   timeout_s: 180
 
 generation:
-  configurable: true
   provider: "ollama"
   model_name: "qwen2.5:7b"      # answer-generation model (produces the RAG answer)
   base_url: "http://localhost:11434"
