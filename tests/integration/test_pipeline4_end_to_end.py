@@ -11,14 +11,22 @@ import yaml
 from src.pipeline4.orchestrator import Pipeline4Orchestrator
 
 
-REAL_P2_DIR = Path("data/eval/runs/pipeline2")
-REAL_P3_DIR = Path("data/eval/runs/pipeline3")
+EXPERIMENT_IDS = [
+    "91_sivas_fixed512_faiss_dense_mistralsmall_prompt_v0",
+    "92_sivas_fixed512_faiss_dense_mistralsmall_prompt_v1",
+    "93_sivas_fixed512_faiss_dense_mistralsmall_prompt_v2",
+    "94_sivas_fixed512_faiss_dense_mistralsmall_prompt_v3",
+    "95_sivas_fixed512_faiss_dense_mistralsmall_prompt_v4",
+    "96_sivas_fixed512_faiss_dense_mistralsmall_prompt_v5",
+]
 
 
 @pytest.fixture
 def p4_tmpdir():
     d = tempfile.mkdtemp()
-    yield Path(d)
+    root = Path(d)
+    _write_fixture_runs(root / "pipeline2", root / "pipeline3")
+    yield root
     import shutil
     shutil.rmtree(d, ignore_errors=True)
 
@@ -26,8 +34,8 @@ def p4_tmpdir():
 @pytest.fixture
 def p4_config_path(p4_tmpdir):
     cfg = {
-        "pipeline2_runs_dir": str(REAL_P2_DIR),
-        "pipeline3_runs_dir": str(REAL_P3_DIR),
+        "pipeline2_runs_dir": str(p4_tmpdir / "pipeline2"),
+        "pipeline3_runs_dir": str(p4_tmpdir / "pipeline3"),
         "output_dir": str(p4_tmpdir / "pipeline4_out"),
         "run_id": "test_e2e_run",
         "ranking_mode": "retrieval_only",
@@ -40,8 +48,8 @@ def p4_config_path(p4_tmpdir):
 @pytest.fixture
 def p4_rag_config_path(p4_tmpdir):
     cfg = {
-        "pipeline2_runs_dir": str(REAL_P2_DIR),
-        "pipeline3_runs_dir": str(REAL_P3_DIR),
+        "pipeline2_runs_dir": str(p4_tmpdir / "pipeline2"),
+        "pipeline3_runs_dir": str(p4_tmpdir / "pipeline3"),
         "output_dir": str(p4_tmpdir / "pipeline4_rag_out"),
         "run_id": "test_e2e_rag_run",
         "ranking_mode": "overall_rag",
@@ -51,10 +59,6 @@ def p4_rag_config_path(p4_tmpdir):
     return path
 
 
-@pytest.mark.skipif(
-    not REAL_P2_DIR.exists(),
-    reason="Real P2 data not available at data/eval/runs/pipeline2",
-)
 class TestPipeline4EndToEnd:
     def test_retrieval_mode_produces_all_output_files(self, p4_config_path):
         orch = Pipeline4Orchestrator()
@@ -172,3 +176,97 @@ class TestPipeline4EndToEnd:
 
         expected = 0.35 * recall + 0.25 * mrr + 0.20 * ndcg + 0.20 * cp
         assert abs(score - expected) < 1e-5
+
+
+def _write_fixture_runs(p2_root: Path, p3_root: Path) -> None:
+    question_ids = [f"q{i:03d}" for i in range(96)]
+    for idx, exp_id in enumerate(EXPERIMENT_IDS):
+        recall = round(0.30 + idx * 0.05, 6)
+        p2_dir = p2_root / f"p2_{exp_id}"
+        p2_dir.mkdir(parents=True, exist_ok=True)
+        summary_row = {
+            "experiment_id": exp_id,
+            "n_questions": 96,
+            "run_valid": True,
+            "generation_failure_rate": 0.0,
+            "mean_recall_at_5": recall,
+            "mean_mrr_at_5": 0.70,
+            "mean_ndcg_at_5": 0.60,
+            "mean_context_precision_at_5": 0.50,
+            "unknown_rate": 0.10,
+            "mean_embedding_similarity": 0.80,
+            "mean_official_bertscore_f1": 0.75,
+        }
+        (p2_dir / "summary_metrics.json").write_text(
+            json.dumps({"summary_by_experiment": [summary_row]}, indent=2),
+            encoding="utf-8",
+        )
+        rows = [{"question_id": qid, "experiment_id": exp_id} for qid in question_ids]
+        _write_jsonl(p2_dir / "per_question.jsonl", rows)
+        _write_jsonl(p2_dir / "per_question_metrics.jsonl", rows)
+        (p2_dir / "eval_manifest.json").write_text(
+            json.dumps(
+                {
+                    "final_verdict": "valid",
+                    "strict_audit_pass": True,
+                    "qa_hash": "qa_hash_abc",
+                    "gold_contexts_hash": "gold_hash_abc",
+                    "fake_run_detection": {"suspicious": False, "checks": []},
+                    "row_counts": {
+                        "pipeline1_results": 96,
+                        "questions_rows": 96,
+                        "evaluated_rows": 96,
+                    },
+                },
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+
+        if idx < 3:
+            _write_p3_fixture(p3_root / f"p3_{exp_id}", exp_id, question_ids)
+
+
+def _write_p3_fixture(run_dir: Path, exp_id: str, question_ids: list[str]) -> None:
+    run_dir.mkdir(parents=True, exist_ok=True)
+    (run_dir / "semantic_summary.csv").write_text("run_id,n_questions\np3_%s,96\n" % exp_id, encoding="utf-8")
+    with (run_dir / "per_question_semantic_metrics.csv").open("w", encoding="utf-8", newline="") as f:
+        writer = csv.DictWriter(f, fieldnames=["question_id"])
+        writer.writeheader()
+        for qid in question_ids:
+            writer.writerow({"question_id": qid})
+    (run_dir / "evaluation_manifest.json").write_text(
+        json.dumps(
+            {
+                "run_id": f"p3_{exp_id}",
+                "judge_model": "qwen2.5:14b",
+                "prompt_version": "v2",
+                "inputs": {"questions_rows": 96, "rag_rows": 96, "qa_sha256": "qa_hash_abc"},
+                "validation": {"passed": True, "errors": [], "warnings": [], "stats": {}},
+                "ragas_stats": {"nan_counts": {}},
+                "summary": {
+                    "n_questions": 96,
+                    "judge_success_rate": 1.0,
+                    "judge_failure_count": 0,
+                    "mean_judge_correctness": 3.0,
+                    "mean_judge_faithfulness": 3.0,
+                    "mean_judge_completeness": 3.0,
+                    "mean_judge_hallucination": 1.0,
+                    "mean_judge_context_relevance": 3.0,
+                    "mean_judge_overall_score": 3.0,
+                    "mean_ragas_faithfulness": 0.6,
+                    "mean_ragas_answer_relevancy": 0.7,
+                    "mean_ragas_context_recall": 0.8,
+                },
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+
+
+def _write_jsonl(path: Path, rows: list[dict]) -> None:
+    path.write_text(
+        "".join(json.dumps(row, ensure_ascii=False) + "\n" for row in rows),
+        encoding="utf-8",
+    )

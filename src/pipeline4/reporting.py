@@ -53,8 +53,14 @@ class ExperimentRecord:
     rqi: Optional[float]
     p2_status: str
     p3_status: Optional[str]
+    p2_issues: list[str] = field(default_factory=list)
     p3_issues: list[str] = field(default_factory=list)
     ragas_warnings: list[str] = field(default_factory=list)
+    p2_eligible: bool = False
+    p3_eligible: bool = False
+    retrieval_leaderboard_eligible: bool = False
+    overall_leaderboard_eligible: bool = False
+    exclusion_reasons: list[str] = field(default_factory=list)
     retrieval_rank: Optional[int] = None
     rqi_rank: Optional[int] = None
     comparison_group_id: str = ""
@@ -79,7 +85,7 @@ def build_records(
 
         retrieval_score = compute_retrieval_score(p2, cfg.retrieval_score_weights)
         rqi: Optional[float] = None
-        if p3 is not None and not val.p3_invalid:
+        if p3 is not None and val.overall_leaderboard_eligible:
             rqi = compute_rqi(p2, p3, cfg.rqi_weights)
 
         rec = ExperimentRecord(
@@ -117,8 +123,14 @@ def build_records(
             rqi=rqi,
             p2_status=val.p2_status,
             p3_status=val.p3_status,
+            p2_issues=val.p2_issues,
             p3_issues=val.p3_issues,
             ragas_warnings=val.ragas_warnings,
+            p2_eligible=val.p2_eligible,
+            p3_eligible=val.p3_eligible,
+            retrieval_leaderboard_eligible=val.retrieval_leaderboard_eligible,
+            overall_leaderboard_eligible=val.overall_leaderboard_eligible,
+            exclusion_reasons=val.exclusion_reasons,
             comparison_group_id=group_by_exp.get(p2.experiment_id, "EXCLUDED"),
         )
         records.append(rec)
@@ -222,6 +234,9 @@ def write_full_summary(records: list[ExperimentRecord], out_path: Path) -> None:
         "experiment_id",
         "p2_status",
         "p3_status",
+        "retrieval_leaderboard_eligible",
+        "overall_leaderboard_eligible",
+        "exclusion_reasons",
         "retrieval_rank",
         "rqi_rank",
         "retrieval_score",
@@ -272,6 +287,9 @@ def write_full_summary(records: list[ExperimentRecord], out_path: Path) -> None:
                     "experiment_id": r.experiment_id,
                     "p2_status": r.p2_status,
                     "p3_status": r.p3_status or "",
+                    "retrieval_leaderboard_eligible": r.retrieval_leaderboard_eligible,
+                    "overall_leaderboard_eligible": r.overall_leaderboard_eligible,
+                    "exclusion_reasons": ";".join(r.exclusion_reasons),
                     "retrieval_rank": r.retrieval_rank if r.retrieval_rank is not None else "",
                     "rqi_rank": r.rqi_rank if r.rqi_rank is not None else "",
                     "retrieval_score": _fmt(r.retrieval_score),
@@ -424,11 +442,25 @@ def write_validation_report(
         "total_experiments": len(records),
         "ranked_retrieval": sum(1 for r in records if r.retrieval_rank is not None),
         "ranked_rqi": sum(1 for r in records if r.rqi_rank is not None),
+        "eligibility": [
+            {
+                "experiment_id": r.experiment_id,
+                "p2_eligible": r.p2_eligible,
+                "p3_eligible": r.p3_eligible,
+                "retrieval_leaderboard_eligible": r.retrieval_leaderboard_eligible,
+                "overall_leaderboard_eligible": r.overall_leaderboard_eligible,
+                "exclusion_reasons": r.exclusion_reasons,
+            }
+            for r in records
+        ],
         "excluded_experiments": [
             {
                 "experiment_id": r.experiment_id,
                 "p2_status": r.p2_status,
-                "p2_issues": [],
+                "p2_issues": r.p2_issues,
+                "p3_status": r.p3_status,
+                "p3_issues": r.p3_issues,
+                "exclusion_reasons": r.exclusion_reasons,
             }
             for r in excluded
         ],
@@ -561,7 +593,8 @@ def write_comparison_report(
         lines.append("## Excluded Experiments")
         lines.append("")
         for r in excluded:
-            lines.append(f"- `{r.experiment_id}`: **{r.p2_status}**")
+            reason = ", ".join(r.exclusion_reasons) if r.exclusion_reasons else "no reason recorded"
+            lines.append(f"- `{r.experiment_id}`: **{r.p2_status}** ({reason})")
         lines.append("")
 
     lines.append("## Metric Definitions")

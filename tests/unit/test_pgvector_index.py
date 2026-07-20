@@ -64,6 +64,29 @@ def test_pgvector_index_set_chunks():
     assert idx._chunks == [chunk]
 
 
+def _chunk(chunk_id: str = "c1"):
+    chunk = MagicMock()
+    chunk.chunk_id = chunk_id
+    chunk.document_id = "doc1"
+    chunk.original_context_id = "ctx1"
+    chunk.text = f"text {chunk_id}"
+    chunk.metadata = {}
+    return chunk
+
+
+def _identity() -> dict:
+    return {
+        "dataset_fingerprint": "dataset-a",
+        "source_document_fingerprint": "docs-a",
+        "chunk_store_fingerprint": "chunks-a",
+        "chunking_configuration_fingerprint": "chunk-cfg-a",
+        "embedding_model_name": "model-a",
+        "embedding_normalization": True,
+        "framework_config_hash": "cfg-a",
+        "framework_code_version": "commit-a",
+    }
+
+
 def test_pgvector_index_dim_property():
     pool, _, _ = _mock_pool()
     idx = PgvectorIndex(dense_dim=768, _pool=pool)
@@ -90,20 +113,106 @@ def test_pgvector_index_save_writes_pointer_file():
     assert "mytable" in content
 
 
-def test_pgvector_index_build_skips_upsert_when_count_matches():
+def test_pgvector_index_build_reuses_only_when_manifest_and_chunk_ids_match():
     pool, conn, cur = _mock_pool()
-    chunk = MagicMock()
-    chunk.chunk_id = "c1"
-    chunk.metadata = {}
-    cur.fetchone.return_value = (1,)
-    idx = PgvectorIndex(_pool=pool)
+    chunk = _chunk("c1")
+    idx = PgvectorIndex(logical_index_name="logical", _pool=pool)
     idx.set_chunks([chunk])
+    idx.set_artifact_identity(_identity())
     embeddings = np.zeros((1, 1024), dtype="float32")
+    expected = idx._expected_identity(embeddings)
+    cur.fetchone.side_effect = [(1,), ({"identity": expected},)]
+    cur.fetchall.return_value = [("c1",)]
     idx.build(embeddings)
-    # No upsert should have been called since count already matches
     execute_calls = [str(c) for c in cur.execute.call_args_list]
     upsert_calls = [c for c in execute_calls if "INSERT" in c or "ON CONFLICT" in c]
     assert len(upsert_calls) == 0
+    assert idx.last_health["reuse_allowed"] is True
+    assert idx.last_health["reuse_rejected"] is False
+
+
+def test_pgvector_index_missing_manifest_forces_rebuild_and_updates_manifest():
+    pool, conn, cur = _mock_pool()
+    chunk = _chunk("c1")
+    idx = PgvectorIndex(logical_index_name="logical", _pool=pool)
+    idx.set_chunks([chunk])
+    idx.set_artifact_identity(_identity())
+    cur.fetchone.side_effect = [(1,), None, (1,)]
+    embeddings = np.zeros((1, 1024), dtype="float32")
+    idx.build(embeddings)
+    execute_calls = [str(c) for c in cur.execute.call_args_list]
+    assert any("TRUNCATE TABLE" in c for c in execute_calls)
+    assert any("INSERT INTO" in c and "ON CONFLICT" in c for c in execute_calls)
+    assert idx.last_health["reuse_allowed"] is False
+    assert idx.last_health["rejection_reason"] == "manifest_missing"
+    assert idx.last_health["rebuilt_row_count"] == 1
+
+
+def test_pgvector_index_matching_count_different_chunk_fingerprint_forces_rebuild():
+    pool, conn, cur = _mock_pool()
+    chunk = _chunk("c1")
+    idx = PgvectorIndex(logical_index_name="logical", _pool=pool)
+    idx.set_chunks([chunk])
+    idx.set_artifact_identity(_identity())
+    embeddings = np.zeros((1, 1024), dtype="float32")
+    stale = dict(idx._expected_identity(embeddings))
+    stale["chunk_store_fingerprint"] = "stale-chunks"
+    cur.fetchone.side_effect = [(1,), ({"identity": stale},), (1,)]
+    idx.build(embeddings)
+    assert idx.last_health["rejection_reason"] == "chunk_fingerprint_mismatch"
+
+
+def test_pgvector_index_matching_count_different_chunk_ids_forces_rebuild():
+    pool, conn, cur = _mock_pool()
+    chunk = _chunk("c1")
+    idx = PgvectorIndex(logical_index_name="logical", _pool=pool)
+    idx.set_chunks([chunk])
+    idx.set_artifact_identity(_identity())
+    embeddings = np.zeros((1, 1024), dtype="float32")
+    expected = idx._expected_identity(embeddings)
+    cur.fetchone.side_effect = [(1,), ({"identity": expected},), (1,)]
+    cur.fetchall.return_value = [("stale-c1",)]
+    idx.build(embeddings)
+    assert idx.last_health["rejection_reason"] == "chunk_id_fingerprint_mismatch"
+
+
+@pytest.mark.parametrize(
+    ("field", "value", "reason"),
+    [
+        ("embedding_model_name", "other-model", "embedding_model_mismatch"),
+        ("embedding_dimension", 768, "embedding_dimension_mismatch"),
+        ("embedding_normalization", False, "normalization_mismatch"),
+        ("distance_metric", "l2", "distance_metric_mismatch"),
+        ("manifest_format_version", "0.9", "manifest_version_mismatch"),
+        ("table_name", "other_table", "table_identity_mismatch"),
+    ],
+)
+def test_pgvector_index_manifest_mismatches_force_rebuild(field, value, reason):
+    pool, conn, cur = _mock_pool()
+    chunk = _chunk("c1")
+    idx = PgvectorIndex(logical_index_name="logical", _pool=pool)
+    idx.set_chunks([chunk])
+    idx.set_artifact_identity(_identity())
+    embeddings = np.zeros((1, 1024), dtype="float32")
+    stale = dict(idx._expected_identity(embeddings))
+    stale[field] = value
+    cur.fetchone.side_effect = [(1,), ({"identity": stale},), (1,)]
+    idx.build(embeddings)
+    assert idx.last_health["rejection_reason"] == reason
+
+
+def test_pgvector_index_rebuild_requested_replaces_rows():
+    pool, conn, cur = _mock_pool()
+    chunk = _chunk("c1")
+    idx = PgvectorIndex(logical_index_name="logical", rebuild_index=True, _pool=pool)
+    idx.set_chunks([chunk])
+    idx.set_artifact_identity(_identity())
+    cur.fetchone.side_effect = [(1,), None, (1,)]
+    embeddings = np.zeros((1, 1024), dtype="float32")
+    idx.build(embeddings)
+    execute_calls = [str(c) for c in cur.execute.call_args_list]
+    assert any("TRUNCATE TABLE" in c for c in execute_calls)
+    assert idx.last_health["rejection_reason"] == "rebuild_index_requested"
 
 
 def test_pgvector_index_search_returns_chunk_ids_and_scores():

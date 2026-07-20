@@ -214,6 +214,8 @@ inputs:
 retrieval:
   k: 1
   ks: [1]
+embedding_similarity:
+  offline_mode: true
 runtime:
   overwrite: true
   save_csv: false

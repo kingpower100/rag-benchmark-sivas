@@ -79,8 +79,16 @@ class Pipeline4Orchestrator:
         records = build_records(p2_summaries, p3_map, validations, comparison_groups, cfg)
 
         print("Ranking experiments...")
-        retrieval_scores = {r.experiment_id: r.retrieval_score for r in records if not validations[r.experiment_id].p2_excluded}
-        rqi_scores = {r.experiment_id: r.rqi for r in records if not validations[r.experiment_id].p2_excluded}
+        retrieval_scores = {
+            r.experiment_id: r.retrieval_score
+            for r in records
+            if validations[r.experiment_id].retrieval_leaderboard_eligible
+        }
+        rqi_scores = {
+            r.experiment_id: r.rqi
+            for r in records
+            if validations[r.experiment_id].overall_leaderboard_eligible
+        }
 
         retrieval_ranks = rank_retrieval(retrieval_scores, comparison_groups)
         rqi_ranks = rank_rqi(rqi_scores, comparison_groups, cfg.ranking_mode)

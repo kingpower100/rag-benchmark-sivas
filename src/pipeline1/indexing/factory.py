@@ -35,6 +35,7 @@ def build_index(config: IndexConfig):
             dsn_env=pg.dsn_env,
             schema_name=pg.schema_name,
             table_name=pg.table_name,
+            logical_index_name=config.index_name,
             dense_dim=config.dense_dim,
             metric=config.metric,
             index_type=pg.index_type,

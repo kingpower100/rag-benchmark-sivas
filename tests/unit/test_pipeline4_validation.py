@@ -7,7 +7,9 @@ from src.pipeline4.schemas import ValidationThresholds
 from src.pipeline4.validation import (
     P2_EXCLUDED_FAILURE_RATE,
     P2_EXCLUDED_RUN_INVALID,
+    P2_EXCLUDED_STRICT_AUDIT,
     P2_VALID,
+    P3_INCOMPLETE,
     P3_JUDGE_WARNING,
     P3_NOT_AVAILABLE,
     P3_VALID,
@@ -44,6 +46,18 @@ def _p2(
         qa_hash=qa_hash,
         gold_contexts_hash=qa_hash,
         p2_run_dir=f"/fake/{exp_id}",
+        audit_manifest_present=True,
+        final_verdict="valid",
+        strict_audit_pass=True,
+        fake_run_suspicious=False,
+        row_counts={
+            "pipeline1_results": n_questions,
+            "questions_rows": n_questions,
+            "evaluated_rows": n_questions,
+        },
+        question_ids=[f"q{i:03d}" for i in range(n_questions)],
+        expected_question_count=n_questions,
+        required_outputs_present=True,
     )
 
 
@@ -74,6 +88,11 @@ def _p3(
         ragas_faithfulness_nan_rate=ragas_faith_nan_rate,
         ragas_answer_relevancy_nan_rate=ragas_rel_nan_rate,
         p3_run_dir=f"/fake/p3/{exp_id}",
+        validation_passed=True,
+        row_output_present=True,
+        summary_present=True,
+        question_ids=[f"q{i:03d}" for i in range(96)],
+        expected_question_count=96,
     )
 
 
@@ -111,6 +130,30 @@ class TestValidateP2:
         val = validate_p2(p2, _thresholds())
         assert val.p2_status == P2_EXCLUDED_RUN_INVALID
 
+    def test_missing_manifest_excludes_legacy_run(self):
+        p2 = _p2()
+        p2.audit_manifest_present = False
+        p2.final_verdict = None
+        p2.strict_audit_pass = None
+        val = validate_p2(p2, _thresholds())
+        assert val.p2_status == P2_EXCLUDED_STRICT_AUDIT
+        assert "p2_manifest_missing" in val.exclusion_reasons
+
+    def test_fake_run_evidence_excludes_run(self):
+        p2 = _p2()
+        p2.fake_run_suspicious = True
+        p2.fake_run_suspicious_checks = ["result_rows_do_not_match_questions"]
+        val = validate_p2(p2, _thresholds())
+        assert val.p2_status == P2_EXCLUDED_STRICT_AUDIT
+        assert "p2_fake_run_detected" in val.exclusion_reasons
+
+    def test_row_count_mismatch_excludes_run(self):
+        p2 = _p2(n_questions=95)
+        p2.expected_question_count = 96
+        val = validate_p2(p2, _thresholds())
+        assert val.p2_status == P2_EXCLUDED_STRICT_AUDIT
+        assert "p2_row_count_mismatch" in val.exclusion_reasons
+
 
 class TestValidateP3:
     def test_none_returns_not_available(self):
@@ -121,28 +164,42 @@ class TestValidateP3:
 
     def test_valid_p3(self):
         p3 = _p3(judge_success_rate=1.0)
-        status, issues, warnings = validate_p3(p3, _thresholds())
+        status, issues, warnings = validate_p3(p3, _thresholds(), _p2())
         assert status == P3_VALID
         assert not issues
 
     def test_low_judge_success_rate(self):
         p3 = _p3(judge_success_rate=0.80)
-        status, issues, _w = validate_p3(p3, _thresholds())
+        status, issues, _w = validate_p3(p3, _thresholds(), _p2())
         assert status == P3_JUDGE_WARNING
         assert len(issues) >= 1
 
     def test_ragas_nan_warning_does_not_exclude(self):
         p3 = _p3(judge_success_rate=1.0, ragas_faith_nan_rate=0.20)
-        status, issues, ragas_warnings = validate_p3(p3, _thresholds())
+        status, issues, ragas_warnings = validate_p3(p3, _thresholds(), _p2())
         assert status == P3_VALID
         assert not issues
         assert len(ragas_warnings) >= 1
 
     def test_ragas_nan_at_threshold_no_warning(self):
         p3 = _p3(judge_success_rate=1.0, ragas_faith_nan_rate=0.10)
-        status, issues, ragas_warnings = validate_p3(p3, _thresholds())
+        status, issues, ragas_warnings = validate_p3(p3, _thresholds(), _p2())
         assert status == P3_VALID
         assert not ragas_warnings
+
+    def test_partial_p3_is_incomplete(self):
+        p3 = _p3()
+        p3.n_questions = 95
+        p3.question_ids = p3.question_ids[:95]
+        status, issues, _warnings = validate_p3(p3, _thresholds(), _p2())
+        assert status == P3_INCOMPLETE
+        assert any("expected 96" in issue for issue in issues)
+
+    def test_metric_nan_does_not_make_complete_run_incomplete(self):
+        p3 = _p3(ragas_faith_nan_rate=0.05)
+        status, issues, _warnings = validate_p3(p3, _thresholds(), _p2())
+        assert status == P3_VALID
+        assert not issues
 
 
 class TestComparisonGroups:
@@ -191,6 +248,8 @@ class TestComparisonGroups:
         assert len(groups) == 2
         group_with_a = next(g for g in groups if "a" in g.experiment_ids)
         assert group_with_a.has_complete_p3
+        assert validations["b"].retrieval_leaderboard_eligible
+        assert not validations["b"].overall_leaderboard_eligible
 
     def test_rag_mode_complete_p3_has_complete_flag(self):
         p2_list = [_p2("a"), _p2("b")]

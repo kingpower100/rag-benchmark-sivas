@@ -14,12 +14,7 @@ class RankedEntry:
 
 
 def competition_rank(entries: list[tuple[str, float]]) -> list[tuple[str, float, int]]:
-    """Assign competition ranks (1, 2, 2, 4) to (experiment_id, score) pairs.
-
-    Sort descending by score, then ascending by experiment_id for tie-breaking
-    determinism. Competition ranking: tied entries share the same rank; the next
-    rank skips ahead by the number of tied entries.
-    """
+    """Assign competition ranks (1, 2, 2, 4) to score pairs."""
     if not entries:
         return []
 
@@ -45,7 +40,7 @@ def rank_retrieval(
     experiment_scores: dict[str, float],
     comparison_groups: list,
 ) -> dict[str, int]:
-    """Return experiment_id → retrieval rank, computed per comparison group."""
+    """Return experiment_id to retrieval rank, computed per comparison group."""
     ranks: dict[str, int] = {}
     for group in comparison_groups:
         group_entries = [
@@ -63,13 +58,9 @@ def rank_rqi(
     comparison_groups: list,
     ranking_mode: str,
 ) -> dict[str, Optional[int]]:
-    """Return experiment_id → RQI rank or None if not rankable."""
+    """Return experiment_id to RQI rank, leaving ineligible entries unranked."""
     ranks: dict[str, Optional[int]] = {}
     for group in comparison_groups:
-        if not group.has_complete_p3 and ranking_mode == "overall_rag":
-            for eid in group.experiment_ids:
-                ranks[eid] = None
-            continue
         group_entries = [
             (eid, experiment_rqi[eid])
             for eid in group.experiment_ids

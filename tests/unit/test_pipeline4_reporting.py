@@ -46,6 +46,18 @@ def _p2(exp_id="exp_a", recall=0.5, mrr=0.9, ndcg=0.6, cp=0.35, unknown=0.2) -> 
         qa_hash="qa_hash_abc",
         gold_contexts_hash="qa_hash_abc",
         p2_run_dir=f"/fake/{exp_id}",
+        audit_manifest_present=True,
+        final_verdict="valid",
+        strict_audit_pass=True,
+        fake_run_suspicious=False,
+        row_counts={
+            "pipeline1_results": 96,
+            "questions_rows": 96,
+            "evaluated_rows": 96,
+        },
+        question_ids=[f"q{i:03d}" for i in range(96)],
+        expected_question_count=96,
+        required_outputs_present=True,
     )
 
 
@@ -70,6 +82,11 @@ def _p3(exp_id="exp_a") -> P3Summary:
         ragas_faithfulness_nan_rate=0.01,
         ragas_answer_relevancy_nan_rate=0.0,
         p3_run_dir=f"/fake/p3/{exp_id}",
+        validation_passed=True,
+        row_output_present=True,
+        summary_present=True,
+        question_ids=[f"q{i:03d}" for i in range(96)],
+        expected_question_count=96,
     )
 
 
