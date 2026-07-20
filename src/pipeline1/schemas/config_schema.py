@@ -79,11 +79,26 @@ class ChunkingConfig(StrictConfigModel):
 class EmbeddingConfig(StrictConfigModel):
     provider: Literal["sentence_transformers", "mistral"]
     model_name: str
-    normalize_embeddings: bool = True
+    normalize_embeddings: bool = Field(default=True, validation_alias=AliasChoices("normalize_embeddings", "normalize"))
     batch_size: int = 32
     device: str = "cpu"
     require_cuda: bool = False
     cache_dir: Optional[str] = None
+
+    @model_validator(mode="before")
+    @classmethod
+    def validate_normalize_alias(cls, data: Any) -> Any:
+        if (
+            isinstance(data, dict)
+            and "normalize" in data
+            and "normalize_embeddings" in data
+            and data["normalize"] != data["normalize_embeddings"]
+        ):
+            raise ValueError(
+                "embedding.normalize is a legacy alias for embedding.normalize_embeddings; "
+                "do not set conflicting values."
+            )
+        return data
 
 
 class PgvectorConfig(StrictConfigModel):

@@ -224,16 +224,7 @@ def run_pipeline(config_path: str) -> Path:
         index.set_chunks(chunks)
     if hasattr(index, "set_artifact_identity"):
         index.set_artifact_identity(
-            {
-                "dataset_fingerprint": documents_fingerprint,
-                "source_document_fingerprint": documents_fingerprint,
-                "chunk_store_fingerprint": chunks_key,
-                "chunking_configuration_fingerprint": stable_hash_dict(cfg.chunking.model_dump()),
-                "embedding_model_name": cfg.embedding.model_name,
-                "embedding_normalization": cfg.embedding.normalize,
-                "framework_config_hash": file_sha256(config_path),
-                "framework_code_version": _git_commit(project_root),
-            }
+            _embedding_artifact_identity(cfg, documents_fingerprint, chunks_key, config_path, project_root)
         )
     index_suffix = f".{cfg.index.type}" if cfg.index.type != "faiss" else ".faiss"
     index_path = cache_dir / "indexes" / f"{index_key}{index_suffix}"
@@ -813,6 +804,25 @@ def _run_compatibility_payload(
         "generation": cfg.generation.model_dump(),
         "orchestration": cfg.orchestration.model_dump(),
         "prompt_template_version": PROMPT_TEMPLATE_VERSION,
+    }
+
+
+def _embedding_artifact_identity(
+    cfg: PipelineConfig,
+    documents_fingerprint: str,
+    chunks_key: str,
+    config_path: str,
+    project_root: Path,
+) -> dict:
+    return {
+        "dataset_fingerprint": documents_fingerprint,
+        "source_document_fingerprint": documents_fingerprint,
+        "chunk_store_fingerprint": chunks_key,
+        "chunking_configuration_fingerprint": stable_hash_dict(cfg.chunking.model_dump()),
+        "embedding_model_name": cfg.embedding.model_name,
+        "embedding_normalization": cfg.embedding.normalize_embeddings,
+        "framework_config_hash": file_sha256(config_path),
+        "framework_code_version": _git_commit(project_root),
     }
 
 
