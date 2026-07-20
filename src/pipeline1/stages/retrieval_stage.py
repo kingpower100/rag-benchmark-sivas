@@ -24,6 +24,9 @@ class RetrievalRow:
     fused_retrieved: list
     retrieved: list
     retrieval_time_ms: float
+    retriever_time_ms: float
+    rerank_time_ms: float
+    retrieval_pipeline_time_ms: float
     reranker_used: bool
     retrieval_warnings: list[str]
     retrieval_diagnostics: dict
@@ -39,6 +42,9 @@ class RetrievalRow:
             self.fused_retrieved,
             self.retrieved,
             self.retrieval_time_ms,
+            self.retriever_time_ms,
+            self.rerank_time_ms,
+            self.retrieval_pipeline_time_ms,
             self.reranker_used,
             self.retrieval_warnings,
             self.retrieval_diagnostics,
@@ -146,13 +152,14 @@ class RetrievalStage(BaseStage):
                     category_filter_applied = True
                     retrieval_mode = "category_aware_dense"
                     retriever.set_active_category(query.detected_category)
-                    raw_retrieved, retrieved, retrieval_warnings, reranker_used = retrieve_top_k_unique_contexts(
+                    raw_retrieved, retrieved, retrieval_warnings, reranker_used, selection_diagnostics = retrieve_top_k_unique_contexts(
                         query.retrieval_question,
                         retriever,
                         reranker,
-                        rerank_top_k,
+                        final_top_k,
                         self.cfg.retrieval.fetch_k,
                         max_candidates=len(self.chunks),
+                        rerank_top_k=rerank_top_k,
                     )
                     number_of_category_results = len(retrieved)
                     enough_retrieved_chunks = len(retrieved) >= final_top_k
@@ -170,13 +177,14 @@ class RetrievalStage(BaseStage):
                             fallback_reason = "insufficient_category_results_global_fallback"
                             retrieval_mode = "global_fallback"
                             retriever.set_active_category(None)
-                            raw_retrieved, retrieved, retrieval_warnings, reranker_used = retrieve_top_k_unique_contexts(
+                            raw_retrieved, retrieved, retrieval_warnings, reranker_used, selection_diagnostics = retrieve_top_k_unique_contexts(
                                 query.retrieval_question,
                                 retriever,
                                 reranker,
-                                rerank_top_k,
+                                final_top_k,
                                 self.cfg.retrieval.fetch_k,
                                 max_candidates=len(self.chunks),
+                                rerank_top_k=rerank_top_k,
                             )
                             number_of_global_fallback_results = len(retrieved)
                         else:
@@ -188,13 +196,14 @@ class RetrievalStage(BaseStage):
                         fallback_reason = "invalid_category_global_fallback"
                         retrieval_mode = "global_fallback"
                         retriever.set_active_category(None)
-                        raw_retrieved, retrieved, retrieval_warnings, reranker_used = retrieve_top_k_unique_contexts(
+                        raw_retrieved, retrieved, retrieval_warnings, reranker_used, selection_diagnostics = retrieve_top_k_unique_contexts(
                             query.retrieval_question,
                             retriever,
                             reranker,
-                            rerank_top_k,
+                            final_top_k,
                             self.cfg.retrieval.fetch_k,
                             max_candidates=len(self.chunks),
+                            rerank_top_k=rerank_top_k,
                         )
                         number_of_global_fallback_results = len(retrieved)
                     else:
@@ -203,6 +212,7 @@ class RetrievalStage(BaseStage):
                         raw_retrieved = []
                         retrieved = []
                         reranker_used = reranker is not None
+                        selection_diagnostics = _empty_selection_diagnostics(reranker, final_top_k, rerank_top_k)
                     if self.logger:
                         self.logger.info(
                             "retrieval_decision question_id=%s decision='Category Validation' category_validated=false reason=%s",
@@ -213,13 +223,14 @@ class RetrievalStage(BaseStage):
             # because there is no trusted category scope. The pipeline directly
             # performs global retrieval as controlled fallback.
             else:
-                raw_retrieved, retrieved, retrieval_warnings, reranker_used = retrieve_top_k_unique_contexts(
+                raw_retrieved, retrieved, retrieval_warnings, reranker_used, selection_diagnostics = retrieve_top_k_unique_contexts(
                     query.retrieval_question,
                     retriever,
                     reranker,
-                    rerank_top_k,
+                    final_top_k,
                     self.cfg.retrieval.fetch_k,
                     max_candidates=len(self.chunks),
+                    rerank_top_k=rerank_top_k,
                 )
             reranked_candidates = list(retrieved)
             if reranker_used and len(retrieved) > final_top_k:
@@ -230,6 +241,7 @@ class RetrievalStage(BaseStage):
             retrieval_diagnostics = retrieval_diagnostics_from(retriever)
             retrieval_diagnostics.update(
                 {
+                    **selection_diagnostics,
                     "final_top_k": final_top_k,
                     "rerank_top_k": rerank_top_k,
                     "cleaned_question": query.cleaned_question,
@@ -270,18 +282,22 @@ class RetrievalStage(BaseStage):
                     "fallback_reason": fallback_reason,
                 }
             )
-            retrieval_time_ms = (time.perf_counter() - retrieval_start) * 1000
+            retrieval_pipeline_time_ms = (time.perf_counter() - retrieval_start) * 1000
+            retrieval_time_ms = retrieval_pipeline_time_ms
+            retrieval_diagnostics["retrieval_pipeline_time_ms"] = retrieval_pipeline_time_ms
             self._write_event(
                 stage="retrieval",
                 event_type=EventType.RETRIEVAL_END,
                 message="Retrieval completed.",
                 question_id=query.question_id,
-                duration_ms=retrieval_time_ms,
+                duration_ms=retrieval_pipeline_time_ms,
                 metrics={
                     "raw_candidates": len(raw_retrieved),
                     "final_contexts": len(retrieved),
                     "rerank_candidates": len(reranked_candidates),
                     "retriever_type": self.cfg.retrieval.retriever_type,
+                    "retriever_time_ms": selection_diagnostics["retriever_time_ms"],
+                    "rerank_time_ms": selection_diagnostics["rerank_time_ms"],
                 },
                 diagnostics={"warnings": retrieval_warnings, **retrieval_diagnostics},
             )
@@ -291,13 +307,13 @@ class RetrievalStage(BaseStage):
                     event_type=EventType.RERANK_END,
                     message="Reranking completed.",
                     question_id=query.question_id,
-                    duration_ms=retrieval_time_ms,
+                    duration_ms=selection_diagnostics["rerank_time_ms"],
                     metrics={
                         "raw_candidates": len(raw_retrieved),
                         "final_contexts": len(retrieved),
                         "rerank_candidates": len(reranked_candidates),
                     },
-                    diagnostics={"duration_includes_retrieval": True},
+                    diagnostics={"duration_includes_retrieval": False},
                 )
             for warning in retrieval_warnings:
                 if self.logger:
@@ -309,7 +325,7 @@ class RetrievalStage(BaseStage):
                     len(raw_retrieved),
                     len(retrieved),
                     len([item.score for item in retrieved]),
-                    retrieval_time_ms,
+                    retrieval_pipeline_time_ms,
                 )
             rows.append(
                 RetrievalRow(
@@ -320,6 +336,9 @@ class RetrievalStage(BaseStage):
                     fused_retrieved=fused_retrieved,
                     retrieved=retrieved,
                     retrieval_time_ms=retrieval_time_ms,
+                    retriever_time_ms=float(selection_diagnostics["retriever_time_ms"]),
+                    rerank_time_ms=float(selection_diagnostics["rerank_time_ms"]),
+                    retrieval_pipeline_time_ms=retrieval_pipeline_time_ms,
                     reranker_used=reranker_used,
                     retrieval_warnings=retrieval_warnings,
                     retrieval_diagnostics=retrieval_diagnostics,
@@ -365,18 +384,49 @@ def retrieve_top_k_unique_contexts(
     top_k: int,
     fetch_k: int,
     max_candidates: int,
-) -> tuple[list, list, list[str], bool]:
+    rerank_top_k: int | None = None,
+) -> tuple[list, list, list[str], bool, dict]:
     candidate_k = fetch_k
     reranker_used = reranker is not None
+    retriever_start = time.perf_counter()
     raw_retrieved = retriever.retrieve(question, candidate_k)
-    ranked = reranker.rerank(question, raw_retrieved, top_k) if reranker is not None else raw_retrieved
-    retrieved = dedupe_retrieval_by_chunk_id(ranked, top_k)
+    retriever_time_ms = (time.perf_counter() - retriever_start) * 1000
+    rerank_time_ms = 0.0
+    rerank_candidate_limit = max(0, min(rerank_top_k or max_candidates, max_candidates))
+    ranked = raw_retrieved
+    if reranker is not None:
+        rerank_start = time.perf_counter()
+        ranked = reranker.rerank(question, raw_retrieved, len(raw_retrieved))
+        rerank_time_ms = (time.perf_counter() - rerank_start) * 1000
+    ranked_for_selection = ranked[:rerank_candidate_limit]
+    retrieved = dedupe_retrieval_by_chunk_id(ranked_for_selection, top_k)
+    if reranker is not None and len(retrieved) < top_k and len(ranked_for_selection) < len(ranked):
+        retrieved = dedupe_retrieval_by_chunk_id(ranked, top_k)
     warnings = []
     if len(retrieved) < top_k:
         warnings.append(
             f"Only {len(retrieved)} unique chunks were available after deduplication within fetch_k={fetch_k}; requested top_k={top_k}."
         )
-    return raw_retrieved, retrieved, warnings, reranker_used
+    duplicate_count = len(raw_retrieved) - len({item.chunk_id for item in raw_retrieved})
+    diagnostics = {
+        "retriever_time_ms": retriever_time_ms,
+        "rerank_time_ms": rerank_time_ms,
+        "reranker_enabled": reranker is not None,
+        "reranker_applied": reranker is not None,
+        "reranker_model_name": getattr(reranker, "model_name", None),
+        "reranker_device_requested": getattr(reranker, "requested_device", None),
+        "reranker_device_actual": getattr(reranker, "runtime_device", None),
+        "reranker_candidate_count": len(raw_retrieved),
+        "reranker_scored_count": len(raw_retrieved) if reranker is not None else 0,
+        "reranker_output_count": len(ranked_for_selection) if reranker is not None else 0,
+        "reranker_failure": False,
+        "reranker_failure_reason": None,
+        "raw_candidate_count": len(raw_retrieved),
+        "duplicate_count": duplicate_count,
+        "unique_candidate_count": len({item.chunk_id for item in raw_retrieved}),
+        "final_result_count": len(retrieved),
+    }
+    return raw_retrieved, retrieved, warnings, reranker_used, diagnostics
 
 
 def dedupe_retrieval_by_chunk_id(items: list, top_k: int) -> list:
@@ -391,6 +441,27 @@ def dedupe_retrieval_by_chunk_id(items: list, top_k: int) -> list:
         if len(unique) >= top_k:
             break
     return unique
+
+
+def _empty_selection_diagnostics(reranker, final_top_k: int, rerank_top_k: int | None) -> dict:
+    return {
+        "retriever_time_ms": 0.0,
+        "rerank_time_ms": 0.0,
+        "reranker_enabled": reranker is not None,
+        "reranker_applied": False,
+        "reranker_model_name": getattr(reranker, "model_name", None),
+        "reranker_device_requested": getattr(reranker, "requested_device", None),
+        "reranker_device_actual": getattr(reranker, "runtime_device", None),
+        "reranker_candidate_count": 0,
+        "reranker_scored_count": 0,
+        "reranker_output_count": 0,
+        "reranker_failure": False,
+        "reranker_failure_reason": None,
+        "raw_candidate_count": 0,
+        "duplicate_count": 0,
+        "unique_candidate_count": 0,
+        "final_result_count": 0,
+    }
 
 
 def last_candidates(retriever, attribute: str) -> list:

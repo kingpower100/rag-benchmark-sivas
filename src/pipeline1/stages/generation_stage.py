@@ -90,6 +90,9 @@ class GenerationStage(BaseStage):
         raw_bm25_retrieved = retrieval_row.raw_bm25_retrieved
         retrieved = retrieval_row.retrieved
         retrieval_time_ms = retrieval_row.retrieval_time_ms
+        retriever_time_ms = retrieval_row.retriever_time_ms
+        rerank_time_ms = retrieval_row.rerank_time_ms
+        retrieval_pipeline_time_ms = retrieval_row.retrieval_pipeline_time_ms
         reranker_used = retrieval_row.reranker_used
         retrieval_warnings = retrieval_row.retrieval_warnings
         retrieval_diagnostics = retrieval_row.retrieval_diagnostics
@@ -268,6 +271,13 @@ class GenerationStage(BaseStage):
             reranker_used=reranker_used,
             llm_model=self.cfg.generation.model_name,
             retrieval_time_ms=retrieval_time_ms,
+            retriever_time_ms=retriever_time_ms,
+            rerank_time_ms=rerank_time_ms,
+            retrieval_pipeline_time_ms=retrieval_pipeline_time_ms,
+            reranker_applied=bool(retrieval_diagnostics.get("reranker_applied", reranker_used)),
+            reranker_candidate_count=int(retrieval_diagnostics.get("reranker_candidate_count") or 0),
+            reranker_output_count=int(retrieval_diagnostics.get("reranker_output_count") or 0),
+            reranker_model_name=retrieval_diagnostics.get("reranker_model_name"),
             generation_time_ms=generation_time_ms,
             total_latency_ms=retrieval_time_ms + generation_time_ms,
             latency_ms=retrieval_time_ms + generation_time_ms,

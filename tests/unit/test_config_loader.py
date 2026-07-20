@@ -95,6 +95,33 @@ def test_pipeline1_orchestration_model_allowlist_rejects_invalid_model():
         PipelineConfig.model_validate(_minimal_pipeline1_payload("invalid-model"))
 
 
+def test_reranker_enabled_requires_model_name():
+    payload = _minimal_pipeline1_payload("llama3.1:8b")
+    payload["reranker"] = {"enabled": True}
+
+    with pytest.raises(ValidationError, match="reranker.model_name is required when reranker.enabled=true"):
+        PipelineConfig.model_validate(payload)
+
+
+@pytest.mark.parametrize("model_name", [None, "", "   "])
+def test_reranker_enabled_rejects_missing_or_blank_model_name(model_name):
+    payload = _minimal_pipeline1_payload("llama3.1:8b")
+    payload["reranker"] = {"enabled": True, "model_name": model_name}
+
+    with pytest.raises(ValidationError, match="reranker.model_name"):
+        PipelineConfig.model_validate(payload)
+
+
+def test_reranker_disabled_allows_missing_model_name():
+    payload = _minimal_pipeline1_payload("llama3.1:8b")
+    payload["reranker"] = {"enabled": False}
+
+    cfg = PipelineConfig.model_validate(payload)
+
+    assert cfg.reranker.enabled is False
+    assert cfg.reranker.model_name is None
+
+
 def test_pipeline2_unknown_config_fields_fail():
     payload = {
         "evaluation": {"eval_run_id": "eval"},

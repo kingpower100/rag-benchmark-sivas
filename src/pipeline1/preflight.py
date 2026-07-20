@@ -51,12 +51,19 @@ def run_preflight_checks(cfg, base_dir: Path | None = None) -> list[str]:
                 errors.append("embedding.require_cuda=true but torch reports zero CUDA devices")
         except Exception as ex:
             errors.append(f"embedding.cuda requirements could not be checked: {ex}")
-    if cfg.reranker.enabled and cfg.reranker.device == "cuda":
+    reranker_cuda_index = _parse_cuda_device(cfg.reranker.device)
+    if cfg.reranker.enabled and reranker_cuda_index is not None:
         try:
             import torch
 
             if not torch.cuda.is_available():
-                errors.append("reranker.device is cuda but CUDA is not available to torch")
+                errors.append(f"Reranker requested CUDA device {cfg.reranker.device}, but CUDA is unavailable.")
+            else:
+                device_count = torch.cuda.device_count()
+                if reranker_cuda_index >= device_count:
+                    errors.append(
+                        f"Reranker requested CUDA device {cfg.reranker.device}, but only {device_count} CUDA device(s) are available."
+                    )
         except Exception as ex:
             errors.append(f"reranker.device is cuda but torch/CUDA could not be checked: {ex}")
     if questions_path.exists() and questions_path.is_file():
@@ -173,6 +180,17 @@ def _validate_safe_query_file(path: Path, allow_unsafe_fields: bool) -> list[str
                 )
                 break
     return errors
+
+
+def _parse_cuda_device(device: str) -> int | None:
+    text = str(device or "").strip().lower()
+    if text == "cuda":
+        return 0
+    if text.startswith("cuda:"):
+        suffix = text.split(":", 1)[1]
+        if suffix.isdigit():
+            return int(suffix)
+    return None
 
 
 def _ollama_model_available(required: str, available: set[str]) -> bool:

@@ -227,6 +227,12 @@ class RerankerConfig(StrictConfigModel):
             raise ValueError("reranker.model_name cannot be blank.")
         return value
 
+    @model_validator(mode="after")
+    def require_model_when_enabled(self) -> "RerankerConfig":
+        if self.enabled and not self.model_name:
+            raise ValueError("reranker.model_name is required when reranker.enabled=true")
+        return self
+
 
 class OrchestrationConfig(StrictConfigModel):
     provider: Literal["ollama", "mistral"] = "ollama"

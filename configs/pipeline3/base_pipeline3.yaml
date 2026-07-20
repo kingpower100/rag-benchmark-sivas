@@ -37,7 +37,7 @@ ragas:
 
 llm_judge:
   enabled: true
-  max_context_chars: 6000
+  max_context_chars: 10000
   metrics:
     correctness: true
     faithfulness: true

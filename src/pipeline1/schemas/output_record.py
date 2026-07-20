@@ -59,6 +59,13 @@ class OutputRecord(BaseModel):
     reranker_used: bool
     llm_model: str
     retrieval_time_ms: float
+    retriever_time_ms: float | None = None
+    rerank_time_ms: float | None = None
+    retrieval_pipeline_time_ms: float | None = None
+    reranker_applied: bool = False
+    reranker_candidate_count: int = 0
+    reranker_output_count: int = 0
+    reranker_model_name: str | None = None
     generation_time_ms: float
     total_latency_ms: float
     latency_ms: float | None = None
@@ -153,6 +160,13 @@ class OutputRecord(BaseModel):
             "retriever_type": self.retriever_type,
             "reranker_used": self.reranker_used,
             "retrieval_time_ms": self.retrieval_time_ms,
+            "retriever_time_ms": self.retriever_time_ms,
+            "rerank_time_ms": self.rerank_time_ms,
+            "retrieval_pipeline_time_ms": self.retrieval_pipeline_time_ms,
+            "reranker_applied": self.reranker_applied,
+            "reranker_candidate_count": self.reranker_candidate_count,
+            "reranker_output_count": self.reranker_output_count,
+            "reranker_model_name": self.reranker_model_name,
             "generation_time_ms": self.generation_time_ms,
             "total_latency_ms": self.total_latency_ms,
             "latency_ms": self.latency_ms,
@@ -234,6 +248,12 @@ class OutputRecord(BaseModel):
             ]
         if self.latency_ms is None:
             self.latency_ms = self.total_latency_ms
+        if self.retriever_time_ms is None:
+            self.retriever_time_ms = self.retrieval_time_ms
+        if self.rerank_time_ms is None:
+            self.rerank_time_ms = 0.0 if not self.reranker_used else None
+        if self.retrieval_pipeline_time_ms is None:
+            self.retrieval_pipeline_time_ms = self.retrieval_time_ms
         if not self.token_usage:
             self.token_usage = {
                 "input_tokens": self.input_tokens,

@@ -561,18 +561,43 @@ def retrieve_top_k_unique_contexts(
     top_k: int,
     fetch_k: int,
     max_candidates: int,
-) -> tuple[list, list, list[str], bool]:
+) -> tuple[list, list, list[str], bool, dict]:
     candidate_k = fetch_k
     reranker_used = reranker is not None
+    retriever_start = time.perf_counter()
     raw_retrieved = retriever.retrieve(question, candidate_k)
-    ranked = reranker.rerank(question, raw_retrieved, top_k) if reranker is not None else raw_retrieved
+    retriever_time_ms = (time.perf_counter() - retriever_start) * 1000
+    rerank_time_ms = 0.0
+    ranked = raw_retrieved
+    if reranker is not None:
+        rerank_start = time.perf_counter()
+        ranked = reranker.rerank(question, raw_retrieved, len(raw_retrieved))
+        rerank_time_ms = (time.perf_counter() - rerank_start) * 1000
     retrieved = dedupe_retrieval_by_chunk_id(ranked, top_k)
     warnings = []
     if len(retrieved) < top_k:
         warnings.append(
             f"Only {len(retrieved)} unique chunks were available after deduplication within fetch_k={fetch_k}; requested top_k={top_k}."
         )
-    return raw_retrieved, retrieved, warnings, reranker_used
+    duplicate_count = len(raw_retrieved) - len({item.chunk_id for item in raw_retrieved})
+    return raw_retrieved, retrieved, warnings, reranker_used, {
+        "retriever_time_ms": retriever_time_ms,
+        "rerank_time_ms": rerank_time_ms,
+        "reranker_enabled": reranker is not None,
+        "reranker_applied": reranker is not None,
+        "reranker_model_name": getattr(reranker, "model_name", None),
+        "reranker_device_requested": getattr(reranker, "requested_device", None),
+        "reranker_device_actual": getattr(reranker, "runtime_device", None),
+        "reranker_candidate_count": len(raw_retrieved),
+        "reranker_scored_count": len(raw_retrieved) if reranker is not None else 0,
+        "reranker_output_count": len(ranked) if reranker is not None else 0,
+        "reranker_failure": False,
+        "reranker_failure_reason": None,
+        "raw_candidate_count": len(raw_retrieved),
+        "duplicate_count": duplicate_count,
+        "unique_candidate_count": len({item.chunk_id for item in raw_retrieved}),
+        "final_result_count": len(retrieved),
+    }
 
 
 def _last_candidates(retriever, attribute: str) -> list:
@@ -801,6 +826,8 @@ def _run_compatibility_payload(
         "config_hash": file_sha256(config_path),
         "documents_fingerprint": documents_fingerprint,
         "cache_keys": {"chunks": chunks_key, "embeddings": embeddings_key, "index": index_key},
+        "retrieval": cfg.retrieval.model_dump(mode="json"),
+        "reranker": cfg.reranker.model_dump(mode="json"),
         "generation": cfg.generation.model_dump(),
         "orchestration": cfg.orchestration.model_dump(),
         "prompt_template_version": PROMPT_TEMPLATE_VERSION,
@@ -857,11 +884,23 @@ def _validate_resume_compatible(run_dir: Path, current: dict) -> None:
         "config_hash": manifest.get("config_hash"),
         "documents_fingerprint": manifest.get("data_hashes", {}).get("documents_fingerprint"),
         "cache_keys": manifest.get("cache_keys"),
+        "retrieval": manifest.get("resolved_config", {}).get("retrieval"),
+        "reranker": manifest.get("resolved_config", {}).get("reranker"),
         "generation": manifest.get("resolved_config", {}).get("generation"),
         "prompt_template_version": manifest.get("config", {}).get("prompt_template_version"),
     }
     mismatches = []
-    for key in ("experiment_id", "config_hash", "documents_fingerprint", "cache_keys", "generation", "orchestration", "prompt_template_version"):
+    for key in (
+        "experiment_id",
+        "config_hash",
+        "documents_fingerprint",
+        "cache_keys",
+        "retrieval",
+        "reranker",
+        "generation",
+        "orchestration",
+        "prompt_template_version",
+    ):
         if previous.get(key) != current.get(key):
             mismatches.append(key)
     if mismatches:
@@ -1042,6 +1081,11 @@ def _fallback_error_record(cfg: PipelineConfig, query, error: str) -> OutputReco
             "number_of_global_fallback_results": 0,
             "top_k": final_top_k,
             "fetch_k": cfg.retrieval.fetch_k,
+            "reranker_enabled": cfg.reranker.enabled,
+            "reranker_applied": False,
+            "reranker_model_name": cfg.reranker.model_name if cfg.reranker.enabled else None,
+            "reranker_failure": bool(cfg.reranker.enabled),
+            "reranker_failure_reason": error if cfg.reranker.enabled else None,
         },
         top_k=final_top_k,
         chunking_strategy=cfg.chunking.strategy,
@@ -1049,9 +1093,16 @@ def _fallback_error_record(cfg: PipelineConfig, query, error: str) -> OutputReco
         chunk_overlap=cfg.chunking.chunk_overlap,
         embedding_model=cfg.embedding.model_name,
         retriever_type=cfg.retrieval.retriever_type,
-        reranker_used=False,
+        reranker_used=cfg.reranker.enabled,
         llm_model=cfg.generation.model_name,
         retrieval_time_ms=0.0,
+        retriever_time_ms=0.0,
+        rerank_time_ms=0.0,
+        retrieval_pipeline_time_ms=0.0,
+        reranker_applied=False,
+        reranker_candidate_count=0,
+        reranker_output_count=0,
+        reranker_model_name=cfg.reranker.model_name if cfg.reranker.enabled else None,
         generation_time_ms=0.0,
         total_latency_ms=0.0,
         latency_ms=0.0,

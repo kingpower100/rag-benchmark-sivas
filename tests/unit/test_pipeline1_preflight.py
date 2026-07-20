@@ -1,6 +1,7 @@
 import pytest
 
-from src.pipeline1.preflight import _ollama_model_available
+from src.pipeline1.preflight import _ollama_model_available, run_preflight_checks
+from src.pipeline1.schemas.config_schema import PipelineConfig
 
 
 def test_bare_name_matches_latest_tag():
@@ -30,3 +31,59 @@ def test_bare_name_matches_exact_if_present():
 def test_bare_name_does_not_match_non_latest_tag_only():
     # "model" should not match "model:v2" (only :latest gets the implicit promotion)
     assert not _ollama_model_available("mistral-small", {"mistral-small:v2"})
+
+
+def _cfg_for_reranker_device(device: str) -> PipelineConfig:
+    return PipelineConfig.model_validate(
+        {
+            "experiment": {"experiment_id": "exp", "output_dir": "runs"},
+            "data": {"documents_path": "documents.jsonl", "questions_path": "questions.jsonl"},
+            "chunking": {"strategy": "fixed_word", "chunk_size": 10, "chunk_overlap": 0},
+            "embedding": {"provider": "sentence_transformers", "model_name": "fake"},
+            "index": {"type": "faiss", "metric": "cosine"},
+            "retrieval": {"retriever_type": "dense", "top_k": 1, "fetch_k": 2},
+            "reranker": {"enabled": True, "model_name": "fake-reranker", "device": device},
+            "generation": {"provider": "ollama", "model_name": "fake", "system_prompt": "Use context."},
+            "telemetry": {"estimate_cost": False},
+            "runtime": {"resume": False, "overwrite": True},
+        }
+    )
+
+
+def _write_minimal_inputs(tmp_path):
+    (tmp_path / "documents.jsonl").write_text('{"context_id":"c1","cleaned_context":"text"}\n', encoding="utf-8")
+    (tmp_path / "questions.jsonl").write_text('{"question_id":"q1","question":"Q?"}\n', encoding="utf-8")
+
+
+def test_reranker_cuda_colon_zero_rejected_when_cuda_unavailable(tmp_path, monkeypatch):
+    _write_minimal_inputs(tmp_path)
+    monkeypatch.setenv("PIPELINE1_SKIP_OLLAMA_PREFLIGHT", "1")
+    import torch
+
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
+
+    errors = run_preflight_checks(_cfg_for_reranker_device("cuda:0"), tmp_path)
+
+    assert any("Reranker requested CUDA device cuda:0, but CUDA is unavailable." in error for error in errors)
+
+
+def test_reranker_cuda_index_out_of_range_rejected(tmp_path, monkeypatch):
+    _write_minimal_inputs(tmp_path)
+    monkeypatch.setenv("PIPELINE1_SKIP_OLLAMA_PREFLIGHT", "1")
+    import torch
+
+    monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
+    monkeypatch.setattr(torch.cuda, "device_count", lambda: 1)
+
+    errors = run_preflight_checks(_cfg_for_reranker_device("cuda:2"), tmp_path)
+
+    assert any("cuda:2" in error and "only 1 CUDA device" in error for error in errors)
+
+
+def test_reranker_cpu_device_does_not_require_cuda(tmp_path, monkeypatch):
+    _write_minimal_inputs(tmp_path)
+    monkeypatch.setenv("PIPELINE1_SKIP_OLLAMA_PREFLIGHT", "1")
+
+    errors = run_preflight_checks(_cfg_for_reranker_device("cpu"), tmp_path)
+
+    assert not any("Reranker requested CUDA" in error for error in errors)

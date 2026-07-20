@@ -106,6 +106,11 @@ def test_retrieval_stage_reranker_enabled_path_still_works():
     assert [item.chunk_id for item in row.raw_retrieved] == ["c1", "c2"]
     assert [item.chunk_id for item in row.retrieved] == ["c2"]
     assert row.retrieved[0].rerank_score == 1.0
+    assert row.retriever_time_ms >= 0.0
+    assert row.rerank_time_ms >= 0.0
+    assert row.retrieval_pipeline_time_ms >= row.retriever_time_ms
+    assert row.retrieval_diagnostics["reranker_applied"] is True
+    assert row.retrieval_diagnostics["reranker_candidate_count"] == 2
 
 
 def test_retrieval_stage_elasticsearch_dense_retriever_works():
@@ -525,6 +530,7 @@ class _ElasticsearchDenseIndex:
 class _ReverseReranker:
     requested_device = "cpu"
     runtime_device = "cpu"
+    model_name = "fake-reranker"
 
     def rerank(self, question, items, top_k):
         reranked = []

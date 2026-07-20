@@ -91,6 +91,28 @@ def test_export_record_field_renames():
     assert export["retrieval_k"] == record.top_k
 
 
+def test_export_record_includes_reranker_timing_breakdown():
+    record = _make_record(
+        reranker_used=True,
+        retriever_time_ms=10.0,
+        rerank_time_ms=2.0,
+        retrieval_pipeline_time_ms=13.0,
+        reranker_applied=True,
+        reranker_candidate_count=20,
+        reranker_output_count=20,
+        reranker_model_name="cross-encoder",
+    )
+    export = record.to_export_record()
+
+    assert export["retriever_time_ms"] == 10.0
+    assert export["rerank_time_ms"] == 2.0
+    assert export["retrieval_pipeline_time_ms"] == 13.0
+    assert export["reranker_applied"] is True
+    assert export["reranker_candidate_count"] == 20
+    assert export["reranker_output_count"] == 20
+    assert export["reranker_model_name"] == "cross-encoder"
+
+
 def test_export_record_does_not_emit_category_confidence():
     record = _make_record()
     export = record.to_export_record()

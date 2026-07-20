@@ -31,6 +31,31 @@ def test_total_latency_is_component_sum_with_rerank():
     assert metrics["total_latency_ms"] == 32.5
 
 
+def test_total_latency_uses_backend_retrieval_time_when_available():
+    metrics = compute_efficiency_metrics(
+        {
+            "retriever_time_ms": 10,
+            "retrieval_time_ms": 15,
+            "rerank_time_ms": 5,
+            "retrieval_pipeline_time_ms": 16,
+            "generation_time_ms": 20,
+        }
+    )
+
+    assert metrics["retriever_time_ms"] == 10
+    assert metrics["retrieval_time_ms"] == 15
+    assert metrics["rerank_time_ms"] == 5
+    assert metrics["retrieval_pipeline_time_ms"] == 16
+    assert metrics["total_latency_ms"] == 36
+
+
+def test_legacy_missing_rerank_time_remains_unavailable():
+    metrics = compute_efficiency_metrics({"retrieval_time_ms": 10, "generation_time_ms": 20})
+
+    assert metrics["rerank_time_ms"] is None
+    assert metrics["total_latency_ms"] == 30
+
+
 def test_summary_aggregates_semantic_latency_and_reliability_denominators():
     rows = [
         {
