@@ -1,0 +1,2 @@
+question_id,experiment_id,question,generated_answer,ground_truth,context_truncated,judge_success,judge_correctness,judge_faithfulness,judge_completeness,judge_hallucination,judge_context_relevance,judge_overall_score,judge_llm_overall_score,judge_reasoning,judge_retry_count,judge_latency_ms,ragas_faithfulness,ragas_faithfulness_status,ragas_answer_relevancy,ragas_context_recall
+q1,exp,What is configured?,CUDA is configured.,CUDA is configured.,False,True,5,5,5,0,5,5.0,,The answer is fully correct.,0,0.0,1.0,,1.0,

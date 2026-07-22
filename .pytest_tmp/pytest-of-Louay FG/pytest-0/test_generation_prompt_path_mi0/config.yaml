@@ -1,0 +1,33 @@
+
+experiment:
+  experiment_id: "prompt_test"
+  output_dir: "runs"
+data:
+  documents_path: "documents.jsonl"
+  questions_path: "questions.jsonl"
+chunking:
+  strategy: "fixed_word"
+  chunk_size: 10
+  chunk_overlap: 0
+embedding:
+  provider: "sentence_transformers"
+  model_name: "fake"
+index:
+  type: "faiss"
+  metric: "cosine"
+retrieval:
+  retriever_type: "dense"
+  top_k: 1
+  fetch_k: 1
+reranker:
+  enabled: false
+generation:
+  provider: "ollama"
+  model_name: "fake"
+  prompt_path: "C:/Users/Louay FG/Desktop/RAG BENCHM ERP11/rag_benchmark/.pytest_tmp/pytest-of-Louay FG/pytest-0/test_generation_prompt_path_mi0/missing_prompt.txt"
+
+telemetry:
+  estimate_cost: false
+runtime:
+  resume: false
+  overwrite: true

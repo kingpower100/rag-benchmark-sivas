@@ -1,0 +1,46 @@
+
+experiment:
+  experiment_id: "test_txt_exp"
+  random_seed: 42
+  output_dir: "runs"
+documents:
+  path: "data/raw/transformed"
+  source_type: "txt_folder"
+  text_field: "cleaned_context"
+  file_glob: "*.txt"
+data:
+  dataset_schema: "sivas"
+  questions_path: "data/raw/questions_fixed.jsonl"
+  question_id_field: "question_id"
+  question_field: "frage"
+chunking:
+  strategy: "fixed_word"
+  chunk_size: 10
+  chunk_overlap: 0
+embedding:
+  provider: "sentence_transformers"
+  model_name: "fake"
+  normalize_embeddings: true
+  batch_size: 2
+  device: "cpu"
+index:
+  type: "faiss"
+  metric: "cosine"
+  dense_dim: 2
+retrieval:
+  retriever_type: "dense"
+  top_k: 1
+  fetch_k: 2
+reranker:
+  enabled: false
+generation:
+  provider: "ollama"
+  model_name: "fake"
+  system_prompt: "Use context."
+telemetry:
+  estimate_cost: false
+runtime:
+  save_csv: true
+  log_level: "INFO"
+  resume: false
+  overwrite: true

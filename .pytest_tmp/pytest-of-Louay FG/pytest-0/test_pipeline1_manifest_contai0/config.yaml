@@ -1,0 +1,50 @@
+
+experiment:
+  experiment_id: "test_exp"
+  random_seed: 42
+  output_dir: "runs"
+data:
+  dataset_schema: "sivas"
+  documents_path: "data/raw/kb_documents_fixed.jsonl"
+  questions_path: "data/raw/questions_fixed.jsonl"
+  question_id_field: "question_id"
+  question_field: "frage"
+  document_text_field: "text"
+  allow_document_text_fallback: false
+  allow_unsafe_query_fields: false
+chunking:
+  strategy: "fixed_word"
+  chunk_size: 10
+  chunk_overlap: 0
+  allow_word_fallback: false
+embedding:
+  provider: "sentence_transformers"
+  model_name: "fake"
+  normalize_embeddings: true
+  batch_size: 2
+  device: "cpu"
+index:
+  type: "faiss"
+  metric: "cosine"
+  dense_dim: 2
+retrieval:
+  retriever_type: "dense"
+  top_k: 1
+  fetch_k: 2
+reranker:
+  enabled: false
+generation:
+  provider: "ollama"
+  model_name: "fake"
+  base_url: "http://localhost:11434"
+  temperature: 0.0
+  max_tokens: 8
+  timeout_s: 10
+  system_prompt: "Use context."
+telemetry:
+  estimate_cost: true
+runtime:
+  save_csv: true
+  log_level: "INFO"
+  resume: false
+  overwrite: true

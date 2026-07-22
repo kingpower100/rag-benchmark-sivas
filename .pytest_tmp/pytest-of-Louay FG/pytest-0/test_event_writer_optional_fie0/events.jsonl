@@ -1,0 +1,1 @@
+{"timestamp": "2026-07-22T14:50:25.811716+00:00", "experiment_id": "exp", "run_id": null, "question_id": null, "stage": "pipeline", "event_type": "pipeline_start", "message": "Started.", "duration_ms": null, "metrics": {}, "diagnostics": {}}

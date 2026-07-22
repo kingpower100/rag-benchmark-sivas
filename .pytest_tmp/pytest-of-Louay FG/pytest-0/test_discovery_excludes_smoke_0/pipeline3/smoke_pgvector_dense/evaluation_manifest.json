@@ -1,0 +1,1 @@
+{"run_id": "smoke_pgvector_dense", "summary": {"n_questions": 1, "judge_success_rate": 1.0, "judge_failure_count": 0, "mean_judge_correctness": 5.0, "mean_judge_faithfulness": 5.0, "mean_judge_context_relevance": 5.0}, "inputs": {}, "ragas_stats": {}, "reproducibility": {}}

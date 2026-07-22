@@ -1,0 +1,1 @@
+{"timestamp": "2026-07-22T14:50:25.807716+00:00", "experiment_id": "exp", "run_id": "run-1", "question_id": "q1", "stage": "retrieval", "event_type": "retrieval_end", "message": "Retrieval completed.", "duration_ms": 12.5, "metrics": {"top_k": 5}, "diagnostics": {"backend": "faiss"}}
