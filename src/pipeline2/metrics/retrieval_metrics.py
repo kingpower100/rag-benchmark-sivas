@@ -27,7 +27,7 @@ def compute_retrieval_metrics_for_ks(
     raw_retrieved_ids: list[str] | None = None,
 ) -> dict[str, float | None]:
     normalized = _normalize_and_dedupe_documents(retrieved_ids)
-    raw_normalized = [normalize_source_id(str(item)) for item in retrieved_ids if item is not None and str(item).strip()]
+    raw_normalized = _normalize_ranked_documents_preserving_slots(retrieved_ids)
     # Deduplicate gold IDs before computing any metrics
     gold_ids_deduped = _dedupe_preserving_order(
         [normalize_source_id(str(g)) for g in gold_ids if g is not None and str(g).strip()]
@@ -76,9 +76,9 @@ def _metrics_at_k(
     already_normalized: bool = False,
 ) -> dict[str, float | None]:
     normalized = (
-        [str(item) for item in retrieved_ids if item is not None and str(item).strip()]
+        [str(item) for item in retrieved_ids]
         if already_normalized
-        else _normalize_documents(retrieved_ids)
+        else _normalize_ranked_documents_preserving_slots(retrieved_ids)
     )
     ranked = normalized[:k]
     gold_set = set(gold_ids) if already_normalized else {normalize_source_id(str(item)) for item in gold_ids if item is not None}
@@ -121,14 +121,17 @@ def duplicate_context_rate(retrieved_ids: list[str]) -> float:
 def _ndcg_at_k(ranked: list[str], gold_set: set[str], k: int) -> float:
     if not gold_set:
         return 0.0
-    # Deduplicate ranked list before DCG to prevent duplicate gold hits inflating DCG > IDCG
+    # Preserve original rank positions: duplicate document IDs consume their
+    # ranked slot but receive zero additional gain.
     seen: set[str] = set()
-    deduped: list[str] = []
-    for item in ranked[:k]:
-        if item not in seen:
+    dcg = 0.0
+    for rank, item in enumerate(ranked[:k], start=1):
+        gain = 0.0
+        if item and item not in seen:
             seen.add(item)
-            deduped.append(item)
-    dcg = sum((1.0 / math.log2(rank + 1)) for rank, item in enumerate(deduped, start=1) if item in gold_set)
+            if item in gold_set:
+                gain = 1.0
+        dcg += gain / math.log2(rank + 1)
     ideal_hits = min(len(gold_set), k)
     idcg = sum(1.0 / math.log2(rank + 1) for rank in range(1, ideal_hits + 1))
     return dcg / idcg if idcg else 0.0
@@ -153,6 +156,13 @@ def _normalize_and_dedupe_documents(items: list[str]) -> list[str]:
 
 def _normalize_documents(items: list[str]) -> list[str]:
     return [normalize_source_id(str(item)) for item in items if item is not None and str(item).strip()]
+
+
+def _normalize_ranked_documents_preserving_slots(items: list[str]) -> list[str]:
+    return [
+        normalize_source_id(str(item)) if item is not None and str(item).strip() else ""
+        for item in items
+    ]
 
 
 def normalize_source_id(value: str) -> str:

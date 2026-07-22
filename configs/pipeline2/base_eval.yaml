@@ -3,6 +3,10 @@ evaluation:
   output_dir: "data/eval/runs/pipeline2"
   retrieval_only: false
   retrieval_eval_field: "retrieved_file_names"
+  retrieval_level: "document"
+  retrieval_relevance_definition: "source_document_identifier_match"
+  chunk_level_metrics_computed: false
+  chunk_level_metrics_reason: "no_chunk_level_gold_evidence"
   max_generation_failure_rate: 0.05
   strict_failure_threshold: false
 inputs:
@@ -15,6 +19,13 @@ inputs:
 retrieval:
   k: 5
   ks: [1, 3, 5]
+retrieval_evaluation:
+  document_level:
+    enabled: true
+  chunk_level:
+    enabled: false
+    ground_truth_path: null
+    missing_question_policy: error
 answer_quality:
   abstention_patterns:
     # English forms

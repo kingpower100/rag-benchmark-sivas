@@ -13,12 +13,14 @@ from src.pipeline3.stages.validation_stage import (
 
 
 def _make_rag_row(question_id="q1", answer="Some answer", contexts=None):
+    resolved_contexts = contexts or ["Context text here."]
     return {
         "question_id": question_id,
         "experiment_id": "exp1",
         "question": "What is the price?",
         "generated_answer": answer,
-        "retrieved_context_texts": contexts or ["Context text here."],
+        "retrieved_context_texts": resolved_contexts,
+        "generation_context_texts": resolved_contexts,
     }
 
 
@@ -168,3 +170,79 @@ def test_validation_stats_populated():
     assert report.stats["rag_rows"] == 1
     assert report.stats["qa_rows"] == 1
     assert report.stats["questions_rows"] == 1
+
+
+def test_official_validation_missing_generated_answer_fails():
+    with pytest.raises(ValidationError, match="Missing generated_answer"):
+        validate_inputs(
+            [_make_rag_row("q1", answer="")],
+            [_make_qa_row("q1")],
+            [_make_questions_row("q1")],
+            official_mode=True,
+            pipeline1_manifests=[{"run_status": "PASS", "failed_questions": 0}],
+        )
+
+
+def test_official_validation_missing_retrieved_contexts_fails():
+    row = _make_rag_row("q1")
+    row["retrieved_context_texts"] = []
+    with pytest.raises(ValidationError, match="Missing retrieved contexts"):
+        validate_inputs(
+            [row],
+            [_make_qa_row("q1")],
+            [_make_questions_row("q1")],
+            official_mode=True,
+            pipeline1_manifests=[{"run_status": "PASS", "failed_questions": 0}],
+        )
+
+
+def test_official_validation_missing_generation_contexts_fails():
+    row = _make_rag_row("q1")
+    row["generation_context_texts"] = []
+    with pytest.raises(ValidationError, match="Missing generation contexts"):
+        validate_inputs(
+            [row],
+            [_make_qa_row("q1")],
+            [_make_questions_row("q1")],
+            official_mode=True,
+            pipeline1_manifests=[{"run_status": "PASS", "failed_questions": 0}],
+        )
+
+
+def test_official_validation_missing_question_fails():
+    row = _make_rag_row("q1")
+    del row["question"]
+    with pytest.raises(ValidationError, match="Missing question text"):
+        validate_inputs(
+            [row],
+            [_make_qa_row("q1")],
+            [_make_questions_row("q1")],
+            official_mode=True,
+            pipeline1_manifests=[{"run_status": "PASS", "failed_questions": 0}],
+        )
+
+
+def test_official_validation_pipeline1_fail_manifest_fails():
+    with pytest.raises(ValidationError, match="rejects non-PASS Pipeline 1 manifest"):
+        validate_inputs(
+            [_make_rag_row("q1")],
+            [_make_qa_row("q1")],
+            [_make_questions_row("q1")],
+            official_mode=True,
+            pipeline1_manifests=[{"run_id": "exp1", "run_status": "FAIL", "failed_questions": 1}],
+        )
+
+
+def test_official_validation_stats_report_pass_counts():
+    report = validate_inputs(
+        [_make_rag_row("q1")],
+        [_make_qa_row("q1")],
+        [_make_questions_row("q1")],
+        official_mode=True,
+        pipeline1_manifests=[{"run_status": "PASS", "failed_questions": 0}],
+    )
+
+    assert report.stats["expected_rows"] == 1
+    assert report.stats["valid_rows"] == 1
+    assert report.stats["failed_rows"] == 0
+    assert report.stats["run_status"] == "PASS"

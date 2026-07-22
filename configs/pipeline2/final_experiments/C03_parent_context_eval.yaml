@@ -2,8 +2,18 @@ extends: "../base_eval.yaml"
 
 evaluation:
   eval_run_id: "C03_parent_context_eval"
+  strict_failure_threshold: true
+  max_generation_failure_rate: 0.0
 
 inputs:
   pipeline1_results_path: "data/runs/pipeline1/C03/results.jsonl"
   rag_outputs:
     - "data/runs/pipeline1/C03/results.jsonl"
+
+retrieval_evaluation:
+  document_level:
+    enabled: true
+  chunk_level:
+    enabled: true
+    ground_truth_path: "data/ground_truth/chunk_level/E00-G_sentence512_overlap200/gold_chunk_annotations_E00-G_sentence512_overlap200.jsonl"
+    missing_question_policy: error

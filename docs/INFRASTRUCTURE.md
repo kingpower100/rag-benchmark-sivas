@@ -557,14 +557,14 @@ version the server uses. If the server already has a CUDA-enabled torch, do not 
    `python -c "import torch; print(torch.version.cuda)"`.
 3. If torch is missing or wrong for the driver, install the correct wheel manually:
    ```bash
-   pip install torch --index-url https://download.pytorch.org/whl/cu<version>
+   python -m pip install torch --index-url https://download.pytorch.org/whl/cu<version>
    ```
    See https://pytorch.org/get-started/locally/ for the correct index URL.
 4. After installing the correct torch, install the project **without** letting pip
    overwrite it:
    ```bash
-   pip install -r requirements-lock.txt
-   pip install --no-deps -e .
+   python -m pip install -r requirements-lock.txt -c constraints.txt
+   python -m pip install --no-deps -e .
    ```
    Do **not** run `pip install -r requirements.txt` after the GPU server already has
    the correct torch — `requirements-lock.txt` no longer pins torch so it will not

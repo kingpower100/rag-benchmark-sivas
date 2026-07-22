@@ -1,8 +1,11 @@
 import pytest
 from pydantic import ValidationError
 
+from src.pipeline1.config_loader import load_pipeline_config_payload
 from src.pipeline1.schemas.config_schema import PipelineConfig
+from src.pipeline2.config_loader import load_eval_config_payload
 from src.pipeline2.schemas.eval_config_schema import EvalConfig
+from src.config_utils import official_config_files
 
 
 def _minimal_pipeline1_payload(orchestration_model: str) -> dict:
@@ -34,8 +37,45 @@ def test_pipeline1_sivas_baseline_config_loads():
     assert cfg.retrieval.retriever_type == "category_aware_dense"
     assert cfg.index.type == "faiss"
     assert cfg.generation.model_name == "qwen2.5:7b"
+    assert cfg.orchestration.prompt_version == "v0"
+    assert cfg.orchestration.prompt_path == "src/pipeline1/prompts/orchestration_prompt.txt"
     assert cfg.runtime.resume is True
     assert cfg.runtime.overwrite is False
+
+
+def test_duplicate_yaml_keys_are_rejected(tmp_path):
+    cfg_path = tmp_path / "dup.yaml"
+    cfg_path.write_text(
+        """
+experiment:
+  experiment_id: "one"
+experiment:
+  experiment_id: "two"
+""",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="Duplicate YAML key 'experiment'"):
+        load_pipeline_config_payload(str(cfg_path), validate_unique_experiment_id=False)
+
+
+def test_official_pipeline2_configs_enable_chunk_evaluation():
+    payload = load_eval_config_payload("configs/pipeline2/final_experiments/E00-G_global_dense_baseline_eval.yaml")
+
+    chunk_level = payload["retrieval_evaluation"]["chunk_level"]
+    assert chunk_level["enabled"] is True
+    assert chunk_level["missing_question_policy"] == "error"
+    assert chunk_level["ground_truth_path"].endswith(
+        "gold_chunk_annotations_E00-G_sentence512_overlap200.jsonl"
+    )
+
+
+def test_official_pipeline2_configs_enforce_zero_failure_threshold():
+    for cfg_path in official_config_files("pipeline2"):
+        payload = load_eval_config_payload(str(cfg_path))
+        evaluation = payload["evaluation"]
+        assert evaluation["strict_failure_threshold"] is True, cfg_path
+        assert float(evaluation["max_generation_failure_rate"]) == 0.0, cfg_path
 
 
 def test_pipeline1_base_uses_sivas_defaults_and_safe_run_defaults():

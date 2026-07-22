@@ -1,0 +1,20 @@
+{
+  "chunk_config_id": "E00-G_sentence512_overlap200",
+  "chunking": {
+    "chunk_overlap": 200,
+    "chunk_overlap_unit": "tokens",
+    "chunk_size": 512,
+    "chunk_size_unit": "tokens",
+    "strategy": "sentence",
+    "tokenizer_name": "cl100k_base"
+  },
+  "chunks_total": 1583,
+  "gold_evidence_spans": 799,
+  "mapped_evidence_spans": 799,
+  "mapping_policy": "any_overlap",
+  "questions": 96,
+  "raw_files_modified": false,
+  "total_question_gold_chunk_references": 2290,
+  "unique_gold_relevant_chunks": 882,
+  "unmapped_evidence_spans": 0
+}

@@ -285,6 +285,8 @@ class OrchestrationConfig(StrictConfigModel):
             version = self.prompt_version.lower()
             normalized_stem = prompt_stem.replace("orchestration_prompt", "")
             normalized_version = version.replace("orchestration_prompt", "")
+            if normalized_version == "v0" and prompt_stem == "orchestration_prompt":
+                return self
             if prompt_stem != version and normalized_stem != normalized_version:
                 raise ValueError(
                     "orchestration.prompt_version must match orchestration.prompt_path. "

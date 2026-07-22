@@ -87,3 +87,51 @@ def test_output_record_accepts_explicit_retrieved_chunks_alias():
 
     assert record.retrieved_chunks == ["doc-a:chunk:0001"]
     assert record.retrieved_chunks == record.retrieved_chunk_ids
+
+
+def test_output_export_preserves_raw_file_name_alignment_and_generation_context_ids():
+    record = OutputRecord.model_validate(
+        {
+            "experiment_id": "exp",
+            "question_id": "Q001",
+            "question": "Q?",
+            "generated_answer": "A",
+            "retrieved_chunk_ids": ["final-1"],
+            "retrieved_original_context_ids": ["doc-final"],
+            "raw_retrieved_context_ids": ["raw-1", "raw-2"],
+            "raw_retrieved_original_context_ids": ["doc-raw-1", "doc-raw-2"],
+            "raw_retrieved_file_names": ["raw-one.md", "raw-two.md"],
+            "retrieved_context_texts": ["final context"],
+            "retrieval_scores": [0.9],
+            "retrieved_chunk_metadata": [{"doc_name": "final.md"}],
+            "generation_context_texts": ["final context"],
+            "generation_context_ids": ["final-1"],
+            "retrieval_diagnostics": {
+                "category_index_used": True,
+                "fallback_used": False,
+                "fallback_reason": None,
+                "decision": "Enough Retrieved Chunks?",
+            },
+            "top_k": 1,
+            "chunking_strategy": "fixed_word",
+            "chunk_size": 512,
+            "chunk_overlap": 64,
+            "embedding_model": "embed",
+            "retriever_type": "category_aware_dense",
+            "reranker_used": False,
+            "llm_model": "llm",
+            "retrieval_time_ms": 1.0,
+            "generation_time_ms": 1.0,
+            "total_latency_ms": 2.0,
+            "input_tokens": 1,
+            "output_tokens": 1,
+            "total_tokens": 2,
+        }
+    )
+
+    exported = record.to_export_record()
+
+    assert exported["raw_retrieved_file_names"] == ["raw-one.md", "raw-two.md"]
+    assert exported["generation_context_ids"] == ["final-1"]
+    assert exported["category_index_used"] is True
+    assert exported["fallback_used"] is False

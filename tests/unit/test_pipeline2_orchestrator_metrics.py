@@ -11,6 +11,7 @@ from src.pipeline2.orchestrator import (
     _validate_pipeline1_questions_have_gold_contexts,
     _validate_no_duplicate_pipeline1_question_ids,
 )
+from src.pipeline2.metrics.chunk_retrieval_metrics import ChunkGroundTruth
 from src.pipeline2.schemas.eval_config_schema import EvalConfig
 
 
@@ -61,6 +62,150 @@ def test_answer_metrics_are_computed():
     assert evaluated[0]["input_tokens"] == 2
     assert evaluated[0]["output_tokens"] == 1
     assert evaluated[0]["id_alignment_ok"] is True
+
+
+def test_chunk_only_evaluation_uses_retrieved_chunk_ids_without_document_metrics(tmp_path):
+    gt_path = tmp_path / "gold.jsonl"
+    chunk_gt = ChunkGroundTruth(
+        by_question={"q1": {"chunk_gold"}},
+        path=gt_path,
+        chunk_config_ids={"cfg"},
+        package_metadata={},
+    )
+    cfg = EvalConfig.model_validate(
+        {
+            "evaluation": {"eval_run_id": "eval", "retrieval_only": True},
+            "inputs": {"rag_outputs": []},
+            "retrieval": {"ks": [1, 3]},
+            "retrieval_evaluation": {
+                "document_level": {"enabled": False},
+                "chunk_level": {"enabled": True, "ground_truth_path": str(gt_path)},
+            },
+        }
+    )
+    rows = [
+        {
+            "question_id": "q1",
+            "experiment_id": "exp",
+            "retrieved_chunk_ids": ["chunk_a", "chunk_gold"],
+        }
+    ]
+
+    evaluated = EvaluationOrchestrator()._evaluate_rows(
+        rows,
+        {"q1": {"id": "q1", "answer": "100"}},
+        {},
+        cfg,
+        chunk_gt,
+    )
+
+    assert "hit_at_1" not in evaluated[0]
+    assert evaluated[0]["chunk_hit_at_1"] == 0.0
+    assert evaluated[0]["chunk_hit_at_3"] == 1.0
+    assert evaluated[0]["chunk_recall_at_3"] == 1.0
+    assert evaluated[0]["chunk_mrr_at_3"] == 0.5
+    assert evaluated[0]["gold_chunk_ids"] == ["chunk_gold"]
+    assert evaluated[0]["retrieved_chunk_ids_for_eval"] == ["chunk_a", "chunk_gold"]
+
+
+def test_combined_document_and_chunk_evaluation_outputs_both_namespaces(tmp_path):
+    gt_path = tmp_path / "gold.jsonl"
+    chunk_gt = ChunkGroundTruth(
+        by_question={"q1": {"chunk_gold"}},
+        path=gt_path,
+        chunk_config_ids={"cfg"},
+        package_metadata={},
+    )
+    cfg = EvalConfig.model_validate(
+        {
+            "evaluation": {"eval_run_id": "eval", "retrieval_eval_field": "retrieved_file_names"},
+            "inputs": {"rag_outputs": []},
+            "retrieval": {"ks": [1]},
+            "retrieval_evaluation": {
+                "document_level": {"enabled": True},
+                "chunk_level": {"enabled": True, "ground_truth_path": str(gt_path)},
+            },
+        }
+    )
+    rows = [
+        {
+            "question_id": "q1",
+            "experiment_id": "exp",
+            "generated_answer": "100",
+            "question": "Q?",
+            "retrieved_original_context_ids": ["doc_a"],
+            "retrieved_file_names": ["doc_gold.md"],
+            "retrieved_chunk_ids": ["chunk_gold"],
+        }
+    ]
+
+    evaluated = EvaluationOrchestrator()._evaluate_rows(
+        rows,
+        {"q1": {"id": "q1", "answer": "100"}},
+        {"q1": ["doc_gold.md"]},
+        cfg,
+        chunk_gt,
+    )
+
+    assert evaluated[0]["hit_at_1"] == 1.0
+    assert evaluated[0]["chunk_hit_at_1"] == 1.0
+    assert evaluated[0]["chunk_recall_at_1"] == 1.0
+
+
+def test_chunk_missing_question_policy_error_raises(tmp_path):
+    gt_path = tmp_path / "gold.jsonl"
+    chunk_gt = ChunkGroundTruth(by_question={}, path=gt_path, chunk_config_ids=set(), package_metadata={})
+    cfg = EvalConfig.model_validate(
+        {
+            "evaluation": {"eval_run_id": "eval", "retrieval_only": True},
+            "inputs": {"rag_outputs": []},
+            "retrieval": {"ks": [1]},
+            "retrieval_evaluation": {
+                "document_level": {"enabled": False},
+                "chunk_level": {"enabled": True, "ground_truth_path": str(gt_path)},
+            },
+        }
+    )
+
+    with pytest.raises(ValueError, match="missing annotations"):
+        EvaluationOrchestrator()._evaluate_rows(
+            [{"question_id": "q1", "experiment_id": "exp", "retrieved_chunk_ids": ["chunk"]}],
+            {"q1": {"id": "q1", "answer": "100"}},
+            {},
+            cfg,
+            chunk_gt,
+        )
+
+
+def test_chunk_missing_question_policy_skip_preserves_row_without_zero_scores(tmp_path):
+    gt_path = tmp_path / "gold.jsonl"
+    chunk_gt = ChunkGroundTruth(by_question={}, path=gt_path, chunk_config_ids=set(), package_metadata={})
+    cfg = EvalConfig.model_validate(
+        {
+            "evaluation": {"eval_run_id": "eval", "retrieval_only": True},
+            "inputs": {"rag_outputs": []},
+            "retrieval": {"ks": [1]},
+            "retrieval_evaluation": {
+                "document_level": {"enabled": False},
+                "chunk_level": {
+                    "enabled": True,
+                    "ground_truth_path": str(gt_path),
+                    "missing_question_policy": "skip",
+                },
+            },
+        }
+    )
+
+    evaluated = EvaluationOrchestrator()._evaluate_rows(
+        [{"question_id": "q1", "experiment_id": "exp", "retrieved_chunk_ids": ["chunk"]}],
+        {"q1": {"id": "q1", "answer": "100"}},
+        {},
+        cfg,
+        chunk_gt,
+    )
+
+    assert evaluated[0]["chunk_annotation_status"] == "skipped_missing_question"
+    assert "chunk_hit_at_1" not in evaluated[0]
 
 
 def test_missing_configured_retrieval_eval_field_raises_clear_error():

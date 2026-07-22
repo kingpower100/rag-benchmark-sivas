@@ -6,9 +6,16 @@ import pytest
 from src.pipeline2.aggregation.summarizer import summarize_by_experiment
 from src.pipeline2.orchestrator import (
     EvaluationOrchestrator,
+    _audit_report_markdown,
+    _resolved_retrieval_granularity,
+    _source_document_basename_collisions,
     _validate_eval_diagnostics,
+    _validate_pipeline1_manifest_pass_for_official,
     _validate_leakage_audit,
     _validate_three_way_alignment,
+    _raise_on_failure_threshold,
+    _run_validity_by_experiment,
+    _chunk_validation_counts,
     build_fake_run_detection,
     build_three_way_alignment_report,
     build_eval_diagnostics,
@@ -17,6 +24,7 @@ from src.pipeline2.orchestrator import (
 )
 from src.pipeline1.utils.hashing import file_sha256
 from src.pipeline2.schemas.eval_config_schema import EvalConfig
+from src.pipeline2.metrics.chunk_retrieval_metrics import ChunkGroundTruth
 
 
 def _cfg(retrieval_only: bool = False) -> EvalConfig:
@@ -113,6 +121,87 @@ def test_normal_small_fixture_evaluates_correct_row_count_and_summary():
     assert len(evaluated) == 2
     assert summary[0]["n_questions"] == len(evaluated)
     assert summary[0]["mean_hit_at_1"] == 0.5
+
+
+def test_chunk_validation_counts_report_denominators(tmp_path):
+    cfg = EvalConfig.model_validate(
+        {
+            "evaluation": {"eval_run_id": "eval"},
+            "inputs": {"rag_outputs": []},
+            "retrieval_evaluation": {
+                "document_level": {"enabled": True},
+                "chunk_level": {
+                    "enabled": True,
+                    "ground_truth_path": "gold.jsonl",
+                    "missing_question_policy": "error",
+                },
+            },
+        }
+    )
+    gt = ChunkGroundTruth(
+        by_question={"q1": {"c1"}},
+        path=tmp_path / "gold.jsonl",
+        chunk_config_ids={"cfg"},
+        package_metadata={"final_annotation_validation.json": {"dataset_status": "PASS"}},
+    )
+
+    counts = _chunk_validation_counts(
+        [
+            {"question_id": "q1", "chunk_annotation_status": "evaluated"},
+            {"question_id": "q2", "chunk_annotation_status": "skipped_missing_question"},
+            {"question_id": "q3", "evaluation_errors": ["retrieved_chunk_ids must be a list"]},
+        ],
+        cfg,
+        gt,
+    )
+
+    assert counts["evaluated_questions"] == 1
+    assert counts["skipped_questions"] == 1
+    assert counts["missing_annotations"] == 1
+    assert counts["invalid_chunk_id_rows"] == 1
+    assert counts["annotation_package_status"] == "PASS"
+
+
+def test_official_pipeline2_rejects_pipeline1_fail_manifest(tmp_path):
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    results_path = run_dir / "results.jsonl"
+    results_path.write_text('{"question_id":"q1"}\n', encoding="utf-8")
+    (run_dir / "run_manifest.json").write_text(
+        '{"run_id":"exp","run_status":"FAIL","failed_questions":1}\n',
+        encoding="utf-8",
+    )
+
+    with pytest.raises(RuntimeError, match="rejects non-PASS Pipeline 1 output"):
+        _validate_pipeline1_manifest_pass_for_official(results_path)
+
+
+def test_official_pipeline2_rejects_failed_questions_in_pipeline1_manifest(tmp_path):
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    results_path = run_dir / "results.jsonl"
+    results_path.write_text('{"question_id":"q1"}\n', encoding="utf-8")
+    (run_dir / "run_manifest.json").write_text(
+        '{"run_id":"exp","run_status":"PASS","failed_questions":1}\n',
+        encoding="utf-8",
+    )
+
+    with pytest.raises(RuntimeError, match="failed_questions=1"):
+        _validate_pipeline1_manifest_pass_for_official(results_path)
+
+
+def test_pipeline2_generation_failure_rate_above_zero_is_rejected():
+    rows = [
+        {"experiment_id": "exp", "question_id": "q1", "generation_failed": False},
+        {"experiment_id": "exp", "question_id": "q2", "generation_failed": True},
+    ]
+
+    validity = _run_validity_by_experiment(rows, max_failure_rate=0.0)
+
+    assert validity["exp"]["generation_failure_count"] == 1
+    assert validity["exp"]["run_valid"] is False
+    with pytest.raises(RuntimeError, match="Generation failure rate exceeded"):
+        _raise_on_failure_threshold(validity, max_failure_rate=0.0)
 
 
 def test_three_way_alignment_requires_exact_id_sets():
@@ -229,7 +318,96 @@ runtime:
 
     assert "Real-run audit skipped: Pipeline 1 outputs not found on this machine." in captured.out
     assert report["audit_status"] == "skipped"
+    assert report["retrieval_level"] == "document"
+    assert report["retrieval_relevance_definition"] == "source_document_identifier_match"
+    assert report["retrieved_field"] == "retrieved_file_names"
+    assert report["chunk_level_metrics_computed"] is False
+    assert report["chunk_level_metrics_reason"] == "no_chunk_level_gold_evidence"
     assert (run_dir / "audit_report.md").exists()
+
+
+def test_explicit_document_level_evaluation_rejects_chunk_field():
+    with pytest.raises(ValueError, match="retrieval_level='document' requires"):
+        EvalConfig.model_validate(
+            {
+                "evaluation": {
+                    "eval_run_id": "eval",
+                    "retrieval_level": "document",
+                    "retrieval_eval_field": "retrieved_original_context_ids",
+                },
+                "inputs": {"rag_outputs": []},
+            }
+        )
+
+
+def test_retrieval_granularity_metadata_for_document_level_config():
+    cfg = _cfg()
+    metadata = _resolved_retrieval_granularity(cfg)
+
+    assert metadata["retrieval_level"] == "document"
+    assert metadata["retrieval_relevance_definition"] == "source_document_identifier_match"
+    assert metadata["retrieved_field"] == "retrieved_file_names"
+    assert metadata["chunk_level_metrics_computed"] is False
+    assert metadata["chunk_level_metrics_reason"] == "no_chunk_level_gold_evidence"
+    assert metadata["metric_display_labels"]["hit_at_1"] == "Document Hit@1"
+    assert metadata["metric_display_labels"]["context_precision_at_5"] == "Document Precision@5"
+
+
+def test_source_document_basename_collision_warning_is_reported():
+    gold_rows = [
+        {
+            "question_id": "q1",
+            "retrieval_evidence": [
+                {"source_quellpfad": "Einkauf/Dokumentationen/shared.md"},
+                {"source_quellpfad": "Technik/Dokumentationen/shared.md"},
+                {"source_quellpfad": "Service/Dokumentationen/unique.md"},
+            ],
+        }
+    ]
+
+    report = _source_document_basename_collisions(gold_rows)
+
+    assert report["collision_count"] == 1
+    assert "shared.md" in report["collisions"]
+    assert report["warning"]
+
+
+def test_audit_markdown_uses_document_metric_display_labels():
+    report = {
+        "final_verdict": "valid",
+        "strict_audit_pass": True,
+        "retrieval_evaluation": {
+            "retrieval_level": "document",
+            "retrieval_relevance_definition": "source_document_identifier_match",
+            "retrieved_field": "retrieved_file_names",
+            "chunk_level_metrics_computed": False,
+            "chunk_level_metrics_reason": "no_chunk_level_gold_evidence",
+            "metric_display_labels": {
+                "hit_at_1": "Document Hit@1",
+                "recall_at_5": "Document Recall@5",
+                "mrr_at_5": "Document MRR@5",
+                "ndcg_at_5": "Document nDCG@5",
+                "context_precision_at_5": "Document Precision@5",
+            },
+            "methodology_note": "Document-level metrics measure document discovery.",
+        },
+        "metric_display_labels": {
+            "hit_at_1": "Document Hit@1",
+            "recall_at_5": "Document Recall@5",
+            "context_precision_at_5": "Document Precision@5",
+        },
+        "recomputed_retrieval_metrics": {
+            "mean_hit_at_1": 1.0,
+            "mean_recall_at_5": 0.5,
+            "mean_context_precision_at_5": 0.4,
+        },
+    }
+
+    markdown = _audit_report_markdown(report)
+
+    assert "Document Hit@1 (`mean_hit_at_1`)" in markdown
+    assert "Document Recall@5 (`mean_recall_at_5`)" in markdown
+    assert "Document Precision@5 (`mean_context_precision_at_5`)" in markdown
 
 
 def json_load(path):

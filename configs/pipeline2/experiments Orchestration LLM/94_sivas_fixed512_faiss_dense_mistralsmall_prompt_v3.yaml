@@ -2,8 +2,18 @@ extends: "../base_eval.yaml"
 
 evaluation:
   eval_run_id: "94_sivas_fixed512_faiss_dense_mistralsmall_prompt_v3_eval"
+  strict_failure_threshold: true
+  max_generation_failure_rate: 0.0
 
 inputs:
   pipeline1_results_path: "data/runs/pipeline1/94_sivas_fixed512_faiss_dense_mistralsmall_prompt_v3/results.jsonl"
   rag_outputs:
     - "data/runs/pipeline1/94_sivas_fixed512_faiss_dense_mistralsmall_prompt_v3/results.jsonl"
+
+retrieval_evaluation:
+  document_level:
+    enabled: true
+  chunk_level:
+    enabled: true
+    ground_truth_path: "data/ground_truth/chunk_level/E91-E98_fixed512_overlap64/gold_chunk_annotations_E91-E98_fixed512_overlap64.jsonl"
+    missing_question_policy: error

@@ -1,0 +1,67 @@
+official_experiment_mapping:
+  B00:
+    pipeline1: "configs/pipeline1/final_experiments/B00_sivas_pgvector_reference.yaml"
+    pipeline2: "configs/pipeline2/final_experiments/B00_sivas_pgvector_reference_eval.yaml"
+    pipeline3: "configs/pipeline3/final_experiments/B00_sivas_pgvector_reference_eval.yaml"
+  E00-G:
+    pipeline1: "configs/pipeline1/final_experiments/E00-G_global_dense_baseline.yaml"
+    pipeline2: "configs/pipeline2/final_experiments/E00-G_global_dense_baseline_eval.yaml"
+    pipeline3: "configs/pipeline3/final_experiments/E00-G_global_dense_baseline_eval.yaml"
+  E00-C:
+    pipeline1: "configs/pipeline1/final_experiments/E00-C_category_aware_dense_baseline.yaml"
+    pipeline2: "configs/pipeline2/final_experiments/E00-C_category_aware_dense_baseline_eval.yaml"
+    pipeline3: "configs/pipeline3/final_experiments/E00-C_category_aware_dense_baseline_eval.yaml"
+  C00:
+    pipeline1: "configs/pipeline1/final_experiments/C00_sentence512_baseline.yaml"
+    pipeline2: "configs/pipeline2/final_experiments/C00_sentence512_baseline_eval.yaml"
+    pipeline3: "configs/pipeline3/final_experiments/C00_sentence512_baseline_eval.yaml"
+  C01:
+    pipeline1: "configs/pipeline1/final_experiments/C01_sentence256.yaml"
+    pipeline2: "configs/pipeline2/final_experiments/C01_sentence256_eval.yaml"
+    pipeline3: "configs/pipeline3/final_experiments/C01_sentence256_eval.yaml"
+  C02:
+    pipeline1: "configs/pipeline1/final_experiments/C02_sentence1024.yaml"
+    pipeline2: "configs/pipeline2/final_experiments/C02_sentence1024_eval.yaml"
+    pipeline3: "configs/pipeline3/final_experiments/C02_sentence1024_eval.yaml"
+  E91:
+    numeric_id: "91_sivas_fixed512_faiss_dense_mistralsmall_prompt_v0"
+    pipeline1: "configs/pipeline1/experiments Orchestration LLM/91_sivas_fixed512_faiss_dense_mistralsmall_prompt_v0.yaml"
+    pipeline2: "configs/pipeline2/experiments Orchestration LLM/91_sivas_fixed512_faiss_dense_mistralsmall_prompt_v0.yaml"
+    pipeline3: "configs/pipeline3/experiments Orchestration LLM/91_sivas_fixed512_faiss_dense_mistralsmall_prompt_v0.yaml"
+    prompt_version: "v0"
+    prompt_path: "src/pipeline1/prompts/orchestration_prompt.txt"
+  E92:
+    numeric_id: "92_sivas_fixed512_faiss_dense_mistralsmall_prompt_v1"
+    pipeline1: "configs/pipeline1/experiments Orchestration LLM/92_sivas_fixed512_faiss_dense_mistralsmall_prompt_v1.yaml"
+    pipeline2: "configs/pipeline2/experiments Orchestration LLM/92_sivas_fixed512_faiss_dense_mistralsmall_prompt_v1.yaml"
+    pipeline3: "configs/pipeline3/experiments Orchestration LLM/92_sivas_fixed512_faiss_dense_mistralsmall_prompt_v1.yaml"
+  E93:
+    numeric_id: "93_sivas_fixed512_faiss_dense_mistralsmall_prompt_v2"
+    pipeline1: "configs/pipeline1/experiments Orchestration LLM/93_sivas_fixed512_faiss_dense_mistralsmall_prompt_v2.yaml"
+    pipeline2: "configs/pipeline2/experiments Orchestration LLM/93_sivas_fixed512_faiss_dense_mistralsmall_prompt_v2.yaml"
+    pipeline3: "configs/pipeline3/experiments Orchestration LLM/93_sivas_fixed512_faiss_dense_mistralsmall_prompt_v2.yaml"
+  E94:
+    numeric_id: "94_sivas_fixed512_faiss_dense_mistralsmall_prompt_v3"
+    pipeline1: "configs/pipeline1/experiments Orchestration LLM/94_sivas_fixed512_faiss_dense_mistralsmall_prompt_v3.yaml"
+    pipeline2: "configs/pipeline2/experiments Orchestration LLM/94_sivas_fixed512_faiss_dense_mistralsmall_prompt_v3.yaml"
+    pipeline3: "configs/pipeline3/experiments Orchestration LLM/94_sivas_fixed512_faiss_dense_mistralsmall_prompt_v3.yaml"
+  E95:
+    numeric_id: "95_sivas_fixed512_faiss_dense_mistralsmall_prompt_v4"
+    pipeline1: "configs/pipeline1/experiments Orchestration LLM/95_sivas_fixed512_faiss_dense_mistralsmall_prompt_v4.yaml"
+    pipeline2: "configs/pipeline2/experiments Orchestration LLM/95_sivas_fixed512_faiss_dense_mistralsmall_prompt_v4.yaml"
+    pipeline3: "configs/pipeline3/experiments Orchestration LLM/95_sivas_fixed512_faiss_dense_mistralsmall_prompt_v4.yaml"
+  E96:
+    numeric_id: "96_sivas_fixed512_faiss_dense_mistralsmall_prompt_v5"
+    pipeline1: "configs/pipeline1/experiments Orchestration LLM/96_sivas_fixed512_faiss_dense_mistralsmall_prompt_v5.yaml"
+    pipeline2: "configs/pipeline2/experiments Orchestration LLM/96_sivas_fixed512_faiss_dense_mistralsmall_prompt_v5.yaml"
+    pipeline3: "configs/pipeline3/experiments Orchestration LLM/96_sivas_fixed512_faiss_dense_mistralsmall_prompt_v5.yaml"
+  E97:
+    numeric_id: "97_sivas_fixed512_faiss_dense_qwen2p5_prompt_v4"
+    pipeline1: "configs/pipeline1/experiments Orchestration LLM/97_sivas_fixed512_faiss_dense_qwen2p5_prompt_v4.yaml"
+    pipeline2: "configs/pipeline2/experiments Orchestration LLM/97_sivas_fixed512_faiss_dense_qwen2p5_prompt_v4.yaml"
+    pipeline3: "configs/pipeline3/experiments Orchestration LLM/97_sivas_fixed512_faiss_dense_qwen2p5_prompt_v4.yaml"
+  E98:
+    numeric_id: "98_sivas_fixed512_faiss_dense_llama3p1_prompt_v4"
+    pipeline1: "configs/pipeline1/experiments Orchestration LLM/98_sivas_fixed512_faiss_dense_llama3p1_prompt_v4.yaml"
+    pipeline2: "configs/pipeline2/experiments Orchestration LLM/98_sivas_fixed512_faiss_dense_llama3p1_prompt_v4.yaml"
+    pipeline3: "configs/pipeline3/experiments Orchestration LLM/98_sivas_fixed512_faiss_dense_llama3p1_prompt_v4.yaml"

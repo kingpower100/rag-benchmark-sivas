@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from src.pipeline2.metrics.category_metrics import compute_category_metrics
+from src.pipeline2.metrics.category_metrics import compute_category_metrics, compute_category_routing_report
 from src.pipeline2.metrics.answer_metrics import (
     resolve_ground_truth_answer,
 )
@@ -60,6 +60,57 @@ def test_category_strips_whitespace():
 def test_category_empty_string_treated_as_missing():
     result = compute_category_metrics("", "Technik")
     assert result["category_accuracy"] is None
+
+
+def test_category_routing_report_inactive_for_global_rows_with_predictions():
+    rows = [
+        {
+            "retriever_type": "dense",
+            "category_predicted": "Einkauf",
+            "category_gold": "Einkauf",
+            "category_accuracy": 1.0,
+        }
+    ]
+
+    report = compute_category_routing_report(rows, SIVAS_CATEGORIES)
+
+    assert report["category_routing_active"] is False
+    assert report["category_accuracy"] is None
+    assert report["category_coverage"] is None
+
+
+def test_category_routing_report_uses_runtime_routing_rows():
+    rows = [
+        {
+            "retriever_type": "category_aware_dense",
+            "category_predicted": "Einkauf",
+            "category_gold": "Einkauf",
+            "category_accuracy": 1.0,
+            "category_validated": True,
+            "fallback_used": False,
+            "category_index_used": True,
+        },
+        {
+            "retriever_type": "category_aware_dense",
+            "category_predicted": "Unknown",
+            "category_gold": "Technik",
+            "category_accuracy": 0.0,
+            "category_validated": False,
+            "fallback_used": True,
+            "category_index_used": False,
+        },
+    ]
+
+    report = compute_category_routing_report(rows, SIVAS_CATEGORIES)
+
+    assert report["category_routing_active"] is True
+    assert report["category_coverage"] == 1.0
+    assert report["validated_category_coverage"] == 0.5
+    assert report["category_accuracy"] == 0.5
+    assert report["effective_category_accuracy"] == 0.5
+    assert report["fallback_rate"] == 0.5
+    assert report["unknown_rate"] == 0.5
+    assert report["category_index_usage_rate"] == 0.5
 
 
 def test_category_all_five_sivas_categories_work():

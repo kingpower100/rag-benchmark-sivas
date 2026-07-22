@@ -1,11 +1,13 @@
 from __future__ import annotations
 
+import json
 import logging
 import time
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+from src.config_utils import is_official_config_path
 from src.pipeline1.utils.hashing import file_sha256, stable_hash_dict
 from src.pipeline3.aggregation.summarizer import summarize_semantic_metrics
 from src.pipeline3.io.writer import (
@@ -37,6 +39,7 @@ class Pipeline3Orchestrator:
     def run(self, config_path: str) -> Path:
         start_time = time.time()
         cfg = Pipeline3Config.from_yaml(config_path)
+        official_run = is_official_config_path(Path(config_path).resolve())
         project_root = Path(__file__).resolve().parents[2]
         run_cfg = cfg.pipeline3
         run_dir = project_root / run_cfg.output_dir / run_cfg.run_id
@@ -62,6 +65,8 @@ class Pipeline3Orchestrator:
             loader_result.rag_rows,
             loader_result.qa_rows,
             loader_result.questions_rows,
+            official_mode=official_run,
+            pipeline1_manifests=_load_pipeline1_manifests_for_validation(loader_result.rag_path, official_run),
         )
         _print_validation_summary(validation_report)
         qa_by_id = build_qa_index(loader_result.qa_rows)
@@ -258,11 +263,27 @@ def _build_per_question(
     return per_question
 
 
+def _load_pipeline1_manifests_for_validation(rag_path: Path, official_run: bool) -> list[dict[str, Any]]:
+    manifest_path = rag_path.parent / "run_manifest.json"
+    if not manifest_path.exists():
+        manifest_path = rag_path.parent / "manifest.json"
+    if not manifest_path.exists():
+        if official_run:
+            raise ValueError(f"Official Pipeline 3 requires a Pipeline 1 manifest next to {rag_path}")
+        return []
+    try:
+        return [json.loads(manifest_path.read_text(encoding="utf-8"))]
+    except json.JSONDecodeError as ex:
+        raise ValueError(f"Pipeline 1 manifest is malformed JSON: {manifest_path}") from ex
+
+
 def _print_validation_summary(report: ValidationReport) -> None:
     stats = report.stats
     print(
         f"       Validation passed: {report.passed} | "
+        f"run_status={stats.get('run_status', '?')} | "
         f"rag_rows={stats.get('rag_rows', '?')} | "
+        f"failed_rows={stats.get('failed_rows', '?')} | "
         f"qa_rows={stats.get('qa_rows', '?')} | "
         f"warnings={len(report.warnings)}"
     )

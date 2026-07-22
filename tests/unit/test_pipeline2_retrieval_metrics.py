@@ -153,6 +153,55 @@ def test_retrieval_metrics_do_not_dedupe_before_slicing_top_k():
     assert metrics["duplicate_rate_at_3"] == 2 / 3
 
 
+def test_ndcg_preserves_rank_when_duplicate_precedes_relevant_result():
+    metrics = compute_retrieval_metrics(["A", "A", "GOLD"], ["GOLD"], k=3)
+
+    assert metrics["hit_at_3"] == 1.0
+    assert metrics["mrr_at_3"] == 1 / 3
+    assert metrics["ndcg_at_3"] == pytest.approx(0.5)
+
+
+def test_ndcg_duplicate_relevant_document_gets_zero_additional_gain():
+    metrics = compute_retrieval_metrics(["GOLD", "GOLD", "OTHER"], ["GOLD"], k=3)
+
+    assert metrics["ndcg_at_3"] == 1.0
+    assert metrics["recall_at_3"] == 1.0
+    assert metrics["context_precision_at_3"] == 1 / 3
+
+
+def test_ndcg_multiple_relevant_documents_keep_original_ranks_with_duplicate_interruption():
+    metrics = compute_retrieval_metrics(["GOLD_A", "GOLD_A", "GOLD_B"], ["GOLD_A", "GOLD_B"], k=3)
+    expected_dcg = 1.0 + 1.0 / 2.0
+    expected_idcg = 1.0 + 1.0 / 1.584962500721156
+
+    assert metrics["ndcg_at_3"] == pytest.approx(expected_dcg / expected_idcg)
+
+
+def test_ndcg_no_relevant_results_is_zero():
+    metrics = compute_retrieval_metrics(["A", "B", "C"], ["GOLD"], k=3)
+
+    assert metrics["ndcg_at_3"] == 0.0
+
+
+def test_ndcg_empty_identifiers_cannot_match():
+    from src.pipeline2.metrics.retrieval_metrics import compute_retrieval_metrics_for_ks
+
+    metrics = compute_retrieval_metrics_for_ks(["", None, "GOLD"], ["", "GOLD"], [1, 3])  # type: ignore[list-item]
+
+    assert metrics["hit_at_1"] == 0.0
+    assert metrics["hit_at_3"] == 1.0
+    assert metrics["ndcg_at_3"] == pytest.approx(0.5)
+
+
+def test_ndcg_handles_k_smaller_and_larger_than_retrieved_list():
+    from src.pipeline2.metrics.retrieval_metrics import compute_retrieval_metrics_for_ks
+
+    metrics = compute_retrieval_metrics_for_ks(["A", "GOLD"], ["GOLD"], [1, 5])
+
+    assert metrics["ndcg_at_1"] == 0.0
+    assert metrics["ndcg_at_5"] == pytest.approx(1 / 1.584962500721156)
+
+
 def test_source_id_normalization_matches_txt_and_non_txt_forms():
     assert normalize_source_id("sivas_manual_01.md") == "sivas_manual_01.md"
     assert normalize_source_id("sivas_manual_01") == "sivas_manual_01"

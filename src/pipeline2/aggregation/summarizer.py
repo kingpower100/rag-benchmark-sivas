@@ -88,6 +88,10 @@ def _dynamic_metric_columns(rows: list[dict[str, Any]]) -> list[str]:
         "deduped_recall_at_",
         "deduped_mrr_at_",
         "deduped_ndcg_at_",
+        "chunk_hit_at_",
+        "chunk_recall_at_",
+        "chunk_mrr_at_",
+        "chunk_ndcg_at_",
     )
     cols = []
     for prefix in prefixes:

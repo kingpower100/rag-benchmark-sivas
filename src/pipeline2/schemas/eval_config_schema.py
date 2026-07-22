@@ -21,8 +21,28 @@ class EvaluationConfig(StrictEvalConfigModel):
         "retrieved_document_ids",
         "retrieved_original_context_ids",
     ] = "retrieved_file_names"
+    retrieval_level: Literal["auto", "document", "chunk"] = "auto"
+    retrieval_relevance_definition: str | None = None
+    chunk_level_metrics_computed: bool | None = None
+    chunk_level_metrics_reason: str | None = None
     max_generation_failure_rate: float = Field(default=0.05, ge=0.0, le=1.0)
     strict_failure_threshold: bool = False
+
+    @model_validator(mode="after")
+    def validate_retrieval_granularity(self) -> "EvaluationConfig":
+        document_fields = {"retrieved_file_names", "retrieved_files"}
+        chunk_fields = {"retrieved_original_context_ids", "retrieved_document_ids"}
+        if self.retrieval_level == "document" and self.retrieval_eval_field not in document_fields:
+            raise ValueError(
+                "retrieval_level='document' requires retrieval_eval_field to be "
+                "'retrieved_file_names' or 'retrieved_files'."
+            )
+        if self.retrieval_level == "chunk" and self.retrieval_eval_field not in chunk_fields:
+            raise ValueError(
+                "retrieval_level='chunk' requires retrieval_eval_field to be "
+                "'retrieved_original_context_ids' or 'retrieved_document_ids'."
+            )
+        return self
 
 
 class InputsConfig(StrictEvalConfigModel):
@@ -42,6 +62,38 @@ class InputsConfig(StrictEvalConfigModel):
 class RetrievalEvalConfig(StrictEvalConfigModel):
     k: int = Field(default=5, gt=0)
     ks: list[int] = Field(default_factory=lambda: [1, 3, 5])
+
+
+class DocumentLevelRetrievalEvaluationConfig(StrictEvalConfigModel):
+    enabled: bool = True
+
+
+class ChunkLevelRetrievalEvaluationConfig(StrictEvalConfigModel):
+    enabled: bool = False
+    ground_truth_path: str | None = None
+    missing_question_policy: Literal["error", "skip"] = "error"
+
+
+class RetrievalEvaluationConfig(StrictEvalConfigModel):
+    document_level: DocumentLevelRetrievalEvaluationConfig = Field(
+        default_factory=DocumentLevelRetrievalEvaluationConfig
+    )
+    chunk_level: ChunkLevelRetrievalEvaluationConfig = Field(
+        default_factory=ChunkLevelRetrievalEvaluationConfig
+    )
+
+    @model_validator(mode="after")
+    def validate_enabled_levels(self) -> "RetrievalEvaluationConfig":
+        if not self.document_level.enabled and not self.chunk_level.enabled:
+            raise ValueError(
+                "retrieval_evaluation must enable at least one of document_level or chunk_level."
+            )
+        if self.chunk_level.enabled and not self.chunk_level.ground_truth_path:
+            raise ValueError(
+                "retrieval_evaluation.chunk_level.ground_truth_path is required when "
+                "chunk-level retrieval evaluation is enabled."
+            )
+        return self
 
 
 class AnswerQualityConfig(StrictEvalConfigModel):
@@ -97,6 +149,7 @@ class RuntimeConfig(StrictEvalConfigModel):
 class EvalConfig(StrictEvalConfigModel):
     evaluation: EvaluationConfig
     inputs: InputsConfig
+    retrieval_evaluation: RetrievalEvaluationConfig | None = None
     retrieval: RetrievalEvalConfig = RetrievalEvalConfig()
     answer_quality: AnswerQualityConfig = AnswerQualityConfig()
     embedding_similarity: EmbeddingSimilarityConfig = EmbeddingSimilarityConfig()

@@ -101,10 +101,15 @@ class GenerationStage(BaseStage):
         if self.cfg.parent_context.enabled and retrieval_row.generation_contexts:
             prompt_contexts = list(retrieval_row.generation_contexts)
             generation_context_texts = [gc.text for gc in prompt_contexts]
+            generation_context_ids = [
+                gc.parent_id or gc.trigger_child_id or ""
+                for gc in prompt_contexts
+            ]
             parent_context_enabled = True
         else:
             prompt_contexts = dedupe_prompt_contexts(retrieved)
             generation_context_texts = [item.text for item in prompt_contexts]
+            generation_context_ids = [item.chunk_id for item in prompt_contexts]
             parent_context_enabled = False
         if self.logger:
             self.logger.info(
@@ -299,6 +304,7 @@ class GenerationStage(BaseStage):
             chunks_truncated=prompt_stats.get("chunks_truncated"),
             chunks_dropped=prompt_stats.get("chunks_dropped"),
             generation_context_texts=generation_context_texts,
+            generation_context_ids=generation_context_ids,
             parent_context_diagnostics=retrieval_row.parent_context_diagnostics if parent_context_enabled else {},
             parent_context_enabled=parent_context_enabled,
             error=error,

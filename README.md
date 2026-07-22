@@ -51,11 +51,75 @@ Pipeline 2 defaults are SIVAS-first:
 - `qa_path: data/raw/qa_ground_truth_fixed.jsonl`
 - `pipeline1_results_path: data/runs/pipeline1/91_sivas_fixed512_faiss_dense_mistralsmall_prompt_v0/results.jsonl`
 
+Retrieval metrics can be computed independently at two levels:
+
+- Document-level metrics evaluate source-document discovery and ranking using the original SIVAS retrieval evidence.
+- Chunk-level metrics evaluate retrieval of human-validated evidence-bearing production chunks. These labels are derived from canonical evidence spans, but they are specific to the exact production chunking configuration used to generate the chunks.
+
+The original SIVAS raw dataset remains unchanged. The chunk-level benchmark under `data/ground_truth/chunk_level/` is a derived, human-validated extension and must not be reused across different chunk layouts.
+
+For official benchmark configurations, chunk-level retrieval evaluation is mandatory.
+Official Pipeline 2 YAML files must enable chunk evaluation, use
+`missing_question_policy: error`, and reference the annotation package generated
+for the exact production chunk boundaries used by the corresponding Pipeline 1 run.
+Pipeline 2 treats detectable annotation-package mismatches as hard failures.
+
+Official derived chunk annotation packages:
+
+- `data/ground_truth/chunk_level/B00_sivas_character2048_overlap0`
+- `data/ground_truth/chunk_level/E00-G_sentence512_overlap200`
+- `data/ground_truth/chunk_level/C01_sentence256_overlap100`
+- `data/ground_truth/chunk_level/C02_sentence1024_overlap400`
+- `data/ground_truth/chunk_level/E91-E98_fixed512_overlap64`
+
+Regenerate derived packages only from canonical validated evidence spans:
+
+```bash
+python scripts/build_chunk_annotation_packages.py
+```
+
+This command prepares annotation packages only; it is not a benchmark dry run.
+
+Example combined configuration:
+
+```yaml
+retrieval_evaluation:
+  document_level:
+    enabled: true
+
+  chunk_level:
+    enabled: true
+    ground_truth_path: data/ground_truth/chunk_level/E00-G_sentence512_overlap200/gold_chunk_annotations_E00-G_sentence512_overlap200.jsonl
+    missing_question_policy: error
+```
+
 Run evaluation only after Pipeline 1 has produced `results.jsonl`:
 
 ```bash
 python -m src.pipeline2.main --config configs/pipeline2/experiments/91_sivas_fixed512_faiss_dense_mistralsmall_prompt_v0.yaml
 ```
+
+Before official experiments, use the locked benchmark environment from
+`requirements-lock.txt`. FAISS requires the pinned NumPy 1.x ABI:
+
+```text
+numpy==1.26.4
+faiss-cpu==1.8.0.post1
+bert-score==0.3.13
+```
+
+Install and repair dependencies with the active interpreter, not bare `pip`:
+
+```bash
+python -m pip install --upgrade pip
+python -m pip install --no-cache-dir -r requirements-lock.txt -c constraints.txt
+python -m pip install --no-deps -e .
+python scripts/check_benchmark_environment.py
+```
+
+The logical E91-E98 experiment names map to numeric config filenames in
+`configs/official_experiment_mapping.yaml`. E91 is Prompt V0 and explicitly pins
+`src/pipeline1/prompts/orchestration_prompt.txt`.
 
 Expected Pipeline 2 output:
 

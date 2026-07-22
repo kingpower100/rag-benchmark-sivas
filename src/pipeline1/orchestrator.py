@@ -47,12 +47,14 @@ from src.pipeline1.stages.run_writer_stage import RunWriterStage
 from src.pipeline1.telemetry.logger import build_logger
 from src.pipeline1.utils.hashing import file_sha256, stable_hash_dict
 from src.pipeline1.utils.seed import set_seed
+from src.config_utils import is_official_config_path
 
 
 def run_pipeline(config_path: str) -> Path:
     start_time = time.time()
     print("[1/10] Loading config")
     cfg = PipelineConfig.from_yaml(config_path)
+    official_run = is_official_config_path(Path(config_path).resolve())
     set_seed(cfg.experiment.random_seed)
     project_root = _project_root()
     run_dir = project_root / cfg.experiment.output_dir / cfg.experiment.experiment_id
@@ -299,6 +301,7 @@ def run_pipeline(config_path: str) -> Path:
 
     attempted = 0
     written = 0
+    failed_question_ids: list[str] = []
     retrieval_total_ms = 0.0
     generation_total_ms = 0.0
     try:
@@ -346,6 +349,7 @@ def run_pipeline(config_path: str) -> Path:
                 record = generation_row.output_record
             except Exception as ex:
                 logger.exception("checkpoint_row_failed question_id=%s row=%s/%s", query.question_id, row_index, len(pending_queries))
+                failed_question_ids.append(str(query.question_id))
                 event_writer.write(
                     stage="pipeline",
                     event_type=EventType.PIPELINE_ERROR,
@@ -392,6 +396,12 @@ def run_pipeline(config_path: str) -> Path:
     resolved_config["generation"]["base_url"] = os.getenv("OLLAMA_BASE_URL", cfg.generation.base_url)
     end_time = time.time()
     output_counts = RunWriterStage.output_row_counts(run_dir)
+    failed_questions = len(failed_question_ids)
+    completed_before_run = len(existing_ids) - written
+    successful_questions = max(0, completed_before_run + attempted - failed_questions)
+    expected_questions = len(queries)
+    processed_questions = completed_before_run + attempted
+    run_status = "PASS" if failed_questions == 0 and processed_questions == expected_questions else "FAIL"
     performance_metrics = _performance_metrics(
         run_dir=run_dir,
         chunk_count=len(chunks),
@@ -406,7 +416,17 @@ def run_pipeline(config_path: str) -> Path:
         event_type=EventType.PIPELINE_END,
         message="Pipeline 1 run completed.",
         duration_ms=(end_time - start_time) * 1000,
-        metrics={"attempted": attempted, "written": written, **output_counts, **performance_metrics},
+        metrics={
+            "attempted": attempted,
+            "written": written,
+            "expected_questions": expected_questions,
+            "processed_questions": processed_questions,
+            "successful_questions": successful_questions,
+            "failed_questions": failed_questions,
+            "run_status": run_status,
+            **output_counts,
+            **performance_metrics,
+        },
     )
     event_writer.close()
     output_artifacts = _pipeline1_output_artifacts(run_dir)
@@ -414,6 +434,13 @@ def run_pipeline(config_path: str) -> Path:
         run_dir,
         {
             "run_id": cfg.experiment.experiment_id,
+            "expected_questions": expected_questions,
+            "processed_questions": processed_questions,
+            "successful_questions": successful_questions,
+            "failed_questions": failed_questions,
+            "run_status": run_status,
+            "official_run": official_run,
+            "failed_question_ids": failed_question_ids,
             "config_path": str(Path(config_path).resolve()),
             "config_hash": file_sha256(config_path),
             "config": cfg.model_dump(),
@@ -473,7 +500,11 @@ def run_pipeline(config_path: str) -> Path:
                 "n_queries": len(queries),
                 "attempted": attempted,
                 "written": written,
-                "failed_questions": max(0, attempted - written),
+                "expected_questions": expected_questions,
+                "processed_questions": processed_questions,
+                "successful_questions": successful_questions,
+                "failed_questions": failed_questions,
+                "run_status": run_status,
                 **performance_metrics,
             },
             "artifacts": output_artifacts,
@@ -483,6 +514,12 @@ def run_pipeline(config_path: str) -> Path:
             "end_timestamp_utc": _iso_utc(end_time),
         },
     )
+    if official_run and run_status != "PASS":
+        raise RuntimeError(
+            "Official Pipeline 1 run failed: "
+            f"expected_questions={expected_questions}, processed_questions={processed_questions}, "
+            f"failed_questions={failed_questions}"
+        )
     return run_dir
 
 
@@ -531,6 +568,9 @@ def _build_citations(items: list) -> list[dict]:
 
 
 def dedupe_retrieval_by_chunk_id(items: list, top_k: int) -> list:
+    # Legacy helper retained for old imports. The active Pipeline 1 retrieval
+    # path uses src.pipeline1.stages.retrieval_stage.RetrievalStage and its
+    # local retrieval selection helpers.
     seen: set[str] = set()
     unique = []
     for item in items:
@@ -808,9 +848,17 @@ def _chunk_diagnostics(chunks: list[ChunkRecord], cfg: PipelineConfig) -> dict[s
 
 def _resolve_orchestration_prompt_path(prompt_path: str | None, project_root: Path) -> Path:
     if prompt_path is None:
-        return (project_root / DEFAULT_ORCHESTRATION_PROMPT_PATH).resolve()
+        candidate = (project_root / DEFAULT_ORCHESTRATION_PROMPT_PATH).resolve()
+        if candidate.exists():
+            return candidate
+        return (Path(__file__).resolve().parents[2] / DEFAULT_ORCHESTRATION_PROMPT_PATH).resolve()
     path = Path(prompt_path)
-    return path if path.is_absolute() else (project_root / path).resolve()
+    if path.is_absolute():
+        return path
+    candidate = (project_root / path).resolve()
+    if candidate.exists():
+        return candidate
+    return (Path(__file__).resolve().parents[2] / path).resolve()
 
 
 def _run_compatibility_payload(

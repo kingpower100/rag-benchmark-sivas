@@ -1,4 +1,5 @@
 from src.pipeline2.metrics.retrieval_metrics import compute_retrieval_metrics_for_ks
+import pytest
 
 
 def test_raw_metrics_use_duplicate_aware_ranking_deduped_metrics_use_dedup():
@@ -18,3 +19,12 @@ def test_raw_metrics_use_duplicate_aware_ranking_deduped_metrics_use_dedup():
     assert metrics["deduped_hit_at_3"] == 1.0
     assert metrics["deduped_recall_at_3"] == 1.0
     assert metrics["deduped_mrr_at_3"] == 0.5
+
+
+def test_document_metrics_required_duplicate_rank_case():
+    metrics = compute_retrieval_metrics_for_ks(["A", "A", "GOLD"], ["GOLD"], [3])
+
+    assert metrics["hit_at_3"] == 1.0
+    assert metrics["recall_at_3"] == 1.0
+    assert metrics["mrr_at_3"] == 1 / 3
+    assert metrics["ndcg_at_3"] == pytest.approx(0.5)

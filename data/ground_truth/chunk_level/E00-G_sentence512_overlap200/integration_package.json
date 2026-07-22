@@ -1,0 +1,43 @@
+{
+  "chunk_config_id": "E00-G_sentence512_overlap200",
+  "chunks": 1583,
+  "files": [
+    {
+      "filename": "gold_chunk_annotations_E00-G_sentence512_overlap200.jsonl",
+      "purpose": "Primary runtime ground-truth file for Pipeline 2 chunk-level retrieval evaluation.",
+      "sha256": "340e7d3d5b9f55cdb6c51270aedd3a6737edea86a5dd06cdcb91bf0cd7ccbe3b"
+    },
+    {
+      "filename": "gold_span_chunk_mappings_E00-G_sentence512_overlap200.jsonl",
+      "purpose": "Traceability artifact linking canonical evidence spans to production chunks.",
+      "sha256": "84c7608893a1f4dcf4c797803cd5344d82178a80fd5860fab5fa04a2fabc19e7"
+    },
+    {
+      "filename": "gold_evidence_spans.jsonl",
+      "purpose": "Copied canonical evidence-span provenance used to derive chunk-level labels.",
+      "sha256": "377c7d0b82162499da351870f8f3a0a082151db67a08f6dac9b1addf53980196"
+    },
+    {
+      "filename": "chunk_mapping_summary_E00-G_sentence512_overlap200.json",
+      "purpose": "Chunk configuration and mapping summary.",
+      "sha256": "250f3c55a76698fcb8c5b7979162e8823e1cad4a38aa6d4caa679beca8dd10df"
+    },
+    {
+      "filename": "final_annotation_validation.json",
+      "purpose": "Final validation report for the derived chunk annotation dataset.",
+      "sha256": "20901368dfc200f5e5a79e821c24ad14736bb4a9d67400e7a2630d8d9458c0d5"
+    },
+    {
+      "filename": "final_annotation_manifest.json",
+      "purpose": "Integrity manifest for finalized derived artifacts.",
+      "sha256": "2f2860a53e5edc9dfba6086497979e4acb1df2ca1160817f4fc8e968bfab5332"
+    }
+  ],
+  "gold_evidence_spans": 799,
+  "mapped_evidence_spans": 799,
+  "mapping_policy": "any_overlap",
+  "package_name": "SIVAS chunk-level retrieval ground truth",
+  "primary_runtime_file": "gold_chunk_annotations_E00-G_sentence512_overlap200.jsonl",
+  "questions": 96,
+  "unmapped_evidence_spans": 0
+}

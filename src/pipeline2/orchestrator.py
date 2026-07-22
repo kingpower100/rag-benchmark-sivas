@@ -8,6 +8,7 @@ from collections import Counter
 from pathlib import Path
 from typing import Any
 
+from src.config_utils import is_official_config_path
 from src.pipeline2.aggregation.summarizer import summarize_by_category, summarize_by_experiment
 from src.pipeline2.io.jsonl import read_jsonl, write_jsonl
 from src.pipeline2.io.tabular import write_csv
@@ -26,17 +27,66 @@ from src.pipeline2.metrics.embedding_similarity import (
 )
 from src.pipeline2.metrics.efficiency_metrics import compute_efficiency_metrics
 from src.pipeline2.metrics.fallback_metrics import compute_fallback_flag, compute_fallback_summary
+from src.pipeline2.metrics.chunk_retrieval_metrics import (
+    ChunkGroundTruth,
+    ChunkGroundTruthLoader,
+    compute_chunk_retrieval_metrics_for_ks,
+)
 from src.pipeline2.metrics.retrieval_metrics import compute_retrieval_metrics_for_ks
 from src.pipeline2.schemas.eval_config_schema import EvalConfig
 from src.pipeline1.utils.hashing import file_sha256
 from tqdm.auto import tqdm
 
 _SIVAS_CATEGORIES = ["Technik", "Vertrieb", "Materialwirtschaft", "Einkauf", "Service"]
+_DOCUMENT_RETRIEVAL_FIELDS = {"retrieved_file_names", "retrieved_files"}
+_CHUNK_RETRIEVAL_FIELDS = {"retrieved_original_context_ids", "retrieved_document_ids"}
+_DOCUMENT_RELEVANCE_DEFINITION = "source_document_identifier_match"
+_NO_CHUNK_GOLD_REASON = "no_chunk_level_gold_evidence"
+_RETRIEVAL_METHODOLOGY_NOTE = (
+    "Retrieval relevance is evaluated at the source-document level because the SIVAS ground truth "
+    "contains relevant source-document annotations rather than exact chunk-level evidence labels. "
+    "Each retrieved chunk is mapped to its source-document identifier and matched against the "
+    "gold-relevant source documents. Therefore, Hit@k, Recall@k, MRR@k, nDCG@k and Precision@k "
+    "measure document discovery and ranking, not exact answer-passage localization. Document Hit@k "
+    "is the proportion of questions for which at least one of the top-k retrieved chunks originates "
+    "from a gold-relevant source document. A document-level hit does not guarantee that the retrieved "
+    "chunk contains the exact answer evidence."
+)
+_DOCUMENT_METRIC_LABELS = {
+    "hit_at_1": "Document Hit@1",
+    "hit_at_3": "Document Hit@3",
+    "hit_at_5": "Document Hit@5",
+    "recall_at_1": "Document Recall@1",
+    "recall_at_3": "Document Recall@3",
+    "recall_at_5": "Document Recall@5",
+    "mrr_at_1": "Document MRR@1",
+    "mrr_at_3": "Document MRR@3",
+    "mrr_at_5": "Document MRR@5",
+    "ndcg_at_1": "Document nDCG@1",
+    "ndcg_at_3": "Document nDCG@3",
+    "ndcg_at_5": "Document nDCG@5",
+    "context_precision_at_5": "Document Precision@5",
+}
+_CHUNK_METRIC_LABELS = {
+    "chunk_hit_at_1": "Chunk Hit@1",
+    "chunk_hit_at_3": "Chunk Hit@3",
+    "chunk_hit_at_5": "Chunk Hit@5",
+    "chunk_recall_at_1": "Chunk Recall@1",
+    "chunk_recall_at_3": "Chunk Recall@3",
+    "chunk_recall_at_5": "Chunk Recall@5",
+    "chunk_mrr_at_1": "Chunk MRR@1",
+    "chunk_mrr_at_3": "Chunk MRR@3",
+    "chunk_mrr_at_5": "Chunk MRR@5",
+    "chunk_ndcg_at_1": "Chunk nDCG@1",
+    "chunk_ndcg_at_3": "Chunk nDCG@3",
+    "chunk_ndcg_at_5": "Chunk nDCG@5",
+}
 
 
 class EvaluationOrchestrator:
     def _validate_production_config(self, cfg: EvalConfig) -> None:
         """Raise ValueError if the config would silently use a non-semantic embedding metric."""
+        _validate_retrieval_granularity_config(cfg)
         if (
             cfg.embedding_similarity.enabled
             and cfg.embedding_similarity.provider == "deterministic_hash"
@@ -54,6 +104,7 @@ class EvaluationOrchestrator:
     def run(self, config_path: str) -> Path:
         start_time = time.time()
         cfg = EvalConfig.from_yaml(config_path)
+        official_run = is_official_config_path(Path(config_path).resolve())
         self._validate_production_config(cfg)
         project_root = Path(__file__).resolve().parents[2]
         run_dir = project_root / cfg.evaluation.output_dir / cfg.evaluation.eval_run_id
@@ -73,11 +124,15 @@ class EvaluationOrchestrator:
             resolved = _resolve(project_root, rag_path)
             resolved_rag_paths.append(resolved)
             if not resolved.exists():
+                if official_run:
+                    raise FileNotFoundError(f"Official Pipeline 2 input Pipeline 1 output not found: {resolved}")
                 print("Real-run audit skipped: Pipeline 1 outputs not found on this machine.")
                 audit = _skipped_real_run_audit(config_path, cfg, resolved_rag_paths, start_time)
                 _write_audit_reports(run_dir, audit)
                 return run_dir
             print(f"Pipeline 1 results path: {resolved}")
+            if official_run:
+                _validate_pipeline1_manifest_pass_for_official(resolved)
             rows = read_jsonl(resolved)
             print(f"Pipeline 1 results rows: {len(rows)}")
             rag_rows.extend(rows)
@@ -97,9 +152,12 @@ class EvaluationOrchestrator:
         print(f"SIVAS retrieval evidence file: {gold_path}")
         gold_rows = read_jsonl(gold_path) if gold_path.exists() else []
         strict_alignment = build_three_way_alignment_report(questions_rows, qa_rows, gold_rows, rag_rows)
-        _validate_three_way_alignment(strict_alignment)
+        if _document_retrieval_enabled(cfg):
+            _validate_three_way_alignment(strict_alignment)
         gold_by_id = _gold_by_question(gold_rows)
-        _validate_pipeline1_questions_have_gold_contexts(rag_rows, gold_by_id)
+        if _document_retrieval_enabled(cfg):
+            _validate_pipeline1_questions_have_gold_contexts(rag_rows, gold_by_id)
+        chunk_ground_truth = _load_chunk_ground_truth_if_enabled(cfg, project_root, rag_rows)
         input_diagnostics = build_eval_diagnostics(rag_rows, questions_rows, qa_rows, gold_rows, qa_by_id, gold_by_id, strict_alignment, cfg)
         _print_eval_diagnostics(input_diagnostics)
         _validate_eval_diagnostics(input_diagnostics, cfg)
@@ -109,14 +167,18 @@ class EvaluationOrchestrator:
         _validate_leakage_audit(leakage_audit)
 
         print("[4/6] Computing automatic metrics")
-        per_question = self._evaluate_rows(rag_rows, qa_by_id, gold_by_id, cfg)
+        per_question = self._evaluate_rows(rag_rows, qa_by_id, gold_by_id, cfg, chunk_ground_truth)
         if not per_question:
             raise ValueError("Pipeline 2 evaluated zero rows.")
         reported_metric_comparison = compare_reported_vs_recomputed_metrics(rag_rows, per_question, _metric_ks(cfg))
         if reported_metric_comparison.get("message"):
             print(reported_metric_comparison["message"])
+        document_validation = _document_validation_counts(per_question, cfg)
+        chunk_validation = _chunk_validation_counts(per_question, cfg, chunk_ground_truth)
         print("[5/6] Aggregating summaries")
         summary = summarize_by_experiment(per_question)
+        _attach_document_validation_counts(summary, document_validation)
+        _attach_chunk_validation_counts(summary, chunk_validation)
         run_validity = _run_validity_by_experiment(per_question, cfg.evaluation.max_generation_failure_rate)
         _attach_run_validity(summary, run_validity)
         if cfg.evaluation.strict_failure_threshold:
@@ -124,7 +186,7 @@ class EvaluationOrchestrator:
         category_summary = summarize_by_category(per_question)
         category_routing_report = compute_category_routing_report(per_question, _SIVAS_CATEGORIES)
         ks = _metric_ks(cfg)
-        per_fields = _per_question_fields(ks)
+        per_fields = _per_question_fields(ks, cfg)
         validity_report = _benchmark_validity_report(per_question, input_diagnostics, strict_alignment, ks)
         metric_runtime_metadata = getattr(self, "_metric_runtime_metadata", _metric_runtime_metadata(cfg, None, None))
         print("[6/6] Writing evaluation outputs")
@@ -139,13 +201,19 @@ class EvaluationOrchestrator:
                     "category_routing": category_routing_report,
                     "benchmark_validity": validity_report,
                     "metric_priority": _metric_priority_report(cfg),
+                    "retrieval_evaluation": _resolved_retrieval_granularity(cfg, chunk_ground_truth),
+                    "document_level_validation": document_validation,
+                    "chunk_level_validation": chunk_validation,
+                    "source_document_basename_collisions": input_diagnostics.get(
+                        "source_document_basename_collisions"
+                    ),
                 },
                 indent=2,
                 ensure_ascii=False,
             ),
             encoding="utf-8",
         )
-        write_summary_metrics_csv(run_dir / "summary_metrics.csv", summary, cfg.evaluation.eval_run_id, category_routing_report)
+        write_summary_metrics_csv(run_dir / "summary_metrics.csv", summary, cfg.evaluation.eval_run_id, category_routing_report, ks)
         if cfg.runtime.save_csv:
             write_csv(run_dir / "per_question.csv", per_question, per_fields)
         (run_dir / "eval_manifest.json").write_text(
@@ -170,6 +238,7 @@ class EvaluationOrchestrator:
                     category_routing_report,
                     validity_report,
                     metric_runtime_metadata,
+                    chunk_ground_truth,
                     start_time,
                     time.time(),
                 ),
@@ -198,6 +267,7 @@ class EvaluationOrchestrator:
             category_routing_report,
             validity_report,
             metric_runtime_metadata,
+            chunk_ground_truth,
             start_time,
             time.time(),
         )
@@ -212,6 +282,8 @@ class EvaluationOrchestrator:
             run_validity,
         )
         audit_report["linked_pipeline1_runs"] = _linked_pipeline1_runs(resolved_rag_paths)
+        audit_report["document_level_validation"] = document_validation
+        audit_report["chunk_level_validation"] = chunk_validation
         audit_report["input_artifact_hashes"] = _artifact_hashes(
             [questions_path, qa_path, gold_path, *resolved_rag_paths]
         )
@@ -236,6 +308,7 @@ class EvaluationOrchestrator:
         qa_by_id: dict[str, dict[str, Any]],
         gold_by_id: dict[str, list[str]],
         cfg: EvalConfig,
+        chunk_ground_truth: ChunkGroundTruth | None = None,
     ) -> list[dict[str, Any]]:
         ks = _metric_ks(cfg)
         evaluated = []
@@ -268,31 +341,45 @@ class EvaluationOrchestrator:
             if "retrieved_original_context_ids" not in row:
                 retrieved_ids = []
                 id_alignment_ok = False
-                message = (
-                    f"Pipeline 1 result for question_id={qid!r} is missing "
-                    "retrieved_original_context_ids; retrieval metrics will be scored as empty."
-                )
-                warnings.warn(message, RuntimeWarning, stacklevel=2)
-                errors.append(message)
+                if _document_retrieval_enabled(cfg):
+                    message = (
+                        f"Pipeline 1 result for question_id={qid!r} is missing "
+                        "retrieved_original_context_ids; retrieval metrics will be scored as empty."
+                    )
+                    warnings.warn(message, RuntimeWarning, stacklevel=2)
+                    errors.append(message)
             if not isinstance(retrieved_ids, list):
                 retrieved_ids = []
                 id_alignment_ok = False
                 errors.append("retrieved_original_context_ids must be a list")
             gold_ids = gold_by_id.get(qid, [])
-            if not gold_ids:
+            if _document_retrieval_enabled(cfg) and not gold_ids:
                 raise ValueError(f"Missing gold context for question {qid}")
-            retrieval_eval_ids = _configured_retrieval_eval_ids(row, cfg.evaluation.retrieval_eval_field)
+            retrieval_eval_ids = (
+                _configured_retrieval_eval_ids(row, cfg.evaluation.retrieval_eval_field)
+                if _document_retrieval_enabled(cfg)
+                else []
+            )
             qa_row = qa_by_id.get(qid, {})
-            category_metrics = compute_category_metrics(
-                row.get("detected_category"),
-                qa_row.get("gold_kategorie"),
+            routing_executed = _category_routing_executed_for_row(row)
+            category_metrics = (
+                compute_category_metrics(
+                    row.get("detected_category"),
+                    qa_row.get("gold_kategorie"),
+                )
+                if routing_executed
+                else {"category_accuracy": None, "category_predicted": None, "category_gold": qa_row.get("gold_kategorie")}
             )
             ground_truth = "" if cfg.evaluation.retrieval_only else resolve_ground_truth_answer(row, qa_by_id)
             raw_retrieved_ids = row.get("raw_retrieved_original_context_ids")
             if raw_retrieved_ids is not None and not isinstance(raw_retrieved_ids, list):
                 raw_retrieved_ids = []
                 errors.append("raw_retrieved_original_context_ids must be a list")
-            raw_retrieval_eval_ids = _configured_raw_retrieval_eval_ids(row, cfg.evaluation.retrieval_eval_field)
+            raw_retrieval_eval_ids = (
+                _configured_raw_retrieval_eval_ids(row, cfg.evaluation.retrieval_eval_field)
+                if _document_retrieval_enabled(cfg)
+                else None
+            )
             if cfg.evaluation.retrieval_only:
                 answer_metrics = _null_answer_metrics()
             else:
@@ -339,9 +426,18 @@ class EvaluationOrchestrator:
             _unknown_sentinels = {"unknown", "unbekannt"}
             is_unknown = 1.0 if generated_str.strip().lower() in _unknown_sentinels else 0.0
 
-            retrieval_metrics = compute_retrieval_metrics_for_ks(retrieval_eval_ids, gold_ids, ks, raw_retrieval_eval_ids)
+            retrieval_metrics: dict[str, Any] = {}
+            if _document_retrieval_enabled(cfg):
+                retrieval_metrics.update(
+                    compute_retrieval_metrics_for_ks(retrieval_eval_ids, gold_ids, ks, raw_retrieval_eval_ids)
+                )
+            if _chunk_retrieval_enabled(cfg):
+                retrieval_metrics.update(
+                    _compute_chunk_metrics_for_row(row, qid, chunk_ground_truth, ks, errors, cfg)
+                )
 
             fallback_used, fallback_reason = compute_fallback_flag(row)
+            retrieval_diagnostics = row.get("retrieval_diagnostics") if isinstance(row.get("retrieval_diagnostics"), dict) else {}
 
             output = {
                 "question_id": qid,
@@ -372,6 +468,11 @@ class EvaluationOrchestrator:
                 "category_accuracy": category_metrics["category_accuracy"],
                 "category_predicted": category_metrics["category_predicted"],
                 "category_gold": category_metrics["category_gold"],
+                "category_validated": row.get("category_validated"),
+                "category_index_used": bool(row.get("category_index_used", retrieval_diagnostics.get("category_index_used", False))),
+                "retriever_type": row.get("retriever_type"),
+                "retrieval_mode": row.get("retrieval_mode"),
+                "retrieval_diagnostics": retrieval_diagnostics,
                 **compute_efficiency_metrics(row),
                 "pipeline_success": pipeline_success,
                 "generation_failed": generation_failed,
@@ -382,6 +483,235 @@ class EvaluationOrchestrator:
             }
             evaluated.append(output)
         return evaluated
+
+
+def _document_retrieval_enabled(cfg: EvalConfig) -> bool:
+    return True if cfg.retrieval_evaluation is None else cfg.retrieval_evaluation.document_level.enabled
+
+
+def _category_routing_executed_for_row(row: dict[str, Any]) -> bool:
+    if str(row.get("retriever_type") or "") == "category_aware_dense":
+        return True
+    diagnostics = row.get("retrieval_diagnostics") or {}
+    return isinstance(diagnostics, dict) and str(diagnostics.get("retriever_type") or "") == "category_aware_dense"
+
+
+def _chunk_retrieval_enabled(cfg: EvalConfig) -> bool:
+    return False if cfg.retrieval_evaluation is None else cfg.retrieval_evaluation.chunk_level.enabled
+
+
+def _load_chunk_ground_truth_if_enabled(
+    cfg: EvalConfig,
+    project_root: Path,
+    rag_rows: list[dict[str, Any]],
+) -> ChunkGroundTruth | None:
+    if not _chunk_retrieval_enabled(cfg):
+        return None
+    assert cfg.retrieval_evaluation is not None
+    raw_path = cfg.retrieval_evaluation.chunk_level.ground_truth_path
+    if not raw_path:
+        raise ValueError(
+            "retrieval_evaluation.chunk_level.ground_truth_path is required when chunk-level evaluation is enabled."
+        )
+    ground_truth = ChunkGroundTruthLoader(_resolve(project_root, raw_path)).load()
+    print(
+        "Chunk-level retrieval ground truth: "
+        f"path={ground_truth.path} questions={ground_truth.question_count} "
+        f"gold_chunks={ground_truth.gold_chunk_count} "
+        f"unique_gold_chunks={ground_truth.unique_gold_chunk_count} "
+        f"chunk_config_ids={sorted(ground_truth.chunk_config_ids)}"
+    )
+    _validate_chunk_ground_truth_compatibility(ground_truth, rag_rows)
+    return ground_truth
+
+
+def _validate_chunk_ground_truth_compatibility(
+    ground_truth: ChunkGroundTruth,
+    rag_rows: list[dict[str, Any]],
+) -> None:
+    package = ground_truth.package_metadata.get("integration_package.json") or {}
+    expected_questions = package.get("questions")
+    if expected_questions is not None and int(expected_questions) != ground_truth.question_count:
+        raise ValueError(
+            "Chunk annotation package question count differs from loaded annotations: "
+            f"package={expected_questions} loaded={ground_truth.question_count}"
+        )
+    validation = ground_truth.package_metadata.get("final_annotation_validation.json") or {}
+    if validation.get("dataset_status") and validation.get("dataset_status") != "PASS":
+        raise ValueError(
+            "Chunk annotation package validation status is not PASS: "
+            f"{validation.get('dataset_status')}"
+        )
+    if validation.get("unmapped_records") not in (None, 0):
+        raise ValueError(
+            "Chunk annotation package contains unmapped evidence spans: "
+            f"{validation.get('unmapped_records')}"
+        )
+    detected_configs = {
+        str(row.get("chunk_config_id") or "").strip()
+        for row in rag_rows
+        if str(row.get("chunk_config_id") or "").strip()
+    }
+    if detected_configs and ground_truth.chunk_config_ids and not (detected_configs & ground_truth.chunk_config_ids):
+        raise ValueError(
+            "Chunk annotation package appears to target a different chunk configuration. "
+            f"pipeline1={sorted(detected_configs)} annotations={sorted(ground_truth.chunk_config_ids)}"
+        )
+    _fail_on_detectable_chunk_config_mismatch(ground_truth, rag_rows)
+
+
+def _fail_on_detectable_chunk_config_mismatch(
+    ground_truth: ChunkGroundTruth,
+    rag_rows: list[dict[str, Any]],
+) -> None:
+    if not rag_rows:
+        return
+    summary = _chunk_mapping_summary(ground_truth)
+    summary_chunking = summary.get("chunking") if isinstance(summary.get("chunking"), dict) else {}
+    annotation_config = next(iter(ground_truth.chunk_config_ids)) if len(ground_truth.chunk_config_ids) == 1 else ""
+    strategies = {
+        str(row.get("chunking_strategy") or "").strip().lower()
+        for row in rag_rows
+        if str(row.get("chunking_strategy") or "").strip()
+    }
+    sizes = {
+        int(row.get("chunk_size"))
+        for row in rag_rows
+        if isinstance(row.get("chunk_size"), int) or str(row.get("chunk_size") or "").isdigit()
+    }
+    overlaps = {
+        int(row.get("chunk_overlap"))
+        for row in rag_rows
+        if isinstance(row.get("chunk_overlap"), int) or str(row.get("chunk_overlap") or "").isdigit()
+    }
+    expected_strategy = str(summary_chunking.get("strategy") or _infer_chunk_strategy_from_config_id(annotation_config)).lower()
+    expected_size = _as_int(summary_chunking.get("chunk_size")) or _infer_number_after(annotation_config, "sentence") or _infer_number_after(annotation_config, "fixed")
+    expected_overlap = _as_int(summary_chunking.get("chunk_overlap")) or _infer_overlap_from_config_id(annotation_config)
+    mismatch = False
+    reasons: list[str] = []
+    if strategies and expected_strategy and strategies != {expected_strategy}:
+        mismatch = True
+        reasons.append(f"strategy expected={expected_strategy!r} actual={sorted(strategies)}")
+    if sizes and expected_size is not None and sizes != {expected_size}:
+        mismatch = True
+        reasons.append(f"chunk_size expected={expected_size} actual={sorted(sizes)}")
+    if overlaps and expected_overlap is not None and overlaps != {expected_overlap}:
+        mismatch = True
+        reasons.append(f"chunk_overlap expected={expected_overlap} actual={sorted(overlaps)}")
+    if mismatch:
+        raise ValueError(
+            "Pipeline 1 chunking metadata does not match the chunk annotation package: "
+            f"annotation_config={annotation_config!r}, strategies={sorted(strategies)}, "
+            f"sizes={sorted(sizes)}, overlaps={sorted(overlaps)}, reasons={reasons}"
+        )
+
+
+def _chunk_mapping_summary(ground_truth: ChunkGroundTruth) -> dict[str, Any]:
+    for name, payload in ground_truth.package_metadata.items():
+        if name.startswith("chunk_mapping_summary_") and isinstance(payload, dict):
+            return payload
+    return {}
+
+
+def _as_int(value: Any) -> int | None:
+    if isinstance(value, int):
+        return value
+    if str(value or "").isdigit():
+        return int(value)
+    return None
+
+
+def _infer_chunk_strategy_from_config_id(config_id: str) -> str | None:
+    lower = config_id.lower()
+    if "sivas_character" in lower:
+        return "sivas_character"
+    if "sentence" in lower:
+        return "sentence"
+    if "fixed" in lower:
+        return "fixed_token"
+    return None
+
+
+def _infer_number_after(config_id: str, marker: str) -> int | None:
+    import re
+
+    match = re.search(rf"{marker}(\d+)", config_id.lower())
+    return int(match.group(1)) if match else None
+
+
+def _infer_overlap_from_config_id(config_id: str) -> int | None:
+    import re
+
+    match = re.search(r"overlap_?(\d+)", config_id.lower())
+    return int(match.group(1)) if match else None
+
+
+def _compute_chunk_metrics_for_row(
+    row: dict[str, Any],
+    qid: str,
+    chunk_ground_truth: ChunkGroundTruth | None,
+    ks: list[int],
+    errors: list[str],
+    cfg: EvalConfig,
+) -> dict[str, Any]:
+    if chunk_ground_truth is None:
+        raise ValueError("Chunk-level retrieval evaluation is enabled but no chunk ground truth was loaded.")
+    gold_chunks = chunk_ground_truth.by_question.get(qid)
+    if not gold_chunks:
+        assert cfg.retrieval_evaluation is not None
+        policy = cfg.retrieval_evaluation.chunk_level.missing_question_policy
+        message = f"Chunk-level ground truth is missing annotations for question_id={qid!r}."
+        if policy == "skip":
+            errors.append(message)
+            return {
+                "chunk_annotation_status": "skipped_missing_question",
+                "gold_chunk_ids": [],
+                "retrieved_chunk_ids_for_eval": _retrieved_chunk_ids_for_eval(row, qid),
+            }
+        raise ValueError(message)
+    retrieved_chunk_ids = _retrieved_chunk_ids_for_eval(row, qid)
+    metrics: dict[str, Any] = compute_chunk_retrieval_metrics_for_ks(retrieved_chunk_ids, gold_chunks, ks)
+    metrics.update(
+        {
+            "chunk_annotation_status": "evaluated",
+            "gold_chunk_ids": sorted(gold_chunks),
+            "retrieved_chunk_ids_for_eval": retrieved_chunk_ids,
+        }
+    )
+    return metrics
+
+
+def _retrieved_chunk_ids_for_eval(row: dict[str, Any], qid: str) -> list[str]:
+    if "retrieved_chunk_ids" in row:
+        value = row.get("retrieved_chunk_ids")
+        if not isinstance(value, list):
+            raise ValueError(f"retrieved_chunk_ids must be a list for question_id={qid!r}.")
+        invalid = [item for item in value if item is not None and not isinstance(item, str)]
+        if invalid:
+            raise ValueError(f"retrieved_chunk_ids contains non-string identifiers for question_id={qid!r}.")
+        ids = [item.strip() for item in value if isinstance(item, str) and item.strip()]
+        if ids:
+            return ids
+    nested = row.get("retrieved_chunks")
+    if isinstance(nested, list):
+        invalid_nested = [
+            item.get("chunk_id")
+            for item in nested
+            if isinstance(item, dict) and item.get("chunk_id") is not None and not isinstance(item.get("chunk_id"), str)
+        ]
+        if invalid_nested:
+            raise ValueError(f"retrieved_chunks[].chunk_id contains non-string identifiers for question_id={qid!r}.")
+        ids = [
+            item.get("chunk_id").strip()
+            for item in nested
+            if isinstance(item, dict) and isinstance(item.get("chunk_id"), str) and item.get("chunk_id").strip()
+        ]
+        if ids:
+            return ids
+    raise ValueError(
+        f"Chunk-level evaluation requires stable retrieved chunk identifiers for question_id={qid!r}; "
+        "expected top-level retrieved_chunk_ids or retrieved_chunks[].chunk_id."
+    )
 
 
 def _index_by_id(rows: list[dict[str, Any]], require_answer: bool = True) -> dict[str, dict[str, Any]]:
@@ -625,6 +955,8 @@ def build_eval_diagnostics(
         for row in rag_rows
         if not (isinstance(row.get(retrieved_field), list) and any(str(item).strip() for item in row.get(retrieved_field) or []))
     ]
+    granularity = _resolved_retrieval_granularity(cfg)
+    basename_collisions = _source_document_basename_collisions(gold_rows)
     return {
         "pipeline1_result_rows": len(rag_rows),
         "questions_rows": len(questions_rows),
@@ -649,8 +981,57 @@ def build_eval_diagnostics(
         "missing_generated_answer_examples": missing_generated_ids[:5],
         "missing_retrieved_field_examples": missing_retrieved_ids[:5],
         "strict_alignment": strict_alignment,
-        "retrieval_level": "document",
-        "chunk_level_metrics": "not_computed_no_chunk_gold_available",
+        **granularity,
+        "chunk_level_metrics": "not_computed_no_chunk_gold_available"
+        if not granularity["chunk_level_metrics_computed"]
+        else "computed",
+        "source_identifier_normalization": {
+            "basename_only": True,
+            "casefold": True,
+            "collapse_whitespace": True,
+            "known_chunk_suffixes_map_to_document_filename": True,
+            "extensions_preserved": True,
+        },
+        "source_document_basename_collisions": basename_collisions,
+    }
+
+
+def _source_document_basename_collisions(gold_rows: list[dict[str, Any]]) -> dict[str, Any]:
+    by_basename: dict[str, set[str]] = {}
+    for row in gold_rows:
+        for field in ("retrieval_evidence", "partner_retrieval_evidence"):
+            evidence_items = row.get(field)
+            if not isinstance(evidence_items, list):
+                continue
+            for evidence in evidence_items:
+                if not isinstance(evidence, dict):
+                    continue
+                raw_path = evidence.get("source_quellpfad") or evidence.get("source_document")
+                if raw_path is None or str(raw_path).strip() == "":
+                    continue
+                text = str(raw_path).strip().replace("\\", "/")
+                if "/" not in text:
+                    continue
+                basename = Path(text).name.casefold()
+                if not basename:
+                    continue
+                by_basename.setdefault(basename, set()).add(text)
+
+    collisions = {
+        basename: sorted(paths)
+        for basename, paths in sorted(by_basename.items())
+        if len(paths) > 1
+    }
+    return {
+        "collision_count": len(collisions),
+        "collisions": collisions,
+        "warning": (
+            "Duplicate source-document basenames exist across different full paths; "
+            "basename-normalized document metrics can conflate those documents. "
+            "Use full paths or stable document IDs for future evidence-level evaluation."
+            if collisions
+            else None
+        ),
     }
 
 
@@ -675,11 +1056,11 @@ def _validate_eval_diagnostics(diagnostics: dict[str, Any], cfg: EvalConfig) -> 
         raise ValueError("Pipeline 2 would evaluate zero rows.")
     if diagnostics["qa_intersection_size"] == 0:
         raise ValueError("Pipeline 2 found zero matching question IDs between Pipeline 1 results and QA file.")
-    if diagnostics["gold_intersection_size"] == 0:
+    if _document_retrieval_enabled(cfg) and diagnostics["gold_intersection_size"] == 0:
         raise ValueError("Pipeline 2 found zero matching question IDs between Pipeline 1 results and gold contexts/source_files.")
     if not cfg.evaluation.retrieval_only and diagnostics["generated_answer_coverage"] == 0.0:
         raise ValueError("Pipeline 2 found no generated_answer values in Pipeline 1 results.")
-    if diagnostics["retrieved_field_coverage"] == 0.0:
+    if _document_retrieval_enabled(cfg) and diagnostics["retrieved_field_coverage"] == 0.0:
         raise ValueError(
             f"Pipeline 2 found no non-empty values for retrieval_eval_field={diagnostics['retrieved_field']!r}."
         )
@@ -800,6 +1181,30 @@ def _is_generation_failure(row: dict[str, Any]) -> bool:
     return False
 
 
+def _validate_pipeline1_manifest_pass_for_official(results_path: Path) -> None:
+    manifest_path = results_path.parent / "run_manifest.json"
+    if not manifest_path.exists():
+        manifest_path = results_path.parent / "manifest.json"
+    if not manifest_path.exists():
+        raise ValueError(f"Official Pipeline 2 requires a Pipeline 1 manifest next to {results_path}")
+    try:
+        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as ex:
+        raise ValueError(f"Pipeline 1 manifest is malformed JSON: {manifest_path}") from ex
+    run_stats = manifest.get("run_stats") if isinstance(manifest.get("run_stats"), dict) else {}
+    run_status = manifest.get("run_status") or run_stats.get("run_status")
+    failed_raw = manifest.get("failed_questions", run_stats.get("failed_questions"))
+    try:
+        failed_questions = int(failed_raw)
+    except (TypeError, ValueError) as ex:
+        raise ValueError(f"Pipeline 1 manifest missing numeric failed_questions: {manifest_path}") from ex
+    if run_status != "PASS" or failed_questions != 0:
+        raise RuntimeError(
+            "Official Pipeline 2 rejects non-PASS Pipeline 1 output: "
+            f"manifest={manifest_path}, run_status={run_status}, failed_questions={failed_questions}"
+        )
+
+
 def _run_validity_by_experiment(rows: list[dict[str, Any]], max_failure_rate: float) -> dict[str, dict[str, Any]]:
     groups: dict[str, list[dict[str, Any]]] = {}
     for row in rows:
@@ -827,6 +1232,66 @@ def _attach_run_validity(summary_rows: list[dict[str, Any]], validity: dict[str,
         row.update(validity.get(str(row.get("experiment_id", "")), {}))
 
 
+def _attach_document_validation_counts(summary_rows: list[dict[str, Any]], counts: dict[str, Any]) -> None:
+    for row in summary_rows:
+        row.update({f"document_{key}": value for key, value in counts.items()})
+
+
+def _document_validation_counts(per_question: list[dict[str, Any]], cfg: EvalConfig) -> dict[str, Any]:
+    enabled = _document_retrieval_enabled(cfg)
+    missing_annotations = sum(1 for row in per_question if not row.get("gold_context_ids"))
+    skipped = 0 if enabled else len(per_question)
+    return {
+        "enabled": enabled,
+        "evaluated_questions": len(per_question) - skipped - missing_annotations if enabled else 0,
+        "skipped_questions": skipped,
+        "missing_annotations": missing_annotations if enabled else 0,
+    }
+
+
+def _attach_chunk_validation_counts(summary_rows: list[dict[str, Any]], counts: dict[str, Any]) -> None:
+    for row in summary_rows:
+        row.update({f"chunk_{key}": value for key, value in counts.items()})
+
+
+def _chunk_validation_counts(
+    per_question: list[dict[str, Any]],
+    cfg: EvalConfig,
+    chunk_ground_truth: ChunkGroundTruth | None,
+) -> dict[str, Any]:
+    enabled = _chunk_retrieval_enabled(cfg)
+    statuses = Counter(str(row.get("chunk_annotation_status") or "not_evaluated") for row in per_question)
+    invalid_chunk_rows = [
+        row
+        for row in per_question
+        if any(
+            "retrieved_chunk_ids" in str(err)
+            or "retrieved_chunks[].chunk_id" in str(err)
+            or "stable retrieved chunk identifiers" in str(err)
+            for err in row.get("evaluation_errors", [])
+        )
+    ]
+    missing_annotations = statuses.get("skipped_missing_question", 0)
+    validation = (
+        (chunk_ground_truth.package_metadata.get("final_annotation_validation.json") or {})
+        if chunk_ground_truth is not None
+        else {}
+    )
+    package_status = validation.get("dataset_status") if validation else None
+    return {
+        "enabled": enabled,
+        "evaluated_questions": statuses.get("evaluated", 0),
+        "skipped_questions": sum(count for status, count in statuses.items() if status.startswith("skipped")),
+        "missing_annotations": missing_annotations,
+        "invalid_chunk_id_rows": len(invalid_chunk_rows),
+        "annotation_package_status": package_status if enabled else None,
+        "loaded_questions": None if chunk_ground_truth is None else chunk_ground_truth.question_count,
+        "loaded_gold_chunk_references": None if chunk_ground_truth is None else chunk_ground_truth.gold_chunk_count,
+        "loaded_unique_gold_chunks": None if chunk_ground_truth is None else chunk_ground_truth.unique_gold_chunk_count,
+        "chunk_config_ids": [] if chunk_ground_truth is None else sorted(chunk_ground_truth.chunk_config_ids),
+    }
+
+
 def _raise_on_failure_threshold(validity: dict[str, dict[str, Any]], max_failure_rate: float) -> None:
     invalid = [
         f"{experiment_id}={stats['generation_failure_rate']:.3f}"
@@ -844,22 +1309,128 @@ def _metric_ks(cfg: EvalConfig) -> list[int]:
     return sorted({int(k) for k in (cfg.retrieval.ks or [cfg.retrieval.k]) if int(k) > 0})
 
 
-SUMMARY_METRICS_CSV_FIELDS = [
+def _resolved_retrieval_granularity(
+    cfg: EvalConfig,
+    chunk_ground_truth: ChunkGroundTruth | None = None,
+) -> dict[str, Any]:
+    if cfg.retrieval_evaluation is not None:
+        labels = dict(_DOCUMENT_METRIC_LABELS) if cfg.retrieval_evaluation.document_level.enabled else {}
+        if cfg.retrieval_evaluation.chunk_level.enabled:
+            labels.update(_CHUNK_METRIC_LABELS)
+        return {
+            "mode": "independent_levels",
+            "document_level": {
+                "enabled": cfg.retrieval_evaluation.document_level.enabled,
+                "retrieval_relevance_definition": _DOCUMENT_RELEVANCE_DEFINITION,
+                "retrieved_field": cfg.evaluation.retrieval_eval_field,
+                "methodology_note": _RETRIEVAL_METHODOLOGY_NOTE,
+            },
+            "chunk_level": {
+                "enabled": cfg.retrieval_evaluation.chunk_level.enabled,
+                "ground_truth_path": cfg.retrieval_evaluation.chunk_level.ground_truth_path,
+                "missing_question_policy": cfg.retrieval_evaluation.chunk_level.missing_question_policy,
+                "retrieved_field": "retrieved_chunk_ids",
+                "retrieval_relevance_definition": "production_chunk_identifier_match",
+                "loaded_questions": None if chunk_ground_truth is None else chunk_ground_truth.question_count,
+                "loaded_gold_chunks": None if chunk_ground_truth is None else chunk_ground_truth.gold_chunk_count,
+                "unique_gold_chunks": None if chunk_ground_truth is None else chunk_ground_truth.unique_gold_chunk_count,
+                "chunk_config_ids": [] if chunk_ground_truth is None else sorted(chunk_ground_truth.chunk_config_ids),
+                "exact_ground_truth_fields": ["question_id", "gold_relevant_chunk_ids", "chunk_config_id"],
+                "duplicate_policy": (
+                    "Original ranked positions are preserved for MRR and nDCG; repeated retrieved chunks "
+                    "receive relevance credit once for recall; hit remains binary."
+                ),
+            },
+            "retrieval_level": "document" if cfg.retrieval_evaluation.document_level.enabled else "chunk",
+            "retrieval_relevance_definition": _DOCUMENT_RELEVANCE_DEFINITION
+            if cfg.retrieval_evaluation.document_level.enabled
+            else "production_chunk_identifier_match",
+            "retrieved_field": cfg.evaluation.retrieval_eval_field
+            if cfg.retrieval_evaluation.document_level.enabled
+            else "retrieved_chunk_ids",
+            "chunk_level_metrics_computed": cfg.retrieval_evaluation.chunk_level.enabled,
+            "chunk_level_metrics_reason": None
+            if cfg.retrieval_evaluation.chunk_level.enabled
+            else _NO_CHUNK_GOLD_REASON,
+            "metric_display_labels": labels,
+            "methodology_note": _RETRIEVAL_METHODOLOGY_NOTE
+            if cfg.retrieval_evaluation.document_level.enabled
+            else None,
+        }
+    field = cfg.evaluation.retrieval_eval_field
+    configured_level = cfg.evaluation.retrieval_level
+    if configured_level == "auto":
+        level = "document" if field in _DOCUMENT_RETRIEVAL_FIELDS else "chunk"
+    else:
+        level = configured_level
+
+    if level == "document":
+        return {
+            "retrieval_level": "document",
+            "retrieval_relevance_definition": (
+                cfg.evaluation.retrieval_relevance_definition or _DOCUMENT_RELEVANCE_DEFINITION
+            ),
+            "retrieved_field": field,
+            "chunk_level_metrics_computed": False
+            if cfg.evaluation.chunk_level_metrics_computed is None
+            else bool(cfg.evaluation.chunk_level_metrics_computed),
+            "chunk_level_metrics_reason": (
+                cfg.evaluation.chunk_level_metrics_reason or _NO_CHUNK_GOLD_REASON
+            ),
+            "metric_display_labels": dict(_DOCUMENT_METRIC_LABELS),
+            "methodology_note": _RETRIEVAL_METHODOLOGY_NOTE,
+        }
+
+    return {
+        "retrieval_level": "chunk",
+        "retrieval_relevance_definition": cfg.evaluation.retrieval_relevance_definition or "chunk_identifier_match",
+        "retrieved_field": field,
+        "chunk_level_metrics_computed": True
+        if cfg.evaluation.chunk_level_metrics_computed is None
+        else bool(cfg.evaluation.chunk_level_metrics_computed),
+        "chunk_level_metrics_reason": cfg.evaluation.chunk_level_metrics_reason,
+        "metric_display_labels": {},
+        "methodology_note": None,
+    }
+
+
+def _validate_retrieval_granularity_config(cfg: EvalConfig) -> None:
+    if cfg.retrieval_evaluation is not None:
+        if cfg.retrieval_evaluation.document_level.enabled:
+            field = cfg.evaluation.retrieval_eval_field
+            if field not in _DOCUMENT_RETRIEVAL_FIELDS:
+                raise ValueError(
+                    "Invalid retrieval evaluation config: document_level.enabled=true requires "
+                    "evaluation.retrieval_eval_field='retrieved_file_names' or 'retrieved_files'."
+                )
+        return
+    granularity = _resolved_retrieval_granularity(cfg)
+    level = granularity["retrieval_level"]
+    field = granularity["retrieved_field"]
+    if level == "document" and field not in _DOCUMENT_RETRIEVAL_FIELDS:
+        raise ValueError(
+            "Invalid retrieval evaluation config: retrieval_level='document' requires "
+            "retrieval_eval_field='retrieved_file_names' or 'retrieved_files'."
+        )
+    if level == "chunk" and field not in _CHUNK_RETRIEVAL_FIELDS:
+        raise ValueError(
+            "Invalid retrieval evaluation config: retrieval_level='chunk' requires "
+            "retrieval_eval_field='retrieved_original_context_ids' or 'retrieved_document_ids'."
+        )
+    if (
+        level == "document"
+        and granularity["retrieval_relevance_definition"] != _DOCUMENT_RELEVANCE_DEFINITION
+    ):
+        raise ValueError(
+            "Invalid retrieval evaluation config: retrieval_level='document' requires "
+            f"retrieval_relevance_definition='{_DOCUMENT_RELEVANCE_DEFINITION}'."
+        )
+
+
+SUMMARY_METRICS_CSV_BASE_FIELDS = [
     "experiment_id",
     "eval_run_id",
     "total_questions",
-    "hit@1",
-    "hit@3",
-    "hit@5",
-    "recall@1",
-    "recall@3",
-    "recall@5",
-    "mrr@1",
-    "mrr@3",
-    "mrr@5",
-    "ndcg@1",
-    "ndcg@3",
-    "ndcg@5",
     "official_bertscore_precision",
     "official_bertscore_recall",
     "official_bertscore_f1",
@@ -877,15 +1448,48 @@ def write_summary_metrics_csv(
     summary_rows: list[dict[str, Any]],
     eval_run_id: str,
     category_routing_report: dict[str, Any],
+    ks: list[int] | None = None,
 ) -> None:
     """Write a compact CSV view of the already-computed aggregate metrics."""
     path.parent.mkdir(parents=True, exist_ok=True)
+    csv_ks = sorted({1, 3, 5, *(ks or [])})
+    metric_fields = [field for k in csv_ks for field in (
+        f"hit@{k}",
+        f"recall@{k}",
+        f"mrr@{k}",
+        f"ndcg@{k}",
+        f"chunk_hit@{k}",
+        f"chunk_recall@{k}",
+        f"chunk_mrr@{k}",
+        f"chunk_ndcg@{k}",
+    )]
+    document_validation_fields = [
+        "document_enabled",
+        "document_evaluated_questions",
+        "document_skipped_questions",
+        "document_missing_annotations",
+    ]
+    chunk_validation_fields = [
+        "chunk_enabled",
+        "chunk_evaluated_questions",
+        "chunk_skipped_questions",
+        "chunk_missing_annotations",
+        "chunk_invalid_chunk_id_rows",
+        "chunk_annotation_package_status",
+        "chunk_loaded_questions",
+        "chunk_loaded_gold_chunk_references",
+        "chunk_loaded_unique_gold_chunks",
+        "chunk_chunk_config_ids",
+    ]
+    fieldnames = SUMMARY_METRICS_CSV_BASE_FIELDS[:3] + metric_fields + SUMMARY_METRICS_CSV_BASE_FIELDS[3:]
+    fieldnames.extend(document_validation_fields)
+    fieldnames.extend(chunk_validation_fields)
     rows = [
-        _summary_metrics_csv_row(summary_row, eval_run_id, category_routing_report)
+        _summary_metrics_csv_row(summary_row, eval_run_id, category_routing_report, csv_ks)
         for summary_row in summary_rows
     ]
     with path.open("w", encoding="utf-8", newline="") as f:
-        writer = csv.DictWriter(f, fieldnames=SUMMARY_METRICS_CSV_FIELDS, extrasaction="ignore")
+        writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction="ignore")
         writer.writeheader()
         writer.writerows(rows)
 
@@ -894,6 +1498,7 @@ def _summary_metrics_csv_row(
     summary: dict[str, Any],
     eval_run_id: str,
     category_routing_report: dict[str, Any],
+    ks: list[int],
 ) -> dict[str, Any]:
     def value(key: str) -> Any:
         current = summary.get(key)
@@ -917,16 +1522,34 @@ def _summary_metrics_csv_row(
         "category_coverage": "" if category_coverage is None else category_coverage,
         "fallback_rate": value("fallback_rate"),
         "avg_latency": value("mean_total_latency_ms"),
+        "document_enabled": value("document_enabled"),
+        "document_evaluated_questions": value("document_evaluated_questions"),
+        "document_skipped_questions": value("document_skipped_questions"),
+        "document_missing_annotations": value("document_missing_annotations"),
+        "chunk_enabled": value("chunk_enabled"),
+        "chunk_evaluated_questions": value("chunk_evaluated_questions"),
+        "chunk_skipped_questions": value("chunk_skipped_questions"),
+        "chunk_missing_annotations": value("chunk_missing_annotations"),
+        "chunk_invalid_chunk_id_rows": value("chunk_invalid_chunk_id_rows"),
+        "chunk_annotation_package_status": value("chunk_annotation_package_status"),
+        "chunk_loaded_questions": value("chunk_loaded_questions"),
+        "chunk_loaded_gold_chunk_references": value("chunk_loaded_gold_chunk_references"),
+        "chunk_loaded_unique_gold_chunks": value("chunk_loaded_unique_gold_chunks"),
+        "chunk_chunk_config_ids": json.dumps(summary.get("chunk_chunk_config_ids") or [], ensure_ascii=False),
     }
-    for k in (1, 3, 5):
+    for k in ks:
         row[f"hit@{k}"] = value(f"mean_hit_at_{k}")
         row[f"recall@{k}"] = value(f"mean_recall_at_{k}")
         row[f"mrr@{k}"] = value(f"mean_mrr_at_{k}")
         row[f"ndcg@{k}"] = value(f"mean_ndcg_at_{k}")
+        row[f"chunk_hit@{k}"] = value(f"mean_chunk_hit_at_{k}")
+        row[f"chunk_recall@{k}"] = value(f"mean_chunk_recall_at_{k}")
+        row[f"chunk_mrr@{k}"] = value(f"mean_chunk_mrr_at_{k}")
+        row[f"chunk_ndcg@{k}"] = value(f"mean_chunk_ndcg_at_{k}")
     return row
 
 
-def _per_question_fields(ks: list[int]) -> list[str]:
+def _per_question_fields(ks: list[int], cfg: EvalConfig | None = None) -> list[str]:
     metric_fields = []
     for k in ks:
         metric_fields.extend([
@@ -942,6 +1565,13 @@ def _per_question_fields(ks: list[int]) -> list[str]:
             f"deduped_mrr_at_{k}",
             f"deduped_ndcg_at_{k}",
         ])
+        if cfg is not None and _chunk_retrieval_enabled(cfg):
+            metric_fields.extend([
+                f"chunk_hit_at_{k}",
+                f"chunk_recall_at_{k}",
+                f"chunk_mrr_at_{k}",
+                f"chunk_ndcg_at_{k}",
+            ])
     return [
         "uid",
         "question_id",
@@ -953,6 +1583,9 @@ def _per_question_fields(ks: list[int]) -> list[str]:
         "retrieval_eval_ids",
         "raw_retrieval_eval_ids",
         "gold_context_ids",
+        "gold_chunk_ids",
+        "retrieved_chunk_ids_for_eval",
+        "chunk_annotation_status",
         "id_alignment_ok",
         *metric_fields,
         "duplicate_context_rate",
@@ -1017,6 +1650,9 @@ def _benchmark_validity_report(
                 val = row.get(prefix)
                 if val is not None and val > 1.0 + 1e-9:
                     blocking_issues.append(f"{prefix}={val:.6f} > 1.0 for question_id={qid}")
+            val = row.get(f"chunk_ndcg_at_{k}")
+            if val is not None and val > 1.0 + 1e-9:
+                blocking_issues.append(f"chunk_ndcg_at_{k}={val:.6f} > 1.0 for question_id={qid}")
 
     # Hard check: duplicate gold IDs
     dup_summary = strict_alignment.get("duplicate_id_summary", {})
@@ -1067,6 +1703,10 @@ def compare_reported_vs_recomputed_metrics(
             f"mrr_at_{k}",
             f"ndcg_at_{k}",
             f"context_precision_at_{k}",
+            f"chunk_hit_at_{k}",
+            f"chunk_recall_at_{k}",
+            f"chunk_mrr_at_{k}",
+            f"chunk_ndcg_at_{k}",
         )],
         "non_empty_answer_rate",
         "abstention_rate",
@@ -1378,6 +2018,7 @@ def _artifact_hash(path: Path) -> dict[str, str | int | None]:
 def _skipped_real_run_audit(config_path: str, cfg: EvalConfig, rag_paths: list[Path], start_time: float) -> dict[str, Any]:
     from datetime import datetime, timezone
 
+    retrieval_evaluation = _resolved_retrieval_granularity(cfg)
     return {
         "final_verdict": "partially_valid",
         "strict_audit_pass": False,
@@ -1386,6 +2027,14 @@ def _skipped_real_run_audit(config_path: str, cfg: EvalConfig, rag_paths: list[P
         "config_path": str(Path(config_path).resolve()),
         "config_hash": file_sha256(config_path),
         "evaluation_run_id": cfg.evaluation.eval_run_id,
+        "retrieval_eval_field": cfg.evaluation.retrieval_eval_field,
+        "retrieval_level": retrieval_evaluation["retrieval_level"],
+        "retrieval_relevance_definition": retrieval_evaluation["retrieval_relevance_definition"],
+        "retrieved_field": retrieval_evaluation["retrieved_field"],
+        "chunk_level_metrics_computed": retrieval_evaluation["chunk_level_metrics_computed"],
+        "chunk_level_metrics_reason": retrieval_evaluation["chunk_level_metrics_reason"],
+        "retrieval_evaluation": retrieval_evaluation,
+        "metric_display_labels": retrieval_evaluation.get("metric_display_labels", {}),
         "input_result_paths": [str(path) for path in rag_paths],
         "linked_pipeline1_runs": _linked_pipeline1_runs(rag_paths),
         "input_artifact_hashes": _artifact_hashes(rag_paths),
@@ -1480,9 +2129,26 @@ def _audit_report_markdown(report: dict[str, Any]) -> str:
         "",
         "## Retrieval Metrics",
     ])
+    retrieval_eval = report.get("retrieval_evaluation") or {}
+    labels = report.get("metric_display_labels") or retrieval_eval.get("metric_display_labels") or {}
+    if retrieval_eval:
+        lines.append(f"- Retrieval level: `{retrieval_eval.get('retrieval_level', 'n/a')}`")
+        lines.append(f"- Relevance definition: `{retrieval_eval.get('retrieval_relevance_definition', 'n/a')}`")
+        lines.append(f"- Retrieved field: `{retrieval_eval.get('retrieved_field', 'n/a')}`")
+        lines.append(f"- Chunk-level metrics computed: `{retrieval_eval.get('chunk_level_metrics_computed', 'n/a')}`")
+        lines.append(f"- Chunk-level metrics reason: `{retrieval_eval.get('chunk_level_metrics_reason', 'n/a')}`")
+        if retrieval_eval.get("methodology_note"):
+            lines.append(f"- Methodology: {retrieval_eval['methodology_note']}")
+    collisions = report.get("source_document_basename_collisions") or {}
+    if collisions.get("collision_count"):
+        lines.append(f"- Source-document basename collision groups: `{collisions.get('collision_count')}`")
+        if collisions.get("warning"):
+            lines.append(f"- Collision warning: {collisions['warning']}")
     retrieval_metrics = report.get("recomputed_retrieval_metrics") or {}
     for name in sorted(retrieval_metrics):
-        lines.append(f"- {name}: `{retrieval_metrics.get(name)}`")
+        metric_name = name.removeprefix("mean_")
+        label = labels.get(metric_name, metric_name)
+        lines.append(f"- {label} (`{name}`): `{retrieval_metrics.get(name)}`")
     lines.extend([
         "",
         "## Coverage",
@@ -1562,12 +2228,22 @@ def _metric_priority_report(cfg: "EvalConfig | None" = None) -> dict[str, Any]:
     primary.extend(["category_accuracy", "category_coverage"])
     status["category_accuracy"] = "conditional"
     status["category_coverage"] = "conditional"
+    retrieval_evaluation = _resolved_retrieval_granularity(cfg) if cfg is not None else None
 
     return {
         "primary_metrics": primary,
         "primary_metrics_status": status,
         "secondary_metrics": [],
+        "retrieval_evaluation": retrieval_evaluation,
+        "retrieval_metric_display_labels": (
+            retrieval_evaluation.get("metric_display_labels", {}) if retrieval_evaluation else {}
+        ),
         "notes": {
+            "retrieval_metrics": (
+                retrieval_evaluation.get("methodology_note")
+                if retrieval_evaluation and retrieval_evaluation.get("methodology_note")
+                else "Retrieval metric granularity is determined by evaluation.retrieval_level."
+            ),
             "official_bertscore_f1": (
                 "Official BERTScore F1 via the bert-score library (Zhang et al., 2020). "
                 "Automatic optimal-layer selection per model. Optional IDF weighting and "
@@ -1632,6 +2308,7 @@ def _eval_manifest(
     category_routing_report: dict[str, Any],
     validity_report: dict[str, Any],
     metric_runtime_metadata: dict[str, Any],
+    chunk_ground_truth: ChunkGroundTruth | None,
     start_time: float,
     end_time: float,
 ) -> dict[str, Any]:
@@ -1644,9 +2321,18 @@ def _eval_manifest(
         if not stats.get("run_valid", True)
     }
     comparison_pass = reported_metric_comparison.get("failure_count", 0) == 0
-    blocking_audit_pass = (
+    duplicate_summary = strict_alignment.get("duplicate_id_summary", {})
+    duplicate_sources = duplicate_summary if _document_retrieval_enabled(cfg) else {
+        key: value for key, value in duplicate_summary.items() if key != "retrieval_evidence"
+    }
+    alignment_pass = (
         strict_alignment.get("exact_set_equality") is True
-        and not any(strict_alignment.get("duplicate_id_summary", {}).values())
+        if _document_retrieval_enabled(cfg)
+        else not strict_alignment.get("missing_from_questions") and not strict_alignment.get("missing_from_qa_ground_truth")
+    )
+    blocking_audit_pass = (
+        alignment_pass
+        and not any(duplicate_sources.values())
         and not leakage_audit.get("critical_leakage_found")
         and comparison_pass
     )
@@ -1655,6 +2341,8 @@ def _eval_manifest(
 
     # Use experiment-level summary for aggregate metric reporting
     all_summary = summary[0] if summary else {}
+    retrieval_evaluation = _resolved_retrieval_granularity(cfg, chunk_ground_truth)
+    chunk_validation = _chunk_validation_counts(per_question, cfg, chunk_ground_truth)
 
     return {
         "final_verdict": final_verdict,
@@ -1680,6 +2368,10 @@ def _eval_manifest(
                 "mean_mrr_at_",
                 "mean_context_precision_at_",
                 "mean_ndcg_at_",
+                "mean_chunk_hit_at_",
+                "mean_chunk_recall_at_",
+                "mean_chunk_mrr_at_",
+                "mean_chunk_ndcg_at_",
             ))
         },
         "recomputed_answer_metrics": {
@@ -1737,8 +2429,27 @@ def _eval_manifest(
         "input_diagnostics": input_diagnostics,
         "retrieval_only": cfg.evaluation.retrieval_only,
         "retrieval_eval_field": cfg.evaluation.retrieval_eval_field,
-        "retrieval_level": "document",
-        "chunk_level_metrics": "not_computed_no_chunk_gold_available",
+        "retrieval_level": retrieval_evaluation["retrieval_level"],
+        "retrieval_relevance_definition": retrieval_evaluation["retrieval_relevance_definition"],
+        "retrieved_field": retrieval_evaluation["retrieved_field"],
+        "chunk_level_metrics_computed": retrieval_evaluation["chunk_level_metrics_computed"],
+        "chunk_level_metrics_reason": retrieval_evaluation["chunk_level_metrics_reason"],
+        "chunk_level_metrics": "not_computed_no_chunk_gold_available"
+        if not retrieval_evaluation["chunk_level_metrics_computed"]
+        else "computed",
+        "chunk_level_ground_truth": None if chunk_ground_truth is None else {
+            "path": str(chunk_ground_truth.path),
+            "question_count": chunk_ground_truth.question_count,
+            "gold_chunk_count": chunk_ground_truth.gold_chunk_count,
+            "unique_gold_chunk_count": chunk_ground_truth.unique_gold_chunk_count,
+            "chunk_config_ids": sorted(chunk_ground_truth.chunk_config_ids),
+            "package_status": chunk_validation.get("annotation_package_status"),
+        },
+        "chunk_level_validation": chunk_validation,
+        "retrieval_evaluation": retrieval_evaluation,
+        "metric_display_labels": retrieval_evaluation.get("metric_display_labels", {}),
+        "source_identifier_normalization": input_diagnostics.get("source_identifier_normalization"),
+        "source_document_basename_collisions": input_diagnostics.get("source_document_basename_collisions"),
         "generation_failure_threshold": {
             "max_generation_failure_rate": cfg.evaluation.max_generation_failure_rate,
             "strict_failure_threshold": cfg.evaluation.strict_failure_threshold,
@@ -1751,8 +2462,23 @@ def _eval_manifest(
             ),
         },
         "metrics_used": [
-            *[name for k in ks for name in (f"hit_at_{k}", f"recall_at_{k}", f"mrr_at_{k}", f"context_precision_at_{k}")],
-            *[f"ndcg_at_{k}" for k in ks],
+            *[
+                name
+                for k in ks
+                for name in (f"hit_at_{k}", f"recall_at_{k}", f"mrr_at_{k}", f"context_precision_at_{k}", f"ndcg_at_{k}")
+                if _document_retrieval_enabled(cfg)
+            ],
+            *[
+                name
+                for k in ks
+                for name in (
+                    f"chunk_hit_at_{k}",
+                    f"chunk_recall_at_{k}",
+                    f"chunk_mrr_at_{k}",
+                    f"chunk_ndcg_at_{k}",
+                )
+                if _chunk_retrieval_enabled(cfg)
+            ],
             "duplicate_context_rate",
             "raw_duplicate_rate",
             "duplicate_document_rate",

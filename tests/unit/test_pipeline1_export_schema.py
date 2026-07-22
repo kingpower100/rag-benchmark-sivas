@@ -169,6 +169,8 @@ def test_export_record_pipeline2_compat_fields_present():
         "experiment_id",
         "generated_answer",
         "llm_model",
+        "retrieved_chunk_ids",
+        "raw_retrieved_chunk_ids",
         "retrieved_original_context_ids",
         "retrieved_file_names",
         "raw_retrieved_file_names",

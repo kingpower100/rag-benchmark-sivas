@@ -135,3 +135,21 @@ def test_summary_tracks_unknown_count_and_rate():
 
     assert summary["unknown_count"] == 2
     assert summary["unknown_rate"] == 0.5
+
+
+def test_summary_preserves_explicit_document_denominators_when_attached():
+    rows = [{"experiment_id": "exp", "hit_at_5": 1.0, "evaluation_errors": [], "pipeline1_error": None}]
+
+    summary = summarize_by_experiment(rows)[0]
+    summary.update(
+        {
+            "document_enabled": True,
+            "document_evaluated_questions": 1,
+            "document_skipped_questions": 0,
+            "document_missing_annotations": 0,
+        }
+    )
+
+    assert summary["document_evaluated_questions"] == 1
+    assert summary["document_skipped_questions"] == 0
+    assert summary["document_missing_annotations"] == 0

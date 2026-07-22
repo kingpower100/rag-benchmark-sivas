@@ -44,6 +44,52 @@ Pipeline 2 reads `questions_fixed.jsonl` only for three-way ID alignment validat
 
 For category-aware retrieval, global fallback is controlled only by `retrieval.fallback_to_global`. When it is `true`, invalid categories or insufficient category-scoped results may fall back to global retrieval. When it is `false`, no global retrieval is allowed for category-aware routing; the run records the disabled-fallback reason in retrieval diagnostics.
 
+### Retrieval Evaluation Granularity
+
+Pipeline 2 supports two independent retrieval evaluation levels.
+
+Document-level relevance uses the original SIVAS source-document annotations. Each retrieved chunk is mapped to its source-document identifier and matched against the gold-relevant source documents. Therefore, document Hit@k, Recall@k, MRR@k, nDCG@k and Precision@k measure source-document discovery and ranking, not exact answer-passage localization.
+
+Document Hit@k is the proportion of questions for which at least one of the top-k retrieved chunks originates from a gold-relevant source document. A document-level hit does not guarantee that the retrieved chunk contains the exact answer evidence.
+
+Chunk-level relevance uses human-validated evidence-bearing production chunk IDs. The chunk annotations are derived from canonical evidence spans, but the generated chunk labels are specific to one production chunking configuration. Do not reuse a chunk annotation package for a different chunking strategy, chunk size, overlap, tokenizer, or boundary policy. Chunk-level evaluation compares `retrieved_chunk_ids` from Pipeline 1 against `gold_relevant_chunk_ids` from the configured annotation JSONL.
+
+The original SIVAS raw dataset remains unchanged. The chunk-level benchmark is a derived, human-validated extension under `data/ground_truth/chunk_level/`.
+
+Official Pipeline 2 configurations must enable chunk-level retrieval evaluation with
+`missing_question_policy: error`. The currently supported official annotation
+packages are:
+
+- `B00_sivas_character2048_overlap0`
+- `E00-G_sentence512_overlap200`
+- `C01_sentence256_overlap100`
+- `C02_sentence1024_overlap400`
+- `E91-E98_fixed512_overlap64`
+
+Pipeline 2 treats detectable annotation-package incompatibility as a hard failure.
+Regenerate derived packages only from canonical evidence spans:
+
+```bash
+python scripts/build_chunk_annotation_packages.py
+```
+
+This command is data preparation, not a benchmark dry run.
+
+Document-level and chunk-level evaluation can be enabled independently:
+
+```yaml
+retrieval_evaluation:
+  document_level:
+    enabled: true
+
+  chunk_level:
+    enabled: true
+    ground_truth_path: data/ground_truth/chunk_level/E00-G_sentence512_overlap200/gold_chunk_annotations_E00-G_sentence512_overlap200.jsonl
+    missing_question_policy: error
+```
+
+Identifier normalization currently compares source-document basenames case-insensitively after whitespace normalization and maps known chunk suffixes such as `.md_chunk_17` back to `.md`. This preserves existing official behavior, but duplicate basenames across different full paths are reported in evaluation manifests because future evidence-level evaluation should use full paths or stable document IDs.
+
 ### Sentence Chunking
 
 Sentence chunking preserves sentence boundaries wherever possible. Official configs must state both `chunk_size_unit` and `chunk_overlap_unit`; do not describe a setting such as `512/200` without the units. Supported units are `tokens`, `words`, `sentences`, and `characters`. Token units use the configured `tokenizer_name` as a tiktoken encoding. A single sentence larger than the configured chunk size is emitted as one oversized sentence chunk so the chunker always makes forward progress.
@@ -104,6 +150,7 @@ Key Pipeline 2 settings:
 - Reads: `data/runs/pipeline1/91_sivas_fixed512_faiss_dense_mistralsmall_prompt_v0/results.jsonl`
 - Ground truth: `data/raw/qa_ground_truth_fixed.jsonl`
 - Retrieval eval field: `retrieved_file_names`
+- Retrieval evaluation: document level enabled by default; chunk level disabled unless `retrieval_evaluation.chunk_level.enabled: true`
 - Metrics at k: 1, 3, 5
 - Output: `data/eval/runs/pipeline2/91_sivas_fixed512_faiss_dense_mistralsmall_prompt_v0_eval/`
 
@@ -168,10 +215,10 @@ Recommended workflow on a GPU server that already has the correct torch/CUDA sta
 
 ```bash
 # Install project without pulling its own torch
-pip install -e . --no-deps
+python -m pip install -e . --no-deps
 
 # Install remaining project dependencies (torch is not in the lock file)
-pip install -r requirements-lock.txt
+python -m pip install -r requirements-lock.txt -c constraints.txt
 ```
 
 If you are setting up a fresh environment that does not yet have torch, install the
@@ -179,11 +226,11 @@ CUDA-compatible wheel **before** the project dependencies:
 
 ```bash
 # Example for CUDA 12.8 (adjust the index URL to match the server's CUDA version)
-pip install torch --index-url https://download.pytorch.org/whl/cu128
+python -m pip install torch --index-url https://download.pytorch.org/whl/cu128
 
 # Then install the project
-pip install -r requirements-lock.txt
-pip install --no-deps -e .
+python -m pip install -r requirements-lock.txt -c constraints.txt
+python -m pip install --no-deps -e .
 ```
 
 Check https://pytorch.org/get-started/locally/ for the correct index URL for your
@@ -201,19 +248,19 @@ python3.11 -m venv .venv
 source .venv/bin/activate
 
 # Upgrade pip
-pip install --upgrade pip
+python -m pip install --upgrade pip
 
 # Install torch first (without project pulling it in)
 # On a GPU server: torch is already present — skip this step.
 # On CPU / CI: the sentence-transformers and bert-score packages will pull
 # in a compatible CPU torch automatically via their own dependencies.
-pip install -r requirements-lock.txt
+python -m pip install -r requirements-lock.txt -c constraints.txt
 
 # Install project in editable mode (makes src/ importable)
-pip install --no-deps -e .
+python -m pip install --no-deps -e .
 
 # Verify
-python -c "import faiss; import sentence_transformers; print('Dependencies OK')"
+python scripts/check_benchmark_environment.py
 ```
 
 ### Full dependency list (from requirements-lock.txt)
@@ -441,7 +488,10 @@ Ollama must be running on the **host** machine. The container reaches it via `ht
 
 **Fix:**
 ```bash
-pip install "numpy==1.26.4"
+python -m pip uninstall -y numpy faiss-cpu faiss-gpu
+python -m pip install --no-cache-dir -r requirements-lock.txt -c constraints.txt
+python -m pip check
+python scripts/check_benchmark_environment.py
 ```
 
 ### `ConnectionRefusedError` or `Ollama not reachable`

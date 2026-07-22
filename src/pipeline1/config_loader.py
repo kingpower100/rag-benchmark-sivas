@@ -3,7 +3,13 @@ from __future__ import annotations
 from pathlib import Path
 from typing import Any
 
-import yaml
+from src.config_utils import (
+    deep_merge,
+    is_official_config_path,
+    load_yaml_mapping,
+    official_config_files,
+    validate_unique_values,
+)
 
 
 def load_pipeline_config_payload(config_path: str, validate_unique_experiment_id: bool = True) -> dict[str, Any]:
@@ -15,31 +21,19 @@ def load_pipeline_config_payload(config_path: str, validate_unique_experiment_id
     if validate_unique_experiment_id:
         _validate_experiment_id_matches_config_name(config_file, payload)
         _validate_unique_experiment_id(config_file, payload)
+        _validate_official_experiment_ids(config_file)
     return payload
 
 
 def _load_with_extends(config_file: Path) -> dict[str, Any]:
-    with config_file.open("r", encoding="utf-8") as f:
-        raw = yaml.safe_load(f) or {}
-    if not isinstance(raw, dict):
-        raise ValueError(f"Config file must be a YAML mapping: {config_file}")
+    raw = load_yaml_mapping(config_file)
     extends = raw.pop("extends", None)
     if extends is None:
         return raw
     parent_file = (config_file.parent / str(extends)).resolve()
     if not parent_file.exists():
         raise ValueError(f"Parent config not found for extends='{extends}': {parent_file}")
-    return _deep_merge(_load_with_extends(parent_file), raw)
-
-
-def _deep_merge(base: dict[str, Any], override: dict[str, Any]) -> dict[str, Any]:
-    merged = dict(base)
-    for key, value in override.items():
-        if key in merged and isinstance(merged[key], dict) and isinstance(value, dict):
-            merged[key] = _deep_merge(merged[key], value)
-        else:
-            merged[key] = value
-    return merged
+    return deep_merge(_load_with_extends(parent_file), raw)
 
 
 def _normalize_documents_config(payload: dict[str, Any]) -> dict[str, Any]:
@@ -126,3 +120,15 @@ def _validate_experiment_id_matches_config_name(config_file: Path, payload: dict
         raise ValueError(
             f"experiment.experiment_id '{experiment_id}' must match config filename stem '{config_file.stem}'"
         )
+
+
+def _validate_official_experiment_ids(config_file: Path) -> None:
+    if not is_official_config_path(config_file):
+        return
+    values: list[tuple[str, Path]] = []
+    for candidate in official_config_files("pipeline1"):
+        payload = _load_with_extends(candidate.resolve())
+        exp = payload.get("experiment") if isinstance(payload, dict) else None
+        if isinstance(exp, dict):
+            values.append((str(exp.get("experiment_id") or ""), candidate))
+    validate_unique_values("Pipeline 1 experiment_id", values)

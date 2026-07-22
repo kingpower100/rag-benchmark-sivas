@@ -15,7 +15,7 @@ RUN apt-get update \
 
 RUN mkdir -p /models/huggingface /models/sentence-transformers /app/logs
 
-COPY pyproject.toml README.md requirements-lock.txt ./
+COPY pyproject.toml README.md requirements-lock.txt constraints.txt ./
 COPY src ./src
 COPY configs ./configs
 RUN python3.11 -m pip install --upgrade pip \

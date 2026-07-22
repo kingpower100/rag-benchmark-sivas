@@ -1,7 +1,7 @@
 import pytest
 
 from src.pipeline1.generation.base import GenerationResult
-from src.pipeline1.orchestration.parser import parse_orchestration_response
+from src.pipeline1.orchestration.parser import parse_orchestration_response, validate_category
 from src.pipeline1.orchestration.prompt import build_orchestration_prompt
 from src.pipeline1.schemas.chunk import ChunkRecord
 from src.pipeline1.schemas.config_schema import PipelineConfig
@@ -99,6 +99,14 @@ def test_orchestration_parser_does_not_require_category_confidence():
     }
 
 
+def test_validate_category_returns_canonical_category_after_normalization():
+    category, valid, reason = validate_category("  einkauf  ", ["Technik", "Einkauf"])
+
+    assert category == "Einkauf"
+    assert valid is True
+    assert reason is None
+
+
 def test_orchestration_prompt_renders_optional_request_fields_as_null():
     prompt = build_orchestration_prompt("Q?", ["Einkauf"])
 
@@ -112,7 +120,7 @@ def test_orchestration_model_is_fixed_across_experiments():
     payload = _cfg_payload()
     payload["orchestration"] = {"model_name": "other-model", "fixed": True}
 
-    with pytest.raises(ValueError, match="Orchestration model is fixed"):
+    with pytest.raises(ValueError, match="Unsupported orchestration.model_name"):
         PipelineConfig.model_validate(payload)
 
 

@@ -1,0 +1,18 @@
+{
+  "chunk_config_id": "E91-E98_fixed512_overlap64",
+  "chunking": {
+    "chunk_overlap": 64,
+    "chunk_size": 512,
+    "strategy": "fixed_token",
+    "tokenizer_name": "cl100k_base"
+  },
+  "chunks_total": 1081,
+  "gold_evidence_spans": 799,
+  "mapped_evidence_spans": 799,
+  "mapping_policy": "any_overlap",
+  "questions": 96,
+  "raw_files_modified": false,
+  "total_question_gold_chunk_references": 1636,
+  "unique_gold_relevant_chunks": 632,
+  "unmapped_evidence_spans": 0
+}

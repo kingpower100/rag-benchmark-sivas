@@ -2,8 +2,18 @@ extends: "../base_eval.yaml"
 
 evaluation:
   eval_run_id: "B00_sivas_pgvector_reference_eval"
+  strict_failure_threshold: true
+  max_generation_failure_rate: 0.0
 
 inputs:
   pipeline1_results_path: "data/runs/pipeline1/B00_sivas_pgvector_reference/results.jsonl"
   rag_outputs:
     - "data/runs/pipeline1/B00_sivas_pgvector_reference/results.jsonl"
+
+retrieval_evaluation:
+  document_level:
+    enabled: true
+  chunk_level:
+    enabled: true
+    ground_truth_path: "data/ground_truth/chunk_level/B00_sivas_character2048_overlap0/gold_chunk_annotations_B00_sivas_character2048_overlap0.jsonl"
+    missing_question_policy: error

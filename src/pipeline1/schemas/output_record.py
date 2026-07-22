@@ -89,6 +89,7 @@ class OutputRecord(BaseModel):
     chunks_truncated: int | None = None
     chunks_dropped: int | None = None
     generation_context_texts: list[str] = Field(default_factory=list)
+    generation_context_ids: list[str] = Field(default_factory=list)
     parent_context_diagnostics: dict = Field(default_factory=dict)
     parent_context_enabled: bool = False
     error: Optional[str] = None
@@ -130,6 +131,11 @@ class OutputRecord(BaseModel):
             "retrieval_mode": self.retrieval_mode,
             "category_filter_applied": self.category_filter_applied,
             "category_fallback_used": self.category_fallback_used,
+            "validated_category": self.detected_category if self.category_validated else None,
+            "category_index_used": bool(self.retrieval_diagnostics.get("category_index_used", False)),
+            "retrieval_decision": self.retrieval_diagnostics.get("decision"),
+            "fallback_used": bool(self.retrieval_diagnostics.get("fallback_used", self.category_fallback_used)),
+            "fallback_reason": self.retrieval_diagnostics.get("fallback_reason"),
             "retrieved_chunks": retrieved_chunks,
             "answer": self.generated_answer,
             "config_id": self.experiment_id,
@@ -142,6 +148,8 @@ class OutputRecord(BaseModel):
             "experiment_id": self.experiment_id,
             "generated_answer": self.generated_answer,
             "llm_model": self.llm_model,
+            "retrieved_chunk_ids": self.retrieved_chunk_ids,
+            "raw_retrieved_chunk_ids": self.raw_retrieved_context_ids,
             "retrieved_original_context_ids": self.retrieved_original_context_ids,
             "raw_retrieved_original_context_ids": self.raw_retrieved_original_context_ids,
             "raw_retrieved_document_ids": self.raw_retrieved_document_ids,
@@ -149,10 +157,7 @@ class OutputRecord(BaseModel):
                 chunk_meta[i].get("doc_name") if i < len(chunk_meta) else None
                 for i in range(len(chunk_ids))
             ],
-            "raw_retrieved_file_names": [
-                chunk_meta[i].get("doc_name") if i < len(chunk_meta) else None
-                for i in range(len(chunk_ids))
-            ],
+            "raw_retrieved_file_names": self.raw_retrieved_file_names,
             "retrieved_chunk_metadata": self.retrieved_chunk_metadata,
             "query_metadata": self.query_metadata,
             "retrieval_diagnostics": self.retrieval_diagnostics,
@@ -177,6 +182,7 @@ class OutputRecord(BaseModel):
             "error": self.error,
             "orchestration_error": self.orchestration_error,
             "generation_context_texts": self.generation_context_texts,
+            "generation_context_ids": self.generation_context_ids,
             "parent_context_diagnostics": self.parent_context_diagnostics,
             "parent_context_enabled": self.parent_context_enabled,
         }
@@ -275,6 +281,10 @@ class OutputRecord(BaseModel):
             ):
                 if getattr(self, key) is None and key in self.prompt_stats:
                     setattr(self, key, self.prompt_stats[key])
+        if not self.generation_context_ids and self.generation_context_texts:
+            self.generation_context_ids = list(self.retrieved_chunk_ids[: len(self.generation_context_texts)])
+        if self.generation_context_ids and len(self.generation_context_ids) != len(self.generation_context_texts):
+            raise ValueError("generation_context_ids and generation_context_texts must align")
         if self.retrieved_unique_count == 0:
             self.retrieved_unique_count = len(set(self.retrieved_chunk_ids))
         if self.raw_retrieved_unique_count == 0 and self.raw_retrieved_original_context_ids:

@@ -1,3 +1,4 @@
+-c constraints.txt
 pydantic==2.8.2
 pydantic-core==2.20.1
 pyyaml==6.0.2
@@ -10,12 +11,14 @@ safetensors==0.4.5
 faiss-cpu==1.8.0.post1
 numpy==1.26.4
 pandas==2.2.2
+pyarrow==16.1.0
 tqdm==4.66.5
 tiktoken==0.7.0
 requests==2.32.3
 elasticsearch==8.15.1
 psycopg2-binary==2.9.9
 pytest==8.3.3
+bert-score==0.3.13
 ragas==0.1.22
 datasets==2.21.0
 langchain-openai==0.1.25

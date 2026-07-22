@@ -227,6 +227,8 @@ class TestLeaderboardJson:
         assert "rqi_leaderboard" in data
         assert "comparison_groups" in data
         assert "ranking_mode" in data
+        assert data["metric_display_labels"]["recall_at_5"] == "Document Recall@5"
+        assert "document discovery" in data["retrieval_metric_note"]
 
 
 class TestComparisonReport:
@@ -247,3 +249,5 @@ class TestComparisonReport:
             text = out.read_text(encoding="utf-8")
         assert text.startswith("# Pipeline 4")
         assert "Retrieval Leaderboard" in text
+        assert "Document Recall@5" in text
+        assert "not exact answer-passage localization" in text

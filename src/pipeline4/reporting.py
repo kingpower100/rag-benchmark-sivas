@@ -400,6 +400,17 @@ def write_leaderboard_json(
 
     payload = {
         "ranking_mode": cfg.ranking_mode,
+        "metric_display_labels": {
+            "recall_at_5": "Document Recall@5",
+            "mrr_at_5": "Document MRR@5",
+            "ndcg_at_5": "Document nDCG@5",
+            "context_precision_at_5": "Document Precision@5",
+        },
+        "retrieval_metric_note": (
+            "Pipeline 2 official retrieval metrics are source-document-level metrics when "
+            "retrieval_eval_field is retrieved_file_names. They measure document discovery "
+            "and ranking, not exact answer-passage localization."
+        ),
         "retrieval_leaderboard": retrieval_entries,
         "rqi_leaderboard": rqi_entries,
         "comparison_groups": groups_data,
@@ -508,6 +519,12 @@ def write_comparison_report(
     lines.append("")
     w = cfg.retrieval_score_weights
     lines.append(
+        "Pipeline 2 official retrieval metrics are source-document-level metrics when "
+        "`retrieval_eval_field` is `retrieved_file_names`; they measure document discovery "
+        "and ranking, not exact answer-passage localization."
+    )
+    lines.append("")
+    lines.append(
         f"| Component | Weight | Formula |"
     )
     lines.append("|-----------|--------|---------|")
@@ -544,7 +561,7 @@ def write_comparison_report(
     ranked_ret.sort(key=lambda r: (r.retrieval_rank, r.experiment_id))
     if ranked_ret:
         lines.append(
-            "| Rank | Experiment | Retrieval Score | Recall@5 | MRR@5 | NDCG@5 | CP@5 | Unknown Rate |"
+            "| Rank | Experiment | Retrieval Score | Document Recall@5 | Document MRR@5 | Document nDCG@5 | Document Precision@5 | Unknown Rate |"
         )
         lines.append("|------|-----------|----------------|----------|-------|--------|------|-------------|")
         for r in ranked_ret:

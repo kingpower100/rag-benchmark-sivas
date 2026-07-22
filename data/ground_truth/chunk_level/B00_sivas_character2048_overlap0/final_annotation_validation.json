@@ -1,0 +1,14 @@
+{
+  "chunk_config_id": "B00_sivas_character2048_overlap0",
+  "chunk_count": 854,
+  "dataset_status": "PASS",
+  "document_hash_mismatches": 0,
+  "documents": 65,
+  "expected_questions": 96,
+  "gold_evidence_spans": 799,
+  "mapped_evidence_spans": 799,
+  "questions": 96,
+  "raw_files_modified": false,
+  "unmapped_records": 0,
+  "validation_checks_failed": 0
+}

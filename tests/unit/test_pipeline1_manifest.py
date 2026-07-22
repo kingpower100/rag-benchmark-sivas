@@ -2,6 +2,7 @@ import json
 from pathlib import Path
 
 import numpy as np
+import pytest
 
 from src.pipeline1.generation.base import GenerationResult
 from src.pipeline1.orchestrator import run_pipeline
@@ -85,6 +86,7 @@ embedding:
 index:
   type: "faiss"
   metric: "cosine"
+  dense_dim: 2
 retrieval:
   retriever_type: "dense"
   top_k: 1
@@ -188,6 +190,7 @@ embedding:
 index:
   type: "faiss"
   metric: "cosine"
+  dense_dim: 2
 retrieval:
   retriever_type: "dense"
   top_k: 1
@@ -224,3 +227,92 @@ runtime:
     assert manifest["document_input"]["folder_path"] == str(transformed_dir)
     assert manifest["document_input"]["txt_files_loaded"] == 2
     assert manifest["run_stats"]["n_documents"] == 2
+
+
+def test_official_pipeline1_question_failure_marks_run_fail(tmp_path, monkeypatch):
+    project_root = tmp_path
+    data_dir = project_root / "data" / "raw"
+    data_dir.mkdir(parents=True)
+    (data_dir / "kb_documents_fixed.jsonl").write_text(
+        '{"doc_key":"doc-1","doc_name":"sivas_1.md","text":"alpha","kategorie":"ERP"}\n',
+        encoding="utf-8",
+    )
+    (data_dir / "questions_fixed.jsonl").write_text('{"question_id":"q1","frage":"Q?"}\n', encoding="utf-8")
+    cfg_dir = project_root / "configs" / "pipeline1" / "final_experiments"
+    cfg_dir.mkdir(parents=True)
+    cfg_path = cfg_dir / "official_synthetic_failure.yaml"
+    cfg_path.write_text(
+        """
+experiment:
+  experiment_id: "official_synthetic_failure"
+  random_seed: 42
+  output_dir: "runs"
+data:
+  dataset_schema: "sivas"
+  documents_path: "data/raw/kb_documents_fixed.jsonl"
+  questions_path: "data/raw/questions_fixed.jsonl"
+  question_id_field: "question_id"
+  question_field: "frage"
+  document_text_field: "text"
+  allow_document_text_fallback: false
+  allow_unsafe_query_fields: false
+chunking:
+  strategy: "fixed_word"
+  chunk_size: 10
+  chunk_overlap: 0
+  allow_word_fallback: false
+embedding:
+  provider: "sentence_transformers"
+  model_name: "fake"
+  normalize_embeddings: true
+  batch_size: 2
+  device: "cpu"
+index:
+  type: "faiss"
+  metric: "cosine"
+  dense_dim: 2
+retrieval:
+  retriever_type: "dense"
+  top_k: 1
+  fetch_k: 1
+reranker:
+  enabled: false
+generation:
+  provider: "ollama"
+  model_name: "fake"
+  base_url: "http://localhost:11434"
+  temperature: 0.0
+  max_tokens: 8
+  timeout_s: 10
+  system_prompt: "Use context."
+telemetry:
+  estimate_cost: false
+runtime:
+  save_csv: false
+  log_level: "INFO"
+  resume: false
+  overwrite: true
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("PIPELINE1_SKIP_OLLAMA_PREFLIGHT", "1")
+    monkeypatch.setattr("src.pipeline1.orchestrator._project_root", lambda: project_root)
+    monkeypatch.setattr("src.pipeline1.orchestrator.build_embedder", lambda config: _FakeEmbedder())
+    monkeypatch.setattr("src.pipeline1.orchestrator.build_index", lambda config: _FakeIndex())
+    monkeypatch.setattr("src.pipeline1.orchestrator.build_generator", lambda config: _FakeGenerator())
+
+    def _fail_retrieval(self, stage_input):
+        raise RuntimeError("synthetic retrieval failure")
+
+    monkeypatch.setattr("src.pipeline1.orchestrator.RetrievalStage.run", _fail_retrieval)
+
+    with pytest.raises(RuntimeError, match="Official Pipeline 1 run failed"):
+        run_pipeline(str(cfg_path))
+
+    manifest = json.loads(
+        (project_root / "runs" / "official_synthetic_failure" / "run_manifest.json").read_text(encoding="utf-8")
+    )
+    assert manifest["run_status"] == "FAIL"
+    assert manifest["failed_questions"] == 1
+    assert manifest["run_stats"]["run_status"] == "FAIL"
+    assert manifest["run_stats"]["failed_questions"] == 1

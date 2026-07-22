@@ -1,0 +1,31 @@
+{
+  "chunk_config_id": "B00_sivas_character2048_overlap0",
+  "created_utc": "2026-07-20T23:14:56+00:00",
+  "files": [
+    {
+      "filename": "gold_chunk_annotations_B00_sivas_character2048_overlap0.jsonl",
+      "purpose": "Primary runtime ground-truth file for Pipeline 2 chunk-level retrieval evaluation.",
+      "sha256": "f7524fd7564b0964efeb690ba9f29d85f1ec84abf498c06057a913757666c67e"
+    },
+    {
+      "filename": "gold_span_chunk_mappings_B00_sivas_character2048_overlap0.jsonl",
+      "purpose": "Traceability artifact linking canonical evidence spans to production chunks.",
+      "sha256": "ca99491c7d9f4113a454305950eb202145aed9c4becdf15803579e321d4e5958"
+    },
+    {
+      "filename": "gold_evidence_spans.jsonl",
+      "purpose": "Copied canonical evidence-span provenance used to derive chunk-level labels.",
+      "sha256": "377c7d0b82162499da351870f8f3a0a082151db67a08f6dac9b1addf53980196"
+    },
+    {
+      "filename": "chunk_mapping_summary_B00_sivas_character2048_overlap0.json",
+      "purpose": "Chunk configuration and mapping summary.",
+      "sha256": "c5e0adc988cb89d3d803570b92a62d58e4114f07f4cb1edc02ff4392b315a919"
+    },
+    {
+      "filename": "final_annotation_validation.json",
+      "purpose": "Final validation report for the derived chunk annotation dataset.",
+      "sha256": "243fc5e46328514837c90a86689deef8ed6cfb5600e2401ab7cce65fe7a10177"
+    }
+  ]
+}

@@ -1,0 +1,31 @@
+{
+  "chunk_config_id": "C01_sentence256_overlap100",
+  "created_utc": "2026-07-20T23:14:59+00:00",
+  "files": [
+    {
+      "filename": "gold_chunk_annotations_C01_sentence256_overlap100.jsonl",
+      "purpose": "Primary runtime ground-truth file for Pipeline 2 chunk-level retrieval evaluation.",
+      "sha256": "5874be4f1ec5005ffa3b22aadb25aee284747bbfcbec22a99e0789b0514ab99c"
+    },
+    {
+      "filename": "gold_span_chunk_mappings_C01_sentence256_overlap100.jsonl",
+      "purpose": "Traceability artifact linking canonical evidence spans to production chunks.",
+      "sha256": "56f3625cda8e9c3264b2e370273bab41999eec591c3312e66074461c48a89bf9"
+    },
+    {
+      "filename": "gold_evidence_spans.jsonl",
+      "purpose": "Copied canonical evidence-span provenance used to derive chunk-level labels.",
+      "sha256": "377c7d0b82162499da351870f8f3a0a082151db67a08f6dac9b1addf53980196"
+    },
+    {
+      "filename": "chunk_mapping_summary_C01_sentence256_overlap100.json",
+      "purpose": "Chunk configuration and mapping summary.",
+      "sha256": "5398befe073beda19a52808ebfc14988524ade6a46d98667671186b0c5f5b8f4"
+    },
+    {
+      "filename": "final_annotation_validation.json",
+      "purpose": "Final validation report for the derived chunk annotation dataset.",
+      "sha256": "51d0b0eeb4ed58dc6b572057287ad3c84e646fc2f68a5d4f1a2bdfe2ef551b83"
+    }
+  ]
+}

@@ -24,6 +24,9 @@ def validate_inputs(
     rag_rows: list[dict[str, Any]],
     qa_rows: list[dict[str, Any]],
     questions_rows: list[dict[str, Any]],
+    *,
+    official_mode: bool = False,
+    pipeline1_manifests: list[dict[str, Any]] | None = None,
 ) -> ValidationReport:
     """Stage 2: Data integrity validation."""
     errors: list[str] = []
@@ -65,18 +68,63 @@ def validate_inputs(
         if not str(row.get("generated_answer", "")).strip()
     ]
     if missing_answers:
-        warnings.append(
-            f"Missing generated_answer for {len(missing_answers)} rows: "
-            f"{missing_answers[:5]}"
-        )
+        message = f"Missing generated_answer for {len(missing_answers)} rows: {missing_answers[:5]}"
+        if official_mode:
+            errors.append(message)
+        else:
+            warnings.append(message)
 
     missing_contexts = [
         _resolve_id(row) for row in rag_rows if not _extract_context_texts(row)
     ]
     if missing_contexts:
-        warnings.append(
-            f"Missing retrieved contexts for {len(missing_contexts)} rows: "
-            f"{missing_contexts[:5]}"
+        message = f"Missing retrieved contexts for {len(missing_contexts)} rows: {missing_contexts[:5]}"
+        if official_mode:
+            errors.append(message)
+        else:
+            warnings.append(message)
+
+    missing_retrieved_contexts = [
+        _resolve_id(row) for row in rag_rows if not _extract_retrieved_context_texts(row)
+    ]
+    if missing_retrieved_contexts:
+        message = (
+            f"Missing retrieved contexts for {len(missing_retrieved_contexts)} rows: "
+            f"{missing_retrieved_contexts[:5]}"
+        )
+        if official_mode:
+            errors.append(message)
+        elif not missing_contexts:
+            warnings.append(message)
+
+    missing_generation_contexts = [
+        _resolve_id(row) for row in rag_rows if not _extract_generation_context_texts(row)
+    ]
+    if missing_generation_contexts:
+        message = (
+            f"Missing generation contexts for {len(missing_generation_contexts)} rows: "
+            f"{missing_generation_contexts[:5]}"
+        )
+        if official_mode:
+            errors.append(message)
+        else:
+            warnings.append(message)
+
+    missing_questions = [
+        _resolve_id(row) for row in rag_rows if not _resolve_question_text(row)
+    ]
+    if missing_questions:
+        message = f"Missing question text for {len(missing_questions)} rows: {missing_questions[:5]}"
+        if official_mode:
+            errors.append(message)
+        else:
+            warnings.append(message)
+
+    failed_pipeline1_manifests = _failed_pipeline1_manifests(pipeline1_manifests or [])
+    if failed_pipeline1_manifests:
+        errors.append(
+            "Official Pipeline 3 rejects non-PASS Pipeline 1 manifest(s): "
+            f"{failed_pipeline1_manifests}"
         )
 
     empty_answers = [
@@ -88,6 +136,21 @@ def validate_inputs(
             f"{sorted(empty_answers)[:5]}"
         )
 
+    failed_row_ids = {
+        qid
+        for qid in missing_qids
+        + missing_qa
+        + missing_answers
+        + missing_contexts
+        + missing_retrieved_contexts
+        + missing_generation_contexts
+        + missing_questions
+        if qid
+    }
+    failed_rows = len(failed_row_ids) + len(missing_qids)
+    expected_rows = len(questions_rows)
+    valid_rows = max(0, len(rag_rows) - failed_rows)
+    run_status = "PASS" if failed_rows == 0 and len(errors) == 0 else "FAIL"
     passed = len(errors) == 0
     report = ValidationReport(
         passed=passed,
@@ -100,6 +163,13 @@ def validate_inputs(
             "rag_ids_with_qa": len(rag_ids_clean) - len(missing_qa),
             "missing_answers": len(missing_answers),
             "missing_contexts": len(missing_contexts),
+            "missing_retrieved_contexts": len(missing_retrieved_contexts),
+            "missing_generation_contexts": len(missing_generation_contexts),
+            "missing_questions": len(missing_questions),
+            "expected_rows": expected_rows,
+            "valid_rows": valid_rows,
+            "failed_rows": failed_rows,
+            "run_status": run_status,
         },
     )
 
@@ -157,6 +227,61 @@ def _extract_context_texts(row: dict[str, Any]) -> list[str]:
                 result.append(chunk)
         return result
     return []
+
+
+def _extract_generation_context_texts(row: dict[str, Any]) -> list[str]:
+    gen_texts = row.get("generation_context_texts")
+    if isinstance(gen_texts, list) and any(str(t).strip() for t in gen_texts):
+        return [str(t) for t in gen_texts if str(t).strip()]
+    return []
+
+
+def _extract_retrieved_context_texts(row: dict[str, Any]) -> list[str]:
+    texts = row.get("retrieved_context_texts") or row.get("retrieved_chunk_texts")
+    if isinstance(texts, list) and any(str(t).strip() for t in texts):
+        return [str(t) for t in texts if str(t).strip()]
+    chunks = row.get("retrieved_chunks")
+    if isinstance(chunks, list):
+        result = []
+        for chunk in chunks:
+            if isinstance(chunk, dict):
+                text = chunk.get("chunk_text") or chunk.get("text") or ""
+                if str(text).strip():
+                    result.append(str(text))
+            elif isinstance(chunk, str) and chunk.strip():
+                result.append(chunk)
+        return result
+    return []
+
+
+def _resolve_question_text(row: dict[str, Any]) -> str:
+    for key in ("question", "frage", "query", "question_text"):
+        value = row.get(key)
+        if value is not None and str(value).strip():
+            return str(value).strip()
+    return ""
+
+
+def _failed_pipeline1_manifests(manifests: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    failed: list[dict[str, Any]] = []
+    for index, manifest in enumerate(manifests):
+        run_stats = manifest.get("run_stats") if isinstance(manifest.get("run_stats"), dict) else {}
+        run_status = manifest.get("run_status") or run_stats.get("run_status")
+        failed_raw = manifest.get("failed_questions", run_stats.get("failed_questions", 0))
+        try:
+            failed_questions = int(failed_raw)
+        except (TypeError, ValueError):
+            failed_questions = -1
+        if run_status != "PASS" or failed_questions != 0:
+            failed.append(
+                {
+                    "index": index,
+                    "run_id": manifest.get("run_id"),
+                    "run_status": run_status,
+                    "failed_questions": failed_raw,
+                }
+            )
+    return failed
 
 
 def _resolve_qa_answer(row: dict[str, Any]) -> str:

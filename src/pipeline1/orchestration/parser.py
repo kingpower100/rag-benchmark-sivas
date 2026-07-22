@@ -45,4 +45,12 @@ def validate_category(value: str | None, categories: list[str]) -> tuple[str, bo
     by_exact = {category: category for category in categories}
     if raw_value in by_exact:
         return by_exact[raw_value], True, None
+    normalized_value = _normalize_category(raw_value)
+    by_normalized = {_normalize_category(category): category for category in categories}
+    if normalized_value in by_normalized:
+        return by_normalized[normalized_value], True, None
     return raw_value, False, "detected_category not found in KB category list"
+
+
+def _normalize_category(value: str) -> str:
+    return " ".join(str(value or "").strip().split()).casefold()

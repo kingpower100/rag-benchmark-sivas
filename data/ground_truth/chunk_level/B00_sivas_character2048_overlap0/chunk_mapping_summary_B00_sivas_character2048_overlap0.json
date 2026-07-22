@@ -1,0 +1,19 @@
+{
+  "chunk_config_id": "B00_sivas_character2048_overlap0",
+  "chunking": {
+    "chunk_overlap": 0,
+    "chunk_size": 2048,
+    "max_chunk_chars": 2048,
+    "strategy": "sivas_character",
+    "tokenizer_name": null
+  },
+  "chunks_total": 854,
+  "gold_evidence_spans": 799,
+  "mapped_evidence_spans": 799,
+  "mapping_policy": "any_overlap",
+  "questions": 96,
+  "raw_files_modified": false,
+  "total_question_gold_chunk_references": 1305,
+  "unique_gold_relevant_chunks": 508,
+  "unmapped_evidence_spans": 0
+}
