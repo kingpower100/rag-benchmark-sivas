@@ -9,6 +9,8 @@ Covers:
 """
 from __future__ import annotations
 
+import sys
+import types
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -32,6 +34,14 @@ def _make_cfg(**embedding_overrides):
     if embedding_overrides:
         base["embedding_similarity"] = embedding_overrides
     return EvalConfig.model_validate(base)
+
+
+def _install_fake_bert_score(monkeypatch, scorer):
+    mock_cls = MagicMock(return_value=scorer)
+    fake_module = types.ModuleType("bert_score")
+    fake_module.BERTScorer = mock_cls
+    monkeypatch.setitem(sys.modules, "bert_score", fake_module)
+    return mock_cls
 
 
 # ─── _validate_production_config ──────────────────────────────────────────────
@@ -70,43 +80,48 @@ def test_default_config_fails_validation_because_hash_is_default():
 
 # ─── OfficialBertScorer ───────────────────────────────────────────────────────
 
-def test_official_bert_scorer_uses_bert_score_library():
+def test_official_bert_scorer_uses_bert_score_library(monkeypatch):
     """OfficialBertScorer must delegate to bert_score.BERTScorer, not custom logic."""
     mock_bert_scorer = MagicMock()
     mock_bert_scorer.device = "cpu"
 
-    with patch("bert_score.BERTScorer", return_value=mock_bert_scorer) as MockCls:
-        scorer = OfficialBertScorer("bert-base-multilingual-cased", device="cpu")
-        MockCls.assert_called_once_with(
-            model_type="bert-base-multilingual-cased",
-            idf=False,
-            rescale_with_baseline=False,
-            device="cpu",
-        )
+    mock_cls = _install_fake_bert_score(monkeypatch, mock_bert_scorer)
+    scorer = OfficialBertScorer("bert-base-multilingual-cased", device="cpu")
+    mock_cls.assert_called_once_with(
+        model_type="bert-base-multilingual-cased",
+        idf=False,
+        rescale_with_baseline=False,
+        device="cpu",
+    )
     assert scorer._scorer is mock_bert_scorer
 
 
-def test_official_bert_scorer_model_name_is_multilingual():
-    with patch("bert_score.BERTScorer", return_value=MagicMock(device="cpu")):
-        scorer = OfficialBertScorer("bert-base-multilingual-cased", device="cpu")
+def test_official_bert_scorer_model_name_is_multilingual(monkeypatch):
+    _install_fake_bert_score(monkeypatch, MagicMock(device="cpu"))
+    scorer = OfficialBertScorer("bert-base-multilingual-cased", device="cpu")
     assert "multilingual" in scorer.model_name.lower()
 
 
-def test_official_bert_scorer_returns_official_bertscore_keys():
+def test_official_bert_scorer_returns_official_bertscore_keys(monkeypatch):
     """score() must return official_bertscore_* keys; custom_bertscore_* must not appear."""
-    import torch
+    class FakeTensor:
+        def __init__(self, values):
+            self.values = values
+
+        def __getitem__(self, index):
+            return self.values[index]
 
     mock_bert_scorer = MagicMock()
     mock_bert_scorer.device = "cpu"
     mock_bert_scorer.score.return_value = (
-        torch.tensor([0.9]),
-        torch.tensor([0.85]),
-        torch.tensor([0.875]),
+        FakeTensor([0.9]),
+        FakeTensor([0.85]),
+        FakeTensor([0.875]),
     )
 
-    with patch("bert_score.BERTScorer", return_value=mock_bert_scorer):
-        scorer = OfficialBertScorer("bert-base-multilingual-cased", device="cpu")
-        result = scorer.score("generated answer", "reference answer")
+    _install_fake_bert_score(monkeypatch, mock_bert_scorer)
+    scorer = OfficialBertScorer("bert-base-multilingual-cased", device="cpu")
+    result = scorer.score("generated answer", "reference answer")
 
     assert "official_bertscore_f1" in result
     assert "official_bertscore_precision" in result
@@ -115,14 +130,14 @@ def test_official_bert_scorer_returns_official_bertscore_keys():
     assert result["official_bertscore_f1"] == pytest.approx(0.875)
 
 
-def test_official_bert_scorer_empty_input_short_circuits_without_model_call():
+def test_official_bert_scorer_empty_input_short_circuits_without_model_call(monkeypatch):
     """Empty inputs must return zeros without calling BERTScorer.score."""
     mock_bert_scorer = MagicMock()
     mock_bert_scorer.device = "cpu"
 
-    with patch("bert_score.BERTScorer", return_value=mock_bert_scorer):
-        scorer = OfficialBertScorer("bert-base-multilingual-cased", device="cpu")
-        result = scorer.score("", "reference answer")
+    _install_fake_bert_score(monkeypatch, mock_bert_scorer)
+    scorer = OfficialBertScorer("bert-base-multilingual-cased", device="cpu")
+    result = scorer.score("", "reference answer")
 
     mock_bert_scorer.score.assert_not_called()
     assert result == {
@@ -132,23 +147,23 @@ def test_official_bert_scorer_empty_input_short_circuits_without_model_call():
     }
 
 
-def test_official_bert_scorer_idf_and_rescale_flags_are_forwarded():
+def test_official_bert_scorer_idf_and_rescale_flags_are_forwarded(monkeypatch):
     mock_bert_scorer = MagicMock()
     mock_bert_scorer.device = "cpu"
 
-    with patch("bert_score.BERTScorer", return_value=mock_bert_scorer) as MockCls:
-        OfficialBertScorer(
-            "bert-base-multilingual-cased",
-            device="cpu",
-            idf=True,
-            rescale_with_baseline=True,
-        )
-        MockCls.assert_called_once_with(
-            model_type="bert-base-multilingual-cased",
-            idf=True,
-            rescale_with_baseline=True,
-            device="cpu",
-        )
+    mock_cls = _install_fake_bert_score(monkeypatch, mock_bert_scorer)
+    OfficialBertScorer(
+        "bert-base-multilingual-cased",
+        device="cpu",
+        idf=True,
+        rescale_with_baseline=True,
+    )
+    mock_cls.assert_called_once_with(
+        model_type="bert-base-multilingual-cased",
+        idf=True,
+        rescale_with_baseline=True,
+        device="cpu",
+    )
 
 
 # ─── bert_score_model_metadata ────────────────────────────────────────────────

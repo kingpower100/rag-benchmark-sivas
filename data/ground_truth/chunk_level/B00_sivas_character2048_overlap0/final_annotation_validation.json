@@ -10,5 +10,34 @@
   "questions": 96,
   "raw_files_modified": false,
   "unmapped_records": 0,
-  "validation_checks_failed": 0
+  "validation_checks_passed": 8,
+  "validation_checks_failed": 0,
+  "failures": [],
+  "production_equivalence": {
+    "chunk_count_match": true,
+    "question_level_matches": 96,
+    "question_level_total": 96,
+    "missing_chunk_ids": 0,
+    "extra_chunk_ids": 0,
+    "offset_mismatches": 0,
+    "doc_id_mismatches": 0,
+    "verified": true
+  },
+  "canonical_hashes": {
+    "gold_evidence_spans_sha256": "377c7d0b82162499da351870f8f3a0a082151db67a08f6dac9b1addf53980196",
+    "kb_documents_sha256": "93aab98d4cc29641b5de2bae76891c5798d17e5763f35f1ab92f533258bdfa26"
+  },
+  "chunking_validity": {
+    "strategy": "sivas_character",
+    "size_unit": "characters",
+    "max_chunk_chars": 2048,
+    "chunk_overlap": 0,
+    "splitter_regex": "(?<=[.!?;:])\\s+|\\n\\n|\\n(?=#{1,6}\\s)|\\n(?=-\\s)",
+    "no_tokenizer": true
+  },
+  "mapping_validity": {
+    "mapping_policy": "any_overlap",
+    "min_overlap_chars": 1,
+    "primary_in_relevant_violations": 0
+  }
 }

@@ -1,31 +1,31 @@
-"""SIVAS-compatible character-based sentence chunker.
+"""SIVAS-compatible character-based chunker.
 
-Implements the exact partner production algorithm:
+Implements the documented SIVAS boundary accumulation behavior with
+offset-preserving source slicing:
 
-1. Split document text with the documented boundary regex.
-2. Iterate segments.
-3. Accumulate segments into the current chunk while the combined text
-   stays at or below max_chars (default 2048 characters).
-4. When a segment would exceed the limit, emit the current chunk and
-   start a new one with that segment.
-5. Emit the final (possibly short) chunk unconditionally.
-6. No overlap — each segment belongs to exactly one chunk.
+1. Locate boundaries with the documented regex using ``re.finditer``.
+2. Treat each logical segment plus its following boundary separator as one
+   source span.
+3. Accumulate contiguous source spans while the exact source substring length
+   stays at or below ``max_chars`` (default 2048 characters).
+4. When the next full source span would exceed the limit, emit the current
+   exact source substring and start the next chunk at the previous end offset.
+5. Emit the final source span unconditionally.
+6. No overlap; chunks are ordered, contiguous, and reconstruct the input text.
 7. All document metadata is forwarded to every chunk.
 
-The boundary regex is the exact SIVAS partner regex::
+Oversized indivisible source spans are kept as one chunk, are not truncated,
+and are marked in chunk metadata. A ``RuntimeWarning`` is emitted so diagnostics
+surface the policy while preserving source text exactly.
+
+The boundary regex is the exact requested SIVAS regex::
 
     (?<=[.!?;:])\\s+|\\n\\n|\\n(?=#{1,6}\\s)|\\n(?=-\\s)
-
-which fires at:
-
-- sentence boundaries after . ! ? ; :  (lookbehind + whitespace)
-- blank lines (paragraph breaks)       (double newline)
-- lines immediately before a Markdown heading
-- lines immediately before a Markdown bullet item (- )
 """
 from __future__ import annotations
 
 import re
+import warnings
 
 from src.pipeline1.chunking.base import BaseChunker
 from src.pipeline1.metadata import chunk_metadata
@@ -36,13 +36,11 @@ from src.pipeline1.utils.ids import make_configured_chunk_id_for_document
 SIVAS_BOUNDARY_RE = re.compile(
     r"(?<=[.!?;:])\s+|\n\n|\n(?=#{1,6}\s)|\n(?=-\s)"
 )
-SIVAS_CHARACTER_CHUNKER_VERSION = "sivas_character_v1"
+SIVAS_CHARACTER_CHUNKER_VERSION = "sivas_character_v2"
 
 
 class SivasCharacterChunker(BaseChunker):
-    """Chunks documents using the exact SIVAS partner boundary regex and a
-    character-count ceiling.  No overlap is applied.
-    """
+    """Chunk documents with exact source-text preservation and no overlap."""
 
     def __init__(self, max_chars: int = 2048) -> None:
         self.max_chars = max_chars
@@ -51,6 +49,7 @@ class SivasCharacterChunker(BaseChunker):
             "max_chars": max_chars,
             "splitter_regex": SIVAS_BOUNDARY_RE.pattern,
             "version": SIVAS_CHARACTER_CHUNKER_VERSION,
+            "oversized_chunk_policy": "warn_keep_whole",
         }
 
     def chunk_documents(
@@ -64,39 +63,67 @@ class SivasCharacterChunker(BaseChunker):
         return chunks
 
     def _chunk_document(self, doc: DocumentRecord) -> list[ChunkRecord]:
-        raw_segments = SIVAS_BOUNDARY_RE.split(doc.text or "")
-        segments = [s for s in raw_segments if s.strip()]
+        text = doc.text or ""
+        if text == "":
+            return []
 
         records: list[ChunkRecord] = []
-        current_parts: list[str] = []
-        current_chars: int = 0
+        current_start: int | None = None
+        current_end: int | None = None
 
-        for segment in segments:
-            if not current_parts:
-                current_parts.append(segment)
-                current_chars = len(segment)
-            else:
-                candidate_len = current_chars + 1 + len(segment)  # +1 for join sep
-                if candidate_len <= self.max_chars:
-                    current_parts.append(segment)
-                    current_chars = candidate_len
-                else:
-                    records.append(self._make_chunk(doc, len(records), current_parts))
-                    current_parts = [segment]
-                    current_chars = len(segment)
+        for span_start, span_end in self._source_spans(text):
+            if current_start is None:
+                current_start = span_start
+                current_end = span_end
+                continue
 
-        if current_parts:
-            records.append(self._make_chunk(doc, len(records), current_parts))
+            assert current_end is not None
+            if span_end - current_start <= self.max_chars:
+                current_end = span_end
+                continue
+
+            records.append(
+                self._make_chunk(doc, len(records), current_start, current_end)
+            )
+            current_start = current_end
+            current_end = span_end
+
+        if current_start is not None and current_end is not None:
+            records.append(self._make_chunk(doc, len(records), current_start, current_end))
 
         return records
+
+    @staticmethod
+    def _source_spans(text: str) -> list[tuple[int, int]]:
+        spans: list[tuple[int, int]] = []
+        start = 0
+        for match in SIVAS_BOUNDARY_RE.finditer(text):
+            end = match.end()
+            if end > start:
+                spans.append((start, end))
+            start = end
+        if start < len(text):
+            spans.append((start, len(text)))
+        return spans
 
     def _make_chunk(
         self,
         doc: DocumentRecord,
         chunk_index: int,
-        parts: list[str],
+        start_char: int,
+        end_char: int,
     ) -> ChunkRecord:
-        text = " ".join(parts).strip()
+        text = doc.text[start_char:end_char]
+        is_oversized = len(text) > self.max_chars
+        if is_oversized:
+            warnings.warn(
+                "sivas_character emitted an oversized indivisible source span "
+                f"for document_id={doc.document_id!r}, chunk_index={chunk_index}, "
+                f"length={len(text)}, max_chars={self.max_chars}.",
+                RuntimeWarning,
+                stacklevel=2,
+            )
+
         chunk_id = make_configured_chunk_id_for_document(
             doc.document_id,
             chunk_index,
@@ -109,8 +136,8 @@ class SivasCharacterChunker(BaseChunker):
             document_id=doc.document_id,
             original_context_id=doc.original_context_id,
             text=text,
-            chunk_start=chunk_index,
-            chunk_end=chunk_index + 1,
+            chunk_start=start_char,
+            chunk_end=end_char,
             metadata=chunk_metadata(
                 doc.metadata,
                 doc.document_id,
@@ -125,5 +152,11 @@ class SivasCharacterChunker(BaseChunker):
                     else None
                 ),
                 chunk_index=chunk_index,
+                start_char=start_char,
+                end_char=end_char,
+                max_chunk_chars=self.max_chars,
+                chunker_version=SIVAS_CHARACTER_CHUNKER_VERSION,
+                oversized_chunk=is_oversized,
+                oversized_chunk_policy="warn_keep_whole",
             ),
         )

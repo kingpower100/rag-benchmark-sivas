@@ -1,0 +1,23 @@
+
+pipeline3:
+  run_id: "contract"
+  output_dir: "C:/Users/Louay FG/Desktop/RAG BENCHM ERP11/rag_benchmark/.pytest_tmp/test_pipeline3_writes_expected0/pipeline3_outputs"
+  overwrite: true
+  save_csv: true
+  version: "1.0.0"
+  prompt_version: "v2"
+inputs:
+  pipeline1_results_path: "C:/Users/Louay FG/Desktop/RAG BENCHM ERP11/rag_benchmark/.pytest_tmp/test_pipeline3_writes_expected0/pipeline1_results.jsonl"
+  questions_path: "C:/Users/Louay FG/Desktop/RAG BENCHM ERP11/rag_benchmark/.pytest_tmp/test_pipeline3_writes_expected0/questions.jsonl"
+  qa_path: "C:/Users/Louay FG/Desktop/RAG BENCHM ERP11/rag_benchmark/.pytest_tmp/test_pipeline3_writes_expected0/qa.jsonl"
+  gold_contexts_path: "C:/Users/Louay FG/Desktop/RAG BENCHM ERP11/rag_benchmark/.pytest_tmp/test_pipeline3_writes_expected0/qa.jsonl"
+ragas:
+  enabled: true
+  fail_on_ragas_error: true
+  embeddings_device: "cuda"
+  require_cuda: true
+judge:
+  model: "qwen2.5:14b"
+  temperature: 0.0
+llm_judge:
+  enabled: true

@@ -63,6 +63,7 @@ reranker:
   device: "cuda"
 
 orchestration:
+  enabled: false
   provider: "ollama"
   fixed: true
   model_name: "llama3.1:8b"

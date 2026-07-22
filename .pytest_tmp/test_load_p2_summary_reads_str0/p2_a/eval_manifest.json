@@ -1,0 +1,1 @@
+{"final_verdict": "valid", "strict_audit_pass": true, "qa_hash": "qa", "gold_contexts_hash": "gold", "fake_run_detection": {"suspicious": false, "checks": []}, "row_counts": {"pipeline1_results": 96, "questions_rows": 96, "evaluated_rows": 96}}

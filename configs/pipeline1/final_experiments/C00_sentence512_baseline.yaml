@@ -5,3 +5,6 @@ extends: "E00-G_global_dense_baseline.yaml"
 
 experiment:
   experiment_id: "C00"
+
+orchestration:
+  enabled: false

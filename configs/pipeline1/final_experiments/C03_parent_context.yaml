@@ -8,6 +8,9 @@ extends: "C00_sentence512_baseline.yaml"
 experiment:
   experiment_id: "C03"
 
+orchestration:
+  enabled: false
+
 parent_context:
   enabled: true
   parent_unit: markdown_section

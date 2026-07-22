@@ -64,15 +64,16 @@ class RagasEvaluator:
             )
         )
 
-        try:
-            embeddings = self._build_embeddings()
-        except Exception as ex:
-            if self._cfg.require_cuda:
-                raise
-            logger.warning(
-                "Could not build RAGAS embeddings, AnswerRelevancy will be skipped: %s", ex
-            )
-            embeddings = None
+        embeddings = None
+        if self._cfg.metrics.answer_relevancy:
+            try:
+                embeddings = self._build_embeddings()
+            except Exception as ex:
+                if self._cfg.require_cuda:
+                    raise
+                logger.warning(
+                    "Could not build RAGAS embeddings, AnswerRelevancy will be skipped: %s", ex
+                )
 
         metrics = self._build_metrics(llm, embeddings)
         if not metrics:

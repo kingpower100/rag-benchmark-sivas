@@ -18,7 +18,9 @@ def run_preflight_checks(cfg, base_dir: Path | None = None) -> list[str]:
     docs_path = _resolve_path(base_dir, cfg.data.documents_path)
     questions_path = _resolve_path(base_dir, cfg.data.questions_path)
     errors.extend(_validate_documents_input(cfg, docs_path))
-    errors.extend(_validate_orchestration_prompt(cfg, base_dir))
+    orchestration_enabled = _orchestration_enabled(cfg)
+    if orchestration_enabled:
+        errors.extend(_validate_orchestration_prompt(cfg, base_dir))
     if not questions_path.exists() or not questions_path.is_file():
         errors.append(f"questions_path is missing or not a file: {questions_path}")
     elif questions_path.stat().st_size == 0:
@@ -70,15 +72,26 @@ def run_preflight_checks(cfg, base_dir: Path | None = None) -> list[str]:
         question_field = "frage" if cfg.data.dataset_schema == "sivas" else cfg.data.question_field
         errors.extend(_validate_questions_file(questions_path, cfg.data.question_id_field, question_field))
         errors.extend(_validate_safe_query_file(questions_path, cfg.data.allow_unsafe_query_fields))
-    if os.getenv("PIPELINE1_SKIP_OLLAMA_PREFLIGHT", "0") != "1":
-        base_url = os.getenv("OLLAMA_BASE_URL", cfg.generation.base_url).rstrip("/")
+    required_ollama_models = set()
+    if cfg.generation.provider == "ollama":
+        required_ollama_models.add(cfg.generation.model_name)
+    if orchestration_enabled and cfg.orchestration.provider == "ollama":
+        required_ollama_models.add(cfg.orchestration.model_name)
+    if required_ollama_models and os.getenv("PIPELINE1_SKIP_OLLAMA_PREFLIGHT", "0") != "1":
+        default_base_url = (
+            cfg.generation.base_url
+            if cfg.generation.provider == "ollama"
+            else cfg.orchestration.base_url
+        )
+        base_url = os.getenv("OLLAMA_BASE_URL", default_base_url).rstrip("/")
         cli_models = _ollama_list_models()
         try:
             response = requests.get(f"{base_url}/api/tags", timeout=min(cfg.generation.timeout_s, 10))
             response.raise_for_status()
             available_models = _ollama_model_names(response.json()) | cli_models
-            required_models = {cfg.generation.model_name, cfg.orchestration.model_name}
-            missing_models = sorted(model for model in required_models if not _ollama_model_available(model, available_models))
+            missing_models = sorted(
+                model for model in required_ollama_models if not _ollama_model_available(model, available_models)
+            )
             if missing_models:
                 available = ", ".join(sorted(available_models)) or "<none>"
                 errors.append(
@@ -89,6 +102,10 @@ def run_preflight_checks(cfg, base_dir: Path | None = None) -> list[str]:
         except requests.RequestException as ex:
             errors.append(f"Unable to reach Ollama at {base_url}/api/tags: {ex}")
     return errors
+
+
+def _orchestration_enabled(cfg) -> bool:
+    return bool(cfg.orchestration.enabled and cfg.retrieval.retriever_type == "category_aware_dense")
 
 
 def _validate_documents_input(cfg, docs_path: Path) -> list[str]:

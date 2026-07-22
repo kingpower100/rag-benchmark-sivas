@@ -1,20 +1,22 @@
 {
   "chunk_config_id": "C01_sentence256_overlap100",
-  "chunking": {
-    "chunk_overlap": 100,
-    "chunk_overlap_unit": "tokens",
-    "chunk_size": 256,
-    "chunk_size_unit": "tokens",
-    "strategy": "sentence",
-    "tokenizer_name": "cl100k_base"
-  },
-  "chunks_total": 3139,
-  "gold_evidence_spans": 799,
-  "mapped_evidence_spans": 799,
   "mapping_policy": "any_overlap",
-  "questions": 96,
-  "raw_files_modified": false,
-  "total_question_gold_chunk_references": 3534,
+  "gold_evidence_total": 799,
+  "gold_questions_total": 96,
+  "chunks_total": 3139,
+  "documents_with_chunks": 65,
+  "mapped_evidence": 799,
+  "unmapped_evidence": 0,
+  "evidence_mapped_to_one_chunk": 27,
+  "evidence_mapped_to_multiple_chunks": 772,
   "unique_gold_relevant_chunks": 1537,
-  "unmapped_evidence_spans": 0
+  "unique_primary_chunks": 381,
+  "mean_relevant_chunks_per_evidence": 4.7322,
+  "max_relevant_chunks_per_evidence": 10,
+  "minimum_overlap_chars": 1,
+  "minimum_evidence_coverage": 0.0,
+  "chunk_offsets_validated": true,
+  "gold_offsets_validated": true,
+  "raw_files_unchanged": true,
+  "gold_file_unchanged": true
 }

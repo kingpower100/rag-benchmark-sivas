@@ -125,6 +125,7 @@ class OutputRecord(BaseModel):
             "question_id": self.question_id,
             "question": self.question,
             "clean_question": self.cleaned_question,
+            "cleaned_question": self.cleaned_question,
             "detected_category": self.detected_category,
             "category_validated": self.category_validated,
             "category_validation_reason": self.category_validation_reason,

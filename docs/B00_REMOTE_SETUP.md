@@ -28,6 +28,14 @@ Orchestration and generation run against the local Ollama server (`http://localh
 
 ---
 
+## B00 chunk cache and pgvector invalidation
+
+`sivas_character_v2` preserves boundary separators and whitespace by slicing the original source text. This changes B00 chunk text and character offsets relative to the older normalized SIVAS implementation. Before using B00 after this change, delete or bypass old B00 chunk and embedding caches, rebuild B00 chunks, and rebuild the pgvector index/table rows. Existing pgvector rows generated from old B00 chunks must not be reused.
+
+The chunk cache key includes the SIVAS chunker implementation version. The pgvector manifest also records chunk content and offset fingerprints, so a stale collection with unchanged ordinal chunk IDs is rejected and rebuilt instead of being silently reused.
+
+---
+
 ## A. Local development workflow
 
 The following changes are already applied to the local repository:
@@ -36,10 +44,10 @@ The following changes are already applied to the local repository:
 
 | File | Purpose |
 |---|---|
-| `src/pipeline1/chunking/sivas_character_chunker.py` | Exact SIVAS partner regex chunker, 2048-char ceiling, no overlap |
+| `src/pipeline1/chunking/sivas_character_chunker.py` | Offset-preserving SIVAS regex chunker, 2048-char accumulation, no overlap |
 | `src/pipeline1/embedding/mistral_embedder.py` | Mistral Embed API provider (reads `MISTRAL_API_KEY` from env) |
 | `src/pipeline1/generation/mistral_generator.py` | Mistral Chat Completions provider (reads `MISTRAL_API_KEY` from env) |
-| `tests/unit/test_sivas_character_chunker.py` | 37 unit tests for the SIVAS chunker (all mocked, no network) |
+| `tests/unit/test_sivas_character_chunker.py` | Focused unit tests for exact SIVAS reconstruction, offsets, whitespace, overflow, Unicode, oversized spans, and cache invalidation |
 | `tests/unit/test_mistral_embedder.py` | 16 unit tests for the Mistral embedder (all mocked, no API calls) |
 | `configs/pipeline1/final_experiments/B00_sivas_pgvector_reference.yaml` | B00 Pipeline 1 config |
 | `configs/pipeline2/final_experiments/B00_sivas_pgvector_reference_eval.yaml` | B00 Pipeline 2 evaluation config |

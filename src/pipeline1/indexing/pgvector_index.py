@@ -160,6 +160,20 @@ class PgvectorIndex(BaseVectorIndex):
         payload = "\n".join(sorted(ids))
         return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
+    def _chunk_content_fingerprint(self) -> str:
+        payload = [
+            {
+                "chunk_id": str(chunk.chunk_id),
+                "document_id": getattr(chunk, "document_id", None),
+                "chunk_start": getattr(chunk, "chunk_start", None),
+                "chunk_end": getattr(chunk, "chunk_end", None),
+                "text": getattr(chunk, "text", ""),
+            }
+            for chunk in self._chunks
+        ]
+        data = json.dumps(payload, sort_keys=True, separators=(",", ":"), default=str)
+        return hashlib.sha256(data.encode("utf-8")).hexdigest()
+
     def _expected_identity(self, embeddings: np.ndarray) -> dict[str, Any]:
         observed_dim = int(embeddings.shape[1]) if len(embeddings.shape) > 1 else None
         base = dict(self._artifact_identity)
@@ -172,6 +186,7 @@ class PgvectorIndex(BaseVectorIndex):
                 "logical_index_name": self.logical_index_name,
                 "expected_chunk_count": len(self._chunks),
                 "chunk_id_fingerprint": self._chunk_id_fingerprint(),
+                "chunk_content_fingerprint": self._chunk_content_fingerprint(),
                 "embedding_dimension": observed_dim,
                 "configured_dense_dim": self.dense_dim,
                 "embedding_normalization": base.get("embedding_normalization"),
@@ -260,6 +275,7 @@ class PgvectorIndex(BaseVectorIndex):
             "chunk_store_fingerprint": "chunk_fingerprint_mismatch",
             "chunking_configuration_fingerprint": "chunk_fingerprint_mismatch",
             "chunk_id_fingerprint": "chunk_id_fingerprint_mismatch",
+            "chunk_content_fingerprint": "chunk_content_fingerprint_mismatch",
             "embedding_model_name": "embedding_model_mismatch",
             "embedding_dimension": "embedding_dimension_mismatch",
             "configured_dense_dim": "embedding_dimension_mismatch",

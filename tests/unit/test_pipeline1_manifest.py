@@ -128,6 +128,7 @@ runtime:
     assert manifest["config_hash"]
     assert manifest["machine"]["hostname"] is not None
     assert manifest["machine"]["python_version"]
+    assert manifest["machine"]["torch_probe_skipped"] is True
     assert manifest["data_hashes"]["documents_sha256"]
     assert manifest["resolved_config"]["experiment"]["experiment_id"] == "test_exp"
     assert manifest["models"]["embedding_model"] == "fake"

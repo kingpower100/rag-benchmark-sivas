@@ -1,0 +1,18 @@
+
+experiment: {experiment_id: x, output_dir: out}
+documents:
+  path: data/raw/transformed
+  source_type: txt_folder
+  text_field: cleaned_context
+  file_glob: "*.txt"
+  recursive: true
+data:
+  questions_path: data/raw/questions_fixed.jsonl
+chunking: {strategy: fixed_word, chunk_size: 10, chunk_overlap: 0}
+embedding: {provider: sentence_transformers, model_name: fake}
+index: {type: faiss}
+retrieval: {top_k: 1, fetch_k: 1}
+reranker: {enabled: false}
+generation: {provider: ollama, model_name: fake, system_prompt: s}
+telemetry: {}
+runtime: {}

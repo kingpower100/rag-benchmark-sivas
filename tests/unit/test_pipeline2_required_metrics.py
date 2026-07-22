@@ -244,7 +244,7 @@ embedding_similarity:
         assert csv_rows[0]["ndcg@1"] == "1.0"
         assert csv_rows[0]["embedding_similarity"] == ""
         assert csv_rows[0]["hashed_embedding_cosine_similarity"] != ""
-        assert csv_rows[0]["category_coverage"] == "0.0"
+        assert csv_rows[0]["category_coverage"] == ""
         assert csv_rows[0]["avg_latency"] == "6.0"
     finally:
         if workspace.exists():

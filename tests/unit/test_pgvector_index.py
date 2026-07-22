@@ -176,6 +176,26 @@ def test_pgvector_index_matching_count_different_chunk_ids_forces_rebuild():
     assert idx.last_health["rejection_reason"] == "chunk_id_fingerprint_mismatch"
 
 
+def test_pgvector_index_same_chunk_id_different_content_changes_fingerprint():
+    pool, _, _ = _mock_pool()
+    old_chunk = _chunk("stable-id")
+    old_chunk.text = "old text"
+    old_chunk.chunk_start = 0
+    old_chunk.chunk_end = 8
+    new_chunk = _chunk("stable-id")
+    new_chunk.text = "new text"
+    new_chunk.chunk_start = 0
+    new_chunk.chunk_end = 9
+    idx = PgvectorIndex(logical_index_name="logical", _pool=pool)
+
+    idx.set_chunks([old_chunk])
+    old_fingerprint = idx._chunk_content_fingerprint()
+    idx.set_chunks([new_chunk])
+    new_fingerprint = idx._chunk_content_fingerprint()
+
+    assert old_fingerprint != new_fingerprint
+
+
 @pytest.mark.parametrize(
     ("field", "value", "reason"),
     [

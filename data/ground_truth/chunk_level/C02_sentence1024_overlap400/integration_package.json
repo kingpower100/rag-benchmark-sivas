@@ -5,39 +5,31 @@
     {
       "filename": "gold_chunk_annotations_C02_sentence1024_overlap400.jsonl",
       "purpose": "Primary runtime ground-truth file for Pipeline 2 chunk-level retrieval evaluation.",
-      "sha256": "735e72ca8848444abf4c38e86a321e8bb7fbb324005d54fa8fca6c0a9eb608ea"
+      "sha256": "f586b6317368b56b9926f86e8fb3a74e7ba3a51588eee62bb48192643aa84948"
     },
     {
       "filename": "gold_span_chunk_mappings_C02_sentence1024_overlap400.jsonl",
-      "purpose": "Traceability artifact linking canonical evidence spans to production chunks.",
-      "sha256": "86110ceb583d37617e6500d60c66b5f07924214d03decb158a28d02a7e570b31"
-    },
-    {
-      "filename": "gold_evidence_spans.jsonl",
-      "purpose": "Copied canonical evidence-span provenance used to derive chunk-level labels.",
-      "sha256": "377c7d0b82162499da351870f8f3a0a082151db67a08f6dac9b1addf53980196"
+      "purpose": "Traceability and debugging artifact linking gold evidence spans to relevant chunks.",
+      "sha256": "ee8cd51290ce4de146ff9c283a93a4e20e307bfc56f957fadf7f9ac8516fd31b"
     },
     {
       "filename": "chunk_mapping_summary_C02_sentence1024_overlap400.json",
-      "purpose": "Chunk configuration and mapping summary.",
-      "sha256": "ecbf8ba5b99dca382aaa8b9e5c02eb40bbe6b7f94301df1d83e0397bb87daf84"
+      "purpose": "Chunk configuration and span-to-chunk mapping summary.",
+      "sha256": "619726e074cf95cbb54ccdc70c26e66febdd28f7671cc3954c299e03b772df5c"
     },
     {
       "filename": "final_annotation_validation.json",
-      "purpose": "Final validation report for the derived chunk annotation dataset.",
-      "sha256": "a0955f10ee936c0259c3cdb03663e52aa3266b1d2fb289303acec85e5d66b08e"
-    },
-    {
-      "filename": "final_annotation_manifest.json",
-      "purpose": "Integrity manifest for finalized derived artifacts.",
-      "sha256": "eb58a5c6d931db200770b0c5eb169799bc78fae1e826d79592d29e88436c5d44"
+      "purpose": "Final validation report confirming all spans are mapped.",
+      "sha256": "637a86633317c8453172dc24dcd1b8c1f97e5556ca74c000ba3652d817054846"
     }
   ],
+  "generated_at": "2026-07-22T11:51:13.362307+00:00",
   "gold_evidence_spans": 799,
   "mapped_evidence_spans": 799,
   "mapping_policy": "any_overlap",
   "package_name": "SIVAS chunk-level retrieval ground truth",
   "primary_runtime_file": "gold_chunk_annotations_C02_sentence1024_overlap400.jsonl",
   "questions": 96,
+  "source_gold_spans_file": "chunk_level_annotation\\annotations\\gold_evidence_spans.jsonl",
   "unmapped_evidence_spans": 0
 }

@@ -31,6 +31,7 @@ def main() -> None:
     from src.pipeline1.stages.chunking_stage import ChunkingStage
     from src.pipeline1.stages.embedding_stage import EmbeddingStage
     from src.pipeline1.stages.base import StageInput
+    from src.pipeline1.utils.hashing import file_sha256, stable_hash_dict
 
     cfg = PipelineConfig.from_yaml(args.config)
     if cfg.index.type != "pgvector":
@@ -62,6 +63,19 @@ def main() -> None:
     print("Building pgvector index (upsert)...")
     index = build_index(cfg.index)
     index.set_chunks(chunks)
+    if hasattr(index, "set_artifact_identity"):
+        index.set_artifact_identity(
+            {
+                "dataset_fingerprint": chunking_output.documents_fingerprint,
+                "source_document_fingerprint": chunking_output.documents_fingerprint,
+                "chunk_store_fingerprint": chunking_output.chunks_key,
+                "chunking_configuration_fingerprint": stable_hash_dict(cfg.chunking.model_dump()),
+                "embedding_model_name": cfg.embedding.model_name,
+                "embedding_normalization": cfg.embedding.normalize_embeddings,
+                "framework_config_hash": file_sha256(args.config),
+                "framework_code_version": "index_pgvector_script",
+            }
+        )
     index.build(embeddings)
     print("pgvector indexing complete.")
 

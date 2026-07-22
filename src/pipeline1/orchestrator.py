@@ -4,6 +4,7 @@ import json
 import os
 import platform
 import shutil
+import sys
 import time
 import subprocess
 from pathlib import Path
@@ -291,12 +292,17 @@ def run_pipeline(config_path: str) -> Path:
     pending_queries = [query for query in queries if query.question_id not in existing_ids]
 
     print("[8/11] Processing questions with incremental checkpointing")
-    orchestration_stage = OrchestrationStage(
-        cfg,
-        chunks,
-        event_writer=event_writer,
-        logger=logger,
-        generator_factory=build_generator,
+    orchestration_enabled = _orchestration_enabled(cfg)
+    orchestration_stage = (
+        OrchestrationStage(
+            cfg,
+            chunks,
+            event_writer=event_writer,
+            logger=logger,
+            generator_factory=build_generator,
+        )
+        if orchestration_enabled
+        else None
     )
 
     attempted = 0
@@ -315,8 +321,26 @@ def run_pipeline(config_path: str) -> Path:
             )
             attempted += 1
             try:
-                orchestration_output = orchestration_stage.run(StageInput({"queries": [query]}))
-                orchestrated_query = orchestration_output.queries[0]
+                if orchestration_stage is not None:
+                    orchestration_output = orchestration_stage.run(StageInput({"queries": [query]}))
+                    orchestrated_query = orchestration_output.queries[0]
+                else:
+                    orchestrated_query = _query_with_orchestration_disabled(query)
+                    event_writer.write(
+                        stage="orchestration",
+                        event_type=EventType.GENERATION_END,
+                        message="Question orchestration skipped.",
+                        question_id=query.question_id,
+                        metrics={"orchestration_enabled": False},
+                        diagnostics={
+                            "orchestration_status": "disabled",
+                            "cleaned_question": orchestrated_query.cleaned_question,
+                            "detected_category": None,
+                            "category_validated": False,
+                            "category_validation_reason": "orchestration_disabled",
+                            "error": None,
+                        },
+                    )
 
                 print(f"[9/11] Retrieving contexts for {row_index}/{len(pending_queries)}")
                 retrieval_output = RetrievalStage(
@@ -403,6 +427,7 @@ def run_pipeline(config_path: str) -> Path:
     processed_questions = completed_before_run + attempted
     run_status = "PASS" if failed_questions == 0 and processed_questions == expected_questions else "FAIL"
     performance_metrics = _performance_metrics(
+        cfg=cfg,
         run_dir=run_dir,
         chunk_count=len(chunks),
         embedding_duration_s=max(embedding_duration_s, 1e-9),
@@ -488,12 +513,10 @@ def run_pipeline(config_path: str) -> Path:
                 "reranker_model": cfg.reranker.model_name if cfg.reranker.enabled else None,
                 "generator_provider": cfg.generation.provider,
                 "generator_model": cfg.generation.model_name,
-                "orchestration_prompt_path": cfg.orchestration.prompt_path or DEFAULT_ORCHESTRATION_PROMPT_PATH,
-                "orchestration_prompt_version": cfg.orchestration.prompt_version or ORCHESTRATION_PROMPT_VERSION,
-                "orchestration_prompt_sha256": file_sha256(
-                    _resolve_orchestration_prompt_path(cfg.orchestration.prompt_path, project_root)
-                ),
+                **_orchestration_manifest_model_fields(cfg, project_root),
             },
+            "orchestration_enabled": orchestration_enabled,
+            "orchestration_status": "enabled" if orchestration_enabled else "disabled",
             "run_stats": {
                 "n_documents": len(docs),
                 "n_chunks": len(chunks),
@@ -690,38 +713,17 @@ def _log_run_info(
 
 
 def _print_cuda_startup_state(cfg: PipelineConfig) -> None:
-    try:
-        import torch
-
-        cuda_available = torch.cuda.is_available()
-        cuda_count = torch.cuda.device_count()
-        gpu_name = torch.cuda.get_device_name(0) if cuda_available and cuda_count > 0 else "<none>"
-        cuda_version = torch.version.cuda
-        pytorch_version = torch.__version__
-        vram_gb = (
-            round(torch.cuda.get_device_properties(0).total_memory / (1024**3), 2)
-            if cuda_available and cuda_count > 0
-            else 0
-        )
-        current_device = f"cuda:{torch.cuda.current_device()}" if cuda_available and cuda_count > 0 else "cpu"
-    except Exception as ex:
-        cuda_available = False
-        cuda_count = 0
-        gpu_name = f"<unavailable: {ex}>"
-        cuda_version = None
-        pytorch_version = None
-        vram_gb = 0
-        current_device = "cpu"
+    state = _torch_cuda_state(cfg)
 
     print(
         "[startup] "
-        f"torch_cuda_available={cuda_available} "
-        f"cuda_device_count={cuda_count} "
-        f"gpu_name={gpu_name} "
-        f"cuda_version={cuda_version} "
-        f"vram_gb={vram_gb} "
-        f"pytorch_version={pytorch_version} "
-        f"current_torch_device={current_device} "
+        f"torch_cuda_available={state['torch_cuda_available']} "
+        f"cuda_device_count={state['cuda_device_count']} "
+        f"gpu_name={state['gpu_name'] or '<none>'} "
+        f"cuda_version={state.get('cuda_version')} "
+        f"vram_gb={state.get('gpu_vram_gb', 0)} "
+        f"pytorch_version={state.get('pytorch_version')} "
+        f"current_torch_device={state['current_torch_device']} "
         f"embedding_requested_device={cfg.embedding.device} "
         f"embedding_require_cuda={cfg.embedding.require_cuda} "
         f"reranker_requested_device={cfg.reranker.device}"
@@ -861,6 +863,50 @@ def _resolve_orchestration_prompt_path(prompt_path: str | None, project_root: Pa
     return (Path(__file__).resolve().parents[2] / path).resolve()
 
 
+def _category_aware_retrieval_enabled(cfg: PipelineConfig) -> bool:
+    return cfg.retrieval.retriever_type == "category_aware_dense"
+
+
+def _orchestration_enabled(cfg: PipelineConfig) -> bool:
+    return bool(cfg.orchestration.enabled and _category_aware_retrieval_enabled(cfg))
+
+
+def _query_with_orchestration_disabled(query):
+    return query.model_copy(
+        update={
+            "cleaned_question": query.question,
+            "detected_category": None,
+            "category_validated": False,
+            "category_validation_reason": "orchestration_disabled",
+            "orchestration_error": None,
+        }
+    )
+
+
+def _orchestration_manifest_model_fields(cfg: PipelineConfig, project_root: Path) -> dict:
+    if not _orchestration_enabled(cfg):
+        return {
+            "orchestration_enabled": False,
+            "orchestration_status": "disabled",
+            "orchestration_model": None,
+            "orchestration_provider": None,
+            "orchestration_prompt_path": None,
+            "orchestration_prompt_version": None,
+            "orchestration_prompt_sha256": None,
+        }
+    return {
+        "orchestration_enabled": True,
+        "orchestration_status": "enabled",
+        "orchestration_model": cfg.orchestration.model_name,
+        "orchestration_provider": cfg.orchestration.provider,
+        "orchestration_prompt_path": cfg.orchestration.prompt_path or DEFAULT_ORCHESTRATION_PROMPT_PATH,
+        "orchestration_prompt_version": cfg.orchestration.prompt_version or ORCHESTRATION_PROMPT_VERSION,
+        "orchestration_prompt_sha256": file_sha256(
+            _resolve_orchestration_prompt_path(cfg.orchestration.prompt_path, project_root)
+        ),
+    }
+
+
 def _run_compatibility_payload(
     config_path: str,
     cfg: PipelineConfig,
@@ -878,6 +924,8 @@ def _run_compatibility_payload(
         "reranker": cfg.reranker.model_dump(mode="json"),
         "generation": cfg.generation.model_dump(),
         "orchestration": cfg.orchestration.model_dump(),
+        "orchestration_enabled": _orchestration_enabled(cfg),
+        "orchestration_status": "enabled" if _orchestration_enabled(cfg) else "disabled",
         "prompt_template_version": PROMPT_TEMPLATE_VERSION,
     }
 
@@ -1025,6 +1073,71 @@ def _git_commit(project_root: Path) -> str | None:
     return result.stdout.strip() or None
 
 
+def _torch_probe_requested(cfg: PipelineConfig) -> bool:
+    if "torch" in sys.modules:
+        return True
+    embedding_device = str(cfg.embedding.device)
+    reranker_device = str(cfg.reranker.device)
+    return (
+        cfg.embedding.require_cuda
+        or embedding_device.startswith("cuda")
+        or (cfg.reranker.enabled and reranker_device.startswith("cuda"))
+    )
+
+
+def _torch_cuda_state(cfg: PipelineConfig) -> dict:
+    if not _torch_probe_requested(cfg):
+        return {
+            "torch_cuda_available": False,
+            "cuda_device_count": 0,
+            "current_torch_device": "cpu",
+            "gpu_name": None,
+            "cuda_version": None,
+            "pytorch_version": None,
+            "gpu_vram_gb": 0,
+            "gpu_peak_vram_gb": None,
+            "torch_probe_skipped": True,
+        }
+
+    try:
+        import torch
+
+        cuda_available = torch.cuda.is_available()
+        cuda_count = torch.cuda.device_count()
+        return {
+            "torch_cuda_available": cuda_available,
+            "cuda_device_count": cuda_count,
+            "current_torch_device": f"cuda:{torch.cuda.current_device()}" if cuda_available and cuda_count > 0 else "cpu",
+            "gpu_name": torch.cuda.get_device_name(0) if cuda_available and cuda_count > 0 else None,
+            "cuda_version": torch.version.cuda,
+            "pytorch_version": torch.__version__,
+            "gpu_vram_gb": (
+                round(torch.cuda.get_device_properties(0).total_memory / (1024**3), 2)
+                if cuda_available and cuda_count > 0
+                else 0
+            ),
+            "gpu_peak_vram_gb": (
+                round(torch.cuda.max_memory_allocated(0) / (1024**3), 2)
+                if cuda_available and cuda_count > 0
+                else 0
+            ),
+            "torch_probe_skipped": False,
+        }
+    except Exception as ex:
+        return {
+            "torch_cuda_available": False,
+            "cuda_device_count": 0,
+            "current_torch_device": "unknown",
+            "gpu_name": None,
+            "cuda_version": None,
+            "pytorch_version": None,
+            "gpu_vram_gb": 0,
+            "gpu_peak_vram_gb": None,
+            "torch_error": str(ex),
+            "torch_probe_skipped": False,
+        }
+
+
 def _machine_info(cfg: PipelineConfig) -> dict:
     info = {
         "hostname": platform.node(),
@@ -1034,40 +1147,7 @@ def _machine_info(cfg: PipelineConfig) -> dict:
         "embedding_requested_device": cfg.embedding.device,
         "reranker_requested_device": cfg.reranker.device,
     }
-    try:
-        import torch
-
-        cuda_available = torch.cuda.is_available()
-        info.update(
-            {
-                "torch_cuda_available": cuda_available,
-                "cuda_device_count": torch.cuda.device_count(),
-                "current_torch_device": f"cuda:{torch.cuda.current_device()}" if cuda_available else "cpu",
-                "gpu_name": torch.cuda.get_device_name(0) if cuda_available and torch.cuda.device_count() > 0 else None,
-                "cuda_version": torch.version.cuda,
-                "pytorch_version": torch.__version__,
-                "gpu_vram_gb": (
-                    round(torch.cuda.get_device_properties(0).total_memory / (1024**3), 2)
-                    if cuda_available and torch.cuda.device_count() > 0
-                    else 0
-                ),
-                "gpu_peak_vram_gb": (
-                    round(torch.cuda.max_memory_allocated(0) / (1024**3), 2)
-                    if cuda_available and torch.cuda.device_count() > 0
-                    else 0
-                ),
-            }
-        )
-    except Exception as ex:
-        info.update(
-            {
-                "torch_cuda_available": False,
-                "cuda_device_count": 0,
-                "current_torch_device": "unknown",
-                "gpu_name": None,
-                "torch_error": str(ex),
-            }
-        )
+    info.update(_torch_cuda_state(cfg))
     return info
 
 
@@ -1165,6 +1245,7 @@ def _fallback_error_record(cfg: PipelineConfig, query, error: str) -> OutputReco
 
 
 def _performance_metrics(
+    cfg: PipelineConfig,
     run_dir: Path,
     chunk_count: int,
     embedding_duration_s: float,
@@ -1174,14 +1255,7 @@ def _performance_metrics(
     generation_total_ms: float,
 ) -> dict[str, float | int | None]:
     elapsed_s = max(time.time() - start_time, 1e-9)
-    peak_vram_gb = None
-    try:
-        import torch
-
-        if torch.cuda.is_available() and torch.cuda.device_count() > 0:
-            peak_vram_gb = round(torch.cuda.max_memory_allocated(0) / (1024**3), 2)
-    except Exception:
-        peak_vram_gb = None
+    peak_vram_gb = _torch_cuda_state(cfg).get("gpu_peak_vram_gb")
     return {
         "embedding_throughput_chunks_per_sec": round(chunk_count / embedding_duration_s, 3) if chunk_count else 0.0,
         "questions_per_sec": round(attempted / elapsed_s, 3) if attempted else 0.0,

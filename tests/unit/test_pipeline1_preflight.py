@@ -1,4 +1,6 @@
 import pytest
+import sys
+import types
 
 from src.pipeline1.preflight import _ollama_model_available, run_preflight_checks
 from src.pipeline1.schemas.config_schema import PipelineConfig
@@ -55,12 +57,21 @@ def _write_minimal_inputs(tmp_path):
     (tmp_path / "questions.jsonl").write_text('{"question_id":"q1","question":"Q?"}\n', encoding="utf-8")
 
 
+def _install_fake_torch(monkeypatch, cuda_available: bool, device_count: int = 0):
+    fake_torch = types.SimpleNamespace(
+        cuda=types.SimpleNamespace(
+            is_available=lambda: cuda_available,
+            device_count=lambda: device_count,
+        )
+    )
+    monkeypatch.setitem(sys.modules, "torch", fake_torch)
+    return fake_torch
+
+
 def test_reranker_cuda_colon_zero_rejected_when_cuda_unavailable(tmp_path, monkeypatch):
     _write_minimal_inputs(tmp_path)
     monkeypatch.setenv("PIPELINE1_SKIP_OLLAMA_PREFLIGHT", "1")
-    import torch
-
-    monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
+    _install_fake_torch(monkeypatch, cuda_available=False)
 
     errors = run_preflight_checks(_cfg_for_reranker_device("cuda:0"), tmp_path)
 
@@ -70,10 +81,7 @@ def test_reranker_cuda_colon_zero_rejected_when_cuda_unavailable(tmp_path, monke
 def test_reranker_cuda_index_out_of_range_rejected(tmp_path, monkeypatch):
     _write_minimal_inputs(tmp_path)
     monkeypatch.setenv("PIPELINE1_SKIP_OLLAMA_PREFLIGHT", "1")
-    import torch
-
-    monkeypatch.setattr(torch.cuda, "is_available", lambda: True)
-    monkeypatch.setattr(torch.cuda, "device_count", lambda: 1)
+    _install_fake_torch(monkeypatch, cuda_available=True, device_count=1)
 
     errors = run_preflight_checks(_cfg_for_reranker_device("cuda:2"), tmp_path)
 

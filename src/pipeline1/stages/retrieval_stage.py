@@ -248,6 +248,11 @@ class RetrievalStage(BaseStage):
                     "detected_category": query.detected_category,
                     "category_validated": query.category_validated,
                     "category_validation_reason": query.category_validation_reason,
+                    "orchestration_status": (
+                        "disabled"
+                        if query.category_validation_reason == "orchestration_disabled"
+                        else "enabled"
+                    ),
                     "retrieval_mode": retrieval_mode,
                     "category_filter_applied": category_filter_applied,
                     "category_fallback_used": category_fallback_used,

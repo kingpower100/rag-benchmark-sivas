@@ -96,6 +96,12 @@ Sentence chunking preserves sentence boundaries wherever possible. Official conf
 
 Changing chunk units or tokenizer changes chunk IDs, chunk caches, embeddings, and FAISS index cache keys. Do not reuse old official outputs after changing these fields.
 
+### SIVAS Character Chunking
+
+`sivas_character_v2` preserves source text exactly. It locates boundaries with `(?<=[.!?;:])\s+|\n\n|\n(?=#{1,6}\s)|\n(?=-\s)`, assigns each matched separator to exactly one contiguous source span, and emits chunks by slicing the original document text. For each document, concatenating chunk text must reconstruct the source text exactly.
+
+This version changes B00 chunk text and character offsets relative to the older normalized implementation. Delete or bypass old B00 chunk and embedding caches, rebuild B00 chunks, and rebuild pgvector rows before using B00 results. Do not reuse existing pgvector rows generated with the older SIVAS chunks; the pgvector manifest now includes chunk content and offset fingerprints in addition to chunk IDs.
+
 ### Configuration Reference
 
 | Field | Type | Runtime effect | Valid values | Default | Backend scope | Deprecated |

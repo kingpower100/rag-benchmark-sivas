@@ -13,7 +13,9 @@ from __future__ import annotations
 import json
 import math
 import shutil
+import sys
 import tempfile
+import types
 from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, patch
@@ -215,6 +217,24 @@ class TestContextRecallMetricRegistration:
 
         cr = ContextRecall()
         assert cr.name == "context_recall"
+
+    def test_context_recall_only_does_not_build_embeddings(self, monkeypatch):
+        """ContextRecall-only RAGAS runs must not import/build sentence-transformer embeddings."""
+        cfg = _make_ragas_cfg(context_recall=True, answer_relevancy=False)
+        evaluator = RagasEvaluator(cfg)
+
+        monkeypatch.setitem(sys.modules, "ragas", types.SimpleNamespace(evaluate=MagicMock()))
+        monkeypatch.setitem(sys.modules, "ragas.run_config", types.SimpleNamespace(RunConfig=MagicMock()))
+        monkeypatch.setitem(sys.modules, "ragas.llms", types.SimpleNamespace(LangchainLLMWrapper=lambda llm: llm))
+        monkeypatch.setitem(sys.modules, "ragas.embeddings", types.SimpleNamespace(LangchainEmbeddingsWrapper=lambda emb: emb))
+        monkeypatch.setitem(sys.modules, "langchain_openai", types.SimpleNamespace(ChatOpenAI=MagicMock()))
+        monkeypatch.setattr(evaluator, "_build_embeddings", MagicMock(side_effect=AssertionError("should not build embeddings")))
+        monkeypatch.setattr(evaluator, "_build_metrics", MagicMock(return_value=[]))
+
+        result = evaluator._run_ragas(_make_rows(1))
+
+        assert result.skipped is True
+        evaluator._build_embeddings.assert_not_called()
 
     def test_faithfulness_and_context_recall_together(self):
         """Both metrics register without conflict."""

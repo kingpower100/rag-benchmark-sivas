@@ -1,0 +1,1 @@
+{"run_id": "p3_a", "inputs": {"questions_rows": 96, "qa_sha256": "qa"}, "validation": {"passed": true}, "ragas_stats": {"nan_counts": {}}, "summary": {"n_questions": 96, "judge_success_rate": 1.0, "judge_failure_count": 0, "mean_judge_correctness": 3.0, "mean_judge_faithfulness": 3.0, "mean_judge_context_relevance": 3.0}}

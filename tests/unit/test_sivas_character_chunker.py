@@ -1,31 +1,17 @@
-"""Unit tests for SivasCharacterChunker.
-
-Covers:
-- Exact SIVAS boundary regex behavior
-- Semicolon and colon boundaries
-- Blank-line (paragraph) boundaries
-- Markdown heading boundaries
-- Markdown bullet-item boundaries
-- 2048-character accumulation (character count, not words/tokens)
-- Boundary overflow (segment itself exceeds max_chars)
-- Final chunk retention
-- Zero overlap (each segment belongs to exactly one chunk)
-- Metadata preservation
-"""
 from __future__ import annotations
 
 import pytest
 
 from src.pipeline1.chunking.sivas_character_chunker import (
     SIVAS_BOUNDARY_RE,
+    SIVAS_CHARACTER_CHUNKER_VERSION,
     SivasCharacterChunker,
 )
+from src.pipeline1.schemas.config_schema import PipelineConfig
 from src.pipeline1.schemas.document import DocumentRecord
+from src.pipeline1.stages.chunking_stage import ChunkingStage
+from src.pipeline1.utils.hashing import stable_hash_dict
 
-
-# ---------------------------------------------------------------------------
-# Helpers
-# ---------------------------------------------------------------------------
 
 def _doc(text: str, doc_id: str = "d1", metadata: dict | None = None) -> DocumentRecord:
     return DocumentRecord(
@@ -36,341 +22,169 @@ def _doc(text: str, doc_id: str = "d1", metadata: dict | None = None) -> Documen
     )
 
 
-def _chunks(text: str, max_chars: int = 2048, metadata: dict | None = None):
-    chunker = SivasCharacterChunker(max_chars=max_chars)
-    doc = _doc(text, metadata=metadata)
-    return chunker.chunk_documents([doc])
+def _chunks(text: str, max_chars: int = 2048):
+    return SivasCharacterChunker(max_chars=max_chars).chunk_documents([_doc(text)])
 
 
-# ---------------------------------------------------------------------------
-# Test 1: Exact regex — sentence boundaries after . ! ? ; :
-# ---------------------------------------------------------------------------
-
-class TestExactRegexBehavior:
-    def test_period_boundary(self):
-        chunks = _chunks("Hello. World.", max_chars=2048)
-        assert len(chunks) == 1
-        assert "Hello." in chunks[0].text
-
-    def test_exclamation_boundary_splits_at_limit(self):
-        a = "A" * 1000 + "!"
-        b = "B" * 1000
-        chunks = _chunks(f"{a} {b}", max_chars=1500)
-        assert len(chunks) == 2
-        assert chunks[0].text.endswith("!")
-        assert chunks[1].text == b
-
-    def test_question_boundary(self):
-        seg1 = "Is this correct?"
-        seg2 = "Yes it is."
-        text = f"{seg1} {seg2}"
-        chunks = _chunks(text, max_chars=len(seg1) + 1)
-        assert len(chunks) == 2
-
-    def test_semicolon_boundary(self):
-        seg1 = "First clause; "
-        seg2 = "second clause."
-        text = "First clause; second clause."
-        chunks = _chunks(text, max_chars=len("First clause;") + 1)
-        assert len(chunks) == 2
-
-    def test_colon_boundary(self):
-        seg1 = "Title:"
-        seg2 = "body text here."
-        text = "Title: body text here."
-        chunks = _chunks(text, max_chars=len("Title:") + 1)
-        assert len(chunks) == 2
+def _assert_exact_spans(original_text: str, chunks) -> None:
+    assert "".join(chunk.text for chunk in chunks) == original_text
+    if not chunks:
+        assert original_text == ""
+        return
+    assert chunks[0].chunk_start == 0
+    assert chunks[-1].chunk_end == len(original_text)
+    for chunk in chunks:
+        assert chunk.text == original_text[chunk.chunk_start:chunk.chunk_end]
+        assert chunk.metadata["start_char"] == chunk.chunk_start
+        assert chunk.metadata["end_char"] == chunk.chunk_end
+    for previous, current in zip(chunks, chunks[1:]):
+        assert previous.chunk_end == current.chunk_start
 
 
-# ---------------------------------------------------------------------------
-# Test 2: Semicolon and colon as explicit boundary characters
-# ---------------------------------------------------------------------------
-
-class TestSemicolonAndColonBoundaries:
-    def test_semicolon_splits_when_over_limit(self):
-        long_a = "X" * 500 + ";"
-        long_b = "Y" * 500
-        text = f"{long_a} {long_b}"
-        chunks = _chunks(text, max_chars=600)
-        assert len(chunks) == 2
-        assert chunks[0].text.endswith(";")
-
-    def test_colon_splits_when_over_limit(self):
-        long_a = "Z" * 500 + ":"
-        long_b = "W" * 500
-        text = f"{long_a} {long_b}"
-        chunks = _chunks(text, max_chars=600)
-        assert len(chunks) == 2
-        assert chunks[0].text.endswith(":")
-
-    def test_semicolon_and_colon_within_limit_stay_together(self):
-        text = "Alpha: beta; gamma."
-        chunks = _chunks(text, max_chars=2048)
-        assert len(chunks) == 1
-        assert "Alpha:" in chunks[0].text
-        assert "beta;" in chunks[0].text
-        assert "gamma." in chunks[0].text
+def _pipeline_config(max_chunk_tokens: int = 1800, chunk_overlap: int = 0) -> PipelineConfig:
+    return PipelineConfig.model_validate(
+        {
+            "experiment": {"experiment_id": "exp", "output_dir": "runs"},
+            "data": {"documents_path": "documents.jsonl", "questions_path": "questions.jsonl"},
+            "chunking": {
+                "strategy": "sivas_character",
+                "chunk_size": 2048,
+                "chunk_overlap": chunk_overlap,
+                "max_chunk_chars": 2048,
+                "max_chunk_tokens": max_chunk_tokens,
+                "oversized_chunk_policy": "warn",
+            },
+            "embedding": {"provider": "sentence_transformers", "model_name": "fake"},
+            "index": {"type": "faiss", "metric": "cosine"},
+            "retrieval": {"retriever_type": "dense", "top_k": 1, "fetch_k": 2},
+            "reranker": {"enabled": False},
+            "generation": {"provider": "ollama", "model_name": "fake", "system_prompt": "Use context."},
+            "telemetry": {"estimate_cost": False},
+            "runtime": {"resume": False, "overwrite": True},
+        }
+    )
 
 
-# ---------------------------------------------------------------------------
-# Test 3: Blank-line boundaries (\n\n)
-# ---------------------------------------------------------------------------
-
-class TestBlankLineBoundaries:
-    def test_blank_line_splits(self):
-        text = "Paragraph one.\n\nParagraph two."
-        chunks = _chunks(text, max_chars=len("Paragraph one.") + 1)
-        assert len(chunks) == 2
-        assert "Paragraph one." in chunks[0].text
-        assert "Paragraph two." in chunks[1].text
-
-    def test_blank_line_within_limit_stays_together(self):
-        text = "Short.\n\nAlso short."
-        chunks = _chunks(text, max_chars=2048)
-        assert len(chunks) == 1
-
-    def test_multiple_blank_lines_produce_multiple_splits(self):
-        parts = [f"Para {i}." for i in range(5)]
-        text = "\n\n".join(parts)
-        chunks = _chunks(text, max_chars=len(parts[0]) + 1)
-        assert len(chunks) == 5
+def test_boundary_regex_is_exact_requested_pattern():
+    assert SIVAS_BOUNDARY_RE.pattern == r"(?<=[.!?;:])\s+|\n\n|\n(?=#{1,6}\s)|\n(?=-\s)"
 
 
-# ---------------------------------------------------------------------------
-# Test 4: Markdown heading boundaries
-# ---------------------------------------------------------------------------
-
-class TestMarkdownHeadingBoundaries:
-    def test_h1_boundary(self):
-        text = "Intro text.\n# Main Heading\nBody text."
-        chunks = _chunks(text, max_chars=len("Intro text.") + 5)
-        heading_chunk = next(c for c in chunks if "# Main Heading" in c.text)
-        assert heading_chunk is not None
-
-    def test_h2_boundary(self):
-        text = "Some text.\n## Section\nContent here."
-        chunks = _chunks(text, max_chars=20)
-        texts = [c.text for c in chunks]
-        assert any("## Section" in t for t in texts)
-
-    def test_heading_boundary_not_triggered_without_leading_newline(self):
-        text = "No boundary before# this heading."
-        chunks = _chunks(text, max_chars=2048)
-        assert len(chunks) == 1
+def test_exact_reconstruction_substrings_and_no_gaps_or_overlap():
+    original_text = (
+        "  Intro sentence.  Next sentence!\n\n"
+        "Before heading\n# Heading\n"
+        "Lead-in:\n- bullet one\n- bullet two\n"
+        "German: Größe, Straße, Übermaß?  Done.   "
+    )
+    chunks = _chunks(original_text, max_chars=45)
+    assert len(chunks) > 1
+    _assert_exact_spans(original_text, chunks)
 
 
-# ---------------------------------------------------------------------------
-# Test 5: Markdown bullet-item boundaries
-# ---------------------------------------------------------------------------
-
-class TestMarkdownBulletBoundaries:
-    def test_bullet_item_boundary(self):
-        text = "Preamble text.\n- Item one\n- Item two"
-        chunks = _chunks(text, max_chars=len("Preamble text.") + 5)
-        bullet_chunks = [c for c in chunks if "Item" in c.text]
-        assert len(bullet_chunks) >= 1
-
-    def test_bullet_within_limit_stays_together(self):
-        text = "Short.\n- item"
-        chunks = _chunks(text, max_chars=2048)
-        assert len(chunks) == 1
-
-    def test_multiple_bullets_split_at_limit(self):
-        seg1 = "A" * 100
-        seg2 = "- " + "B" * 100
-        text = f"{seg1}\n{seg2}"
-        chunks = _chunks(text, max_chars=120)
-        assert len(chunks) == 2
+def test_whitespace_preservation():
+    original_text = (
+        "  Leading whitespace.  Multiple spaces after punctuation.\n\n"
+        "Line before heading\n# Heading\n"
+        "Line before bullet\n- bullet\n"
+        "Trailing whitespace.   "
+    )
+    chunks = _chunks(original_text, max_chars=80)
+    reconstructed = "".join(chunk.text for chunk in chunks)
+    assert reconstructed == original_text
+    assert "\n\n" in reconstructed
+    assert "\n# Heading" in reconstructed
+    assert "\n- bullet" in reconstructed
+    assert ".  Multiple" in reconstructed
+    assert reconstructed.startswith("  Leading")
+    assert reconstructed.endswith("   ")
 
 
-# ---------------------------------------------------------------------------
-# Test 6: 2048-character accumulation (characters, not words/tokens)
-# ---------------------------------------------------------------------------
-
-class TestCharacterAccumulation:
-    def test_accumulates_up_to_2048_chars(self):
-        seg_size = 500
-        seg1 = "A" * seg_size + "."
-        seg2 = "B" * seg_size + "."
-        seg3 = "C" * seg_size + "."
-        seg4 = "D" * seg_size + "."
-        # 4 * (501 + 1 sep) = ~2008 chars combined — should all fit in one chunk
-        text = f"{seg1} {seg2} {seg3} {seg4}"
-        chunks = _chunks(text, max_chars=2048)
-        assert len(chunks) == 1
-
-    def test_character_not_word_boundary(self):
-        # 5 segments of 20 words each (~100 chars per segment, ~505 chars total).
-        # Under a word-count limit of 20 each would be its own chunk;
-        # under a 2048-character limit all five fit together.
-        seg = ("word " * 20).strip() + "."  # ~100 chars, ends with "."
-        # Use paragraph breaks (\n\n) as explicit segment boundaries.
-        text = "\n\n".join([seg] * 5)
-        # All 5 segments together are well under 2048 chars → single chunk.
-        chunks_large = _chunks(text, max_chars=2048)
-        assert len(chunks_large) == 1
-        # With a tight character limit each segment becomes its own chunk.
-        chunks_small = _chunks(text, max_chars=110)
-        assert len(chunks_small) == 5
-
-    def test_exactly_at_limit_stays_together(self):
-        # Two segments that together equal exactly max_chars after join
-        max_chars = 100
-        # seg1 + " " + seg2 == 100
-        seg1 = "A" * 50 + "."
-        seg2 = "B" * 48  # 51 + 1 + 48 = 100
-        text = f"{seg1} {seg2}"
-        chunks = _chunks(text, max_chars=max_chars)
-        assert len(chunks) == 1
-
-    def test_one_over_limit_splits(self):
-        max_chars = 100
-        seg1 = "A" * 50 + "."
-        seg2 = "B" * 49  # 51 + 1 + 49 = 101 — exceeds limit
-        text = f"{seg1} {seg2}"
-        chunks = _chunks(text, max_chars=max_chars)
-        assert len(chunks) == 2
+def test_exact_2048_character_ceiling_is_accepted():
+    original_text = ("A" * 2046) + ". "
+    chunks = _chunks(original_text, max_chars=2048)
+    assert len(chunks) == 1
+    assert len(chunks[0].text) == 2048
+    _assert_exact_spans(original_text, chunks)
 
 
-# ---------------------------------------------------------------------------
-# Test 7: Boundary overflow (single segment exceeds max_chars)
-# ---------------------------------------------------------------------------
-
-class TestBoundaryOverflow:
-    def test_oversized_segment_becomes_own_chunk(self):
-        oversized = "X" * 3000
-        chunks = _chunks(oversized, max_chars=2048)
-        assert len(chunks) == 1
-        assert len(chunks[0].text) == 3000
-
-    def test_oversized_segment_after_normal_chunk(self):
-        normal = "Normal text."
-        oversized = "Y" * 3000
-        text = f"{normal}\n\n{oversized}"
-        chunks = _chunks(text, max_chars=2048)
-        assert len(chunks) == 2
-        assert chunks[0].text == normal
-        assert len(chunks[1].text) == 3000
-
-    def test_oversized_segment_before_normal_chunk(self):
-        oversized = "Z" * 3000
-        normal = "Normal."
-        text = f"{oversized}\n\n{normal}"
-        chunks = _chunks(text, max_chars=2048)
-        assert len(chunks) == 2
-        assert len(chunks[0].text) == 3000
-        assert chunks[1].text == normal
+def test_next_span_starts_new_chunk_at_2049_characters():
+    original_text = ("A" * 2046) + ". B"
+    chunks = _chunks(original_text, max_chars=2048)
+    assert [len(chunk.text) for chunk in chunks] == [2048, 1]
+    assert chunks[1].text == "B"
+    _assert_exact_spans(original_text, chunks)
 
 
-# ---------------------------------------------------------------------------
-# Test 8: Final chunk retention
-# ---------------------------------------------------------------------------
-
-class TestFinalChunkRetention:
-    def test_final_chunk_is_retained(self):
-        seg1 = "A" * 1500 + "."
-        seg2 = "B" * 100
-        text = f"{seg1} {seg2}"
-        chunks = _chunks(text, max_chars=1600)
-        last = chunks[-1]
-        assert "B" * 100 in last.text
-
-    def test_single_segment_document_produces_one_chunk(self):
-        text = "Only one sentence here."
-        chunks = _chunks(text, max_chars=2048)
-        assert len(chunks) == 1
-        assert chunks[0].text == text
-
-    def test_empty_document_produces_no_chunks(self):
-        chunks = _chunks("", max_chars=2048)
-        assert chunks == []
-
-    def test_whitespace_only_document_produces_no_chunks(self):
-        chunks = _chunks("   \n\n  \t  ", max_chars=2048)
-        assert chunks == []
+def test_unicode_counts_python_characters_not_utf8_bytes():
+    first = ("Ä" * 2046) + ". "
+    second = "ö"
+    original_text = first + second
+    chunks = _chunks(original_text, max_chars=2048)
+    assert len(first) == 2048
+    assert len(first.encode("utf-8")) > 2048
+    assert [len(chunk.text) for chunk in chunks] == [2048, 1]
+    _assert_exact_spans(original_text, chunks)
 
 
-# ---------------------------------------------------------------------------
-# Test 9: Zero overlap
-# ---------------------------------------------------------------------------
-
-class TestZeroOverlap:
-    def test_no_segment_appears_in_two_chunks(self):
-        segs = [f"Sentence {i}." for i in range(10)]
-        text = " ".join(segs)
-        chunks = _chunks(text, max_chars=30)
-        seen_texts: set[str] = set()
-        for chunk in chunks:
-            assert chunk.text not in seen_texts, "Chunk text repeated — overlap detected"
-            seen_texts.add(chunk.text)
-
-    def test_all_text_covered(self):
-        segs = ["Alpha.", "Beta!", "Gamma?", "Delta;", "Epsilon:"]
-        text = " ".join(segs)
-        chunker = SivasCharacterChunker(max_chars=10)
-        doc = _doc(text)
-        chunks = chunker.chunk_documents([doc])
-        combined = " ".join(c.text for c in chunks)
-        for seg in segs:
-            assert seg in combined or seg.rstrip(".!?;:") in combined
-
-    def test_chunk_count_independent_of_overlap_parameter(self):
-        segs = ["Long sentence one.", "Long sentence two.", "Long sentence three."]
-        text = " ".join(segs)
-        chunker = SivasCharacterChunker(max_chars=25)
-        doc = _doc(text)
-        chunks = chunker.chunk_documents([doc])
-        # No sentence should appear in two consecutive chunks
-        for i in range(len(chunks) - 1):
-            assert chunks[i].text != chunks[i + 1].text
+def test_oversized_indivisible_segment_is_kept_whole_and_warns():
+    original_text = "X" * 2049
+    with pytest.warns(RuntimeWarning, match="oversized indivisible source span"):
+        chunks = _chunks(original_text, max_chars=2048)
+    assert len(chunks) == 1
+    assert chunks[0].text == original_text
+    assert chunks[0].metadata["oversized_chunk"] is True
+    assert chunks[0].metadata["oversized_chunk_policy"] == "warn_keep_whole"
+    _assert_exact_spans(original_text, chunks)
 
 
-# ---------------------------------------------------------------------------
-# Test 10: Metadata preservation
-# ---------------------------------------------------------------------------
+def test_empty_input_is_deterministic():
+    assert _chunks("", max_chars=2048) == []
 
-class TestMetadataPreservation:
-    def test_document_id_preserved(self):
-        chunker = SivasCharacterChunker()
-        doc = _doc("Text. More text.", doc_id="doc_42")
-        chunks = chunker.chunk_documents([doc])
-        for chunk in chunks:
-            assert chunk.document_id == "doc_42"
 
-    def test_original_context_id_preserved(self):
-        chunker = SivasCharacterChunker()
-        doc = _doc("Text. More text.", doc_id="doc_99")
-        chunks = chunker.chunk_documents([doc])
-        for chunk in chunks:
-            assert chunk.original_context_id == "doc_99"
+def test_max_chunk_tokens_does_not_change_sivas_texts_or_boundaries():
+    original_text = ("A" * 2046) + ". B"
+    cfg_a = _pipeline_config(max_chunk_tokens=1)
+    cfg_b = _pipeline_config(max_chunk_tokens=9999)
+    chunker_a = ChunkingStage(cfg_a, None, None, None).build_chunker()
+    chunker_b = ChunkingStage(cfg_b, None, None, None).build_chunker()
 
-    def test_custom_metadata_field_preserved(self):
-        meta = {"kategorie": "Einkauf", "doc_id": "abc", "wissensart": "FAQ"}
-        chunker = SivasCharacterChunker()
-        doc = _doc("Chunk A. Chunk B.", metadata=meta)
-        chunks = chunker.chunk_documents([doc])
-        for chunk in chunks:
-            assert chunk.metadata.get("kategorie") == "Einkauf"
-            assert chunk.metadata.get("wissensart") == "FAQ"
+    chunks_a = chunker_a.chunk_documents([_doc(original_text)])
+    chunks_b = chunker_b.chunk_documents([_doc(original_text)])
 
-    def test_chunk_strategy_in_metadata(self):
-        chunks = _chunks("Text. More.")
-        for chunk in chunks:
-            assert chunk.metadata.get("chunk_strategy") == "sivas_character"
+    assert [(c.text, c.chunk_start, c.chunk_end) for c in chunks_a] == [
+        (c.text, c.chunk_start, c.chunk_end) for c in chunks_b
+    ]
 
-    def test_chunk_id_is_stable_and_unique(self):
-        chunks = _chunks("Sentence one. Sentence two. Sentence three.", max_chars=20)
-        ids = [c.chunk_id for c in chunks]
-        assert len(ids) == len(set(ids)), "Chunk IDs must be unique within a document"
 
-    def test_multiple_documents_metadata_not_mixed(self):
-        chunker = SivasCharacterChunker()
-        doc_a = _doc("Doc A text.", doc_id="A", metadata={"kategorie": "Cat_A"})
-        doc_b = _doc("Doc B text.", doc_id="B", metadata={"kategorie": "Cat_B"})
-        chunks = chunker.chunk_documents([doc_a, doc_b])
-        a_chunks = [c for c in chunks if c.document_id == "A"]
-        b_chunks = [c for c in chunks if c.document_id == "B"]
-        for chunk in a_chunks:
-            assert chunk.metadata.get("kategorie") == "Cat_A"
-        for chunk in b_chunks:
-            assert chunk.metadata.get("kategorie") == "Cat_B"
+def test_chunk_overlap_config_is_not_applied_to_sivas_character():
+    original_text = ("A" * 2046) + ". B"
+    cfg = _pipeline_config(chunk_overlap=64)
+    chunks = ChunkingStage(cfg, None, None, None).build_chunker().chunk_documents([_doc(original_text)])
+    assert cfg.chunking.chunk_overlap == 64
+    _assert_exact_spans(original_text, chunks)
+
+
+def test_sivas_character_rejects_split_oversized_policy():
+    payload = _pipeline_config().model_dump()
+    payload["chunking"]["oversized_chunk_policy"] = "split"
+    with pytest.raises(ValueError, match="only supports chunking.oversized_chunk_policy='warn'"):
+        PipelineConfig.model_validate(payload)
+
+
+def test_chunker_version_changes_chunk_cache_key_from_previous_implementation():
+    cfg = _pipeline_config()
+    current = stable_hash_dict(
+        {
+            "documents_fingerprint": "docs",
+            "chunking": cfg.chunking.model_dump(),
+            "chunker_versions": {"chunker_implementation": SIVAS_CHARACTER_CHUNKER_VERSION},
+        }
+    )
+    previous = stable_hash_dict(
+        {
+            "documents_fingerprint": "docs",
+            "chunking": cfg.chunking.model_dump(),
+            "chunker_versions": {"chunker_implementation": "sivas_character_v1"},
+        }
+    )
+    assert current != previous

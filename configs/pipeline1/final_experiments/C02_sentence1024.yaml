@@ -5,6 +5,9 @@ extends: "C00_sentence512_baseline.yaml"
 experiment:
   experiment_id: "C02"
 
+orchestration:
+  enabled: false
+
 chunking:
   chunk_size: 1024
   chunk_overlap: 400

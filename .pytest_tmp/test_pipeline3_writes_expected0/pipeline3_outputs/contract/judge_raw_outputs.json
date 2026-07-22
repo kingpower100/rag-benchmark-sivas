@@ -1,0 +1,10 @@
+[
+  {
+    "question_id": "q1",
+    "success": true,
+    "retry_count": 0,
+    "latency_ms": 0.0,
+    "raw_response": "{}",
+    "error": null
+  }
+]

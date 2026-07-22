@@ -73,6 +73,12 @@ class ChunkingConfig(StrictConfigModel):
                     self.chunk_overlap_unit = "sentences"
             if "tokens" in (self.chunk_size_unit, self.chunk_overlap_unit):
                 _validate_tiktoken_encoding(self.tokenizer_name)
+        if self.strategy == "sivas_character" and self.oversized_chunk_policy != "warn":
+            raise ValueError(
+                "strategy='sivas_character' only supports chunking.oversized_chunk_policy='warn'. "
+                "Oversized indivisible source spans are kept as one chunk and marked in diagnostics; "
+                "'split' and 'raise' are not implemented for this strategy."
+            )
         return self
 
 
@@ -235,6 +241,7 @@ class RerankerConfig(StrictConfigModel):
 
 
 class OrchestrationConfig(StrictConfigModel):
+    enabled: bool = True
     provider: Literal["ollama", "mistral"] = "ollama"
     model_name: str = Field(default=DEFAULT_ORCHESTRATION_MODEL, validation_alias=AliasChoices("model_name", "model"))
     base_url: str = "http://localhost:11434"
@@ -461,6 +468,11 @@ class PipelineConfig(StrictConfigModel):
             raise ValueError(
                 f"retrieval.retriever_type='elasticsearch_hybrid_rrf' requires index.type='elasticsearch', "
                 f"got '{index_type}'. Set index.type='elasticsearch' to use the Elasticsearch hybrid retriever."
+            )
+        if retriever_type == "category_aware_dense" and not self.orchestration.enabled:
+            raise ValueError(
+                "retrieval.retriever_type='category_aware_dense' requires orchestration.enabled=true "
+                "because category-aware retrieval needs a validated category prediction."
             )
         return self
 

@@ -79,7 +79,8 @@ chunking:
   chunk_overlap: 0
   max_chunk_chars: 2048
   max_chunk_tokens: 1800
-  oversized_chunk_policy: "split"
+  # Oversized indivisible source spans are kept whole and surfaced as warnings.
+  oversized_chunk_policy: "warn"
   oversized_chunk_warning: true
 
 # ============================================================

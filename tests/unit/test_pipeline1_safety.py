@@ -1,9 +1,7 @@
-import pytest
 import sys
 import types
 
 import pytest
-import torch
 
 from src.pipeline1.chunking.fixed_token_chunker import FixedTokenChunker
 from src.pipeline1.chunking.fixed_word_chunker import FixedWordChunker
@@ -15,6 +13,26 @@ from src.pipeline1.preflight import run_preflight_checks
 from src.pipeline1.schemas.config_schema import PipelineConfig
 from src.pipeline1.schemas.document import DocumentRecord
 from src.pipeline1.utils.hashing import stable_hash_dict
+
+
+class _FakeDevice:
+    def __init__(self, value: str) -> None:
+        self.value = str(value)
+
+    def __str__(self) -> str:
+        return self.value
+
+
+def _install_fake_torch(monkeypatch, cuda_available: bool = False, device_count: int = 0):
+    fake_torch = types.SimpleNamespace(
+        device=_FakeDevice,
+        cuda=types.SimpleNamespace(
+            is_available=lambda: cuda_available,
+            device_count=lambda: device_count,
+        ),
+    )
+    monkeypatch.setitem(sys.modules, "torch", fake_torch)
+    return fake_torch
 
 
 def test_missing_context_id_fails_when_required(tmp_path):
@@ -304,6 +322,7 @@ def test_require_cuda_true_without_cuda_fails_preflight(tmp_path, monkeypatch):
     cfg = _cfg(False, top_k=1, fetch_k=2)
     cfg.embedding.require_cuda = True
     monkeypatch.setenv("PIPELINE1_SKIP_OLLAMA_PREFLIGHT", "1")
+    torch = _install_fake_torch(monkeypatch, cuda_available=False)
     monkeypatch.setattr(torch.cuda, "is_available", lambda: False)
 
     errors = run_preflight_checks(cfg, tmp_path)
@@ -312,6 +331,7 @@ def test_require_cuda_true_without_cuda_fails_preflight(tmp_path, monkeypatch):
 
 
 def test_bge_encoder_propagates_requested_device(monkeypatch):
+    torch = _install_fake_torch(monkeypatch)
     captured = {}
 
     class FakeTensor:
@@ -343,6 +363,7 @@ def test_bge_encoder_propagates_requested_device(monkeypatch):
 
 
 def test_reranker_propagates_requested_device(monkeypatch):
+    torch = _install_fake_torch(monkeypatch)
     from src.pipeline1.retrieval.cross_encoder_reranker import CrossEncoderReranker
     from src.pipeline1.schemas.retrieval import RetrievalItem
 
@@ -373,6 +394,8 @@ def test_reranker_propagates_requested_device(monkeypatch):
 
 
 def test_cuda_requested_but_cpu_runtime_warns(monkeypatch):
+    torch = _install_fake_torch(monkeypatch)
+
     class FakeSentenceTransformer:
         def __init__(self, model_name: str, device: str = "cpu") -> None:
             self.device = torch.device("cpu")
