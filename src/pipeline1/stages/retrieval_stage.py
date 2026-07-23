@@ -147,7 +147,31 @@ class RetrievalStage(BaseStage):
             number_of_category_results = 0
             number_of_global_fallback_results = 0
             retrieval_warnings: list[str] = []
-            if self.cfg.retrieval.retriever_type == "category_aware_dense" and hasattr(retriever, "set_active_category"):
+            adaptive_diagnostics: dict = {}
+            if self.cfg.retrieval.retriever_type == "adaptive_category_aware_dense" and hasattr(retriever, "set_active_category"):
+                (
+                    raw_retrieved,
+                    retrieved,
+                    retrieval_warnings,
+                    reranker_used,
+                    selection_diagnostics,
+                    adaptive_diagnostics,
+                ) = run_adaptive_category_aware_retrieval(
+                    query=query,
+                    retriever=retriever,
+                    reranker=reranker,
+                    cfg=self.cfg,
+                    final_top_k=final_top_k,
+                    rerank_top_k=rerank_top_k,
+                    max_candidates=len(self.chunks),
+                )
+                retrieval_mode = str(adaptive_diagnostics["retrieval_mode"])
+                category_filter_applied = bool(adaptive_diagnostics["category_filter_applied"])
+                category_fallback_used = bool(adaptive_diagnostics["category_fallback_used"])
+                fallback_reason = adaptive_diagnostics.get("fallback_reason")
+                number_of_category_results = int(adaptive_diagnostics["number_of_category_results"])
+                number_of_global_fallback_results = int(adaptive_diagnostics["number_of_global_fallback_results"])
+            elif self.cfg.retrieval.retriever_type == "category_aware_dense" and hasattr(retriever, "set_active_category"):
                 if query.category_validated:
                     category_filter_applied = True
                     retrieval_mode = "category_aware_dense"
@@ -242,6 +266,7 @@ class RetrievalStage(BaseStage):
             retrieval_diagnostics.update(
                 {
                     **selection_diagnostics,
+                    **(adaptive_diagnostics if self.cfg.retrieval.retriever_type == "adaptive_category_aware_dense" else {}),
                     "final_top_k": final_top_k,
                     "rerank_top_k": rerank_top_k,
                     "cleaned_question": query.cleaned_question,
@@ -279,6 +304,7 @@ class RetrievalStage(BaseStage):
                     ],
                     "reranked_candidate_ids": [item.chunk_id for item in reranked_candidates],
                     "final_candidate_ids": [item.chunk_id for item in retrieved],
+                    "final_chunk_ids": [item.chunk_id for item in retrieved],
                     # Fields required for per-question output records.
                     "retriever_type": self.cfg.retrieval.retriever_type,
                     "retrieval_scope": "category" if (category_filter_applied and not category_fallback_used) else "global",
@@ -380,6 +406,215 @@ class RetrievalStage(BaseStage):
             f"reranker_device={requested_device} "
             f"reranker_runtime_device={runtime_device}"
         )
+
+
+def run_adaptive_category_aware_retrieval(
+    query: QueryRecord,
+    retriever,
+    reranker,
+    cfg: PipelineConfig,
+    final_top_k: int,
+    rerank_top_k: int | None,
+    max_candidates: int,
+) -> tuple[list, list, list[str], bool, dict, dict]:
+    validation_cfg = cfg.retrieval.category_routing_validation
+    thresholds = {
+        "minimum_category_share": validation_cfg.minimum_category_share,
+        "minimum_category_count": validation_cfg.minimum_category_count,
+        "minimum_margin": validation_cfg.minimum_margin,
+    }
+    predicted_category = query.detected_category
+    base_diagnostics = {
+        "predicted_category": predicted_category,
+        "category_validated": query.category_validated,
+        "probe_fetch_k": validation_cfg.probe_fetch_k,
+        "routing_thresholds": thresholds,
+        "retriever_type": cfg.retrieval.retriever_type,
+    }
+
+    if not query.category_validated or not predicted_category:
+        retriever.set_active_category(None)
+        raw_retrieved, retrieved, warnings, reranker_used, selection_diagnostics = retrieve_top_k_unique_contexts(
+            query.retrieval_question,
+            retriever,
+            reranker,
+            final_top_k,
+            cfg.retrieval.fetch_k,
+            max_candidates=max_candidates,
+            rerank_top_k=rerank_top_k,
+        )
+        diagnostics = {
+            **base_diagnostics,
+            **empty_probe_diagnostics(),
+            "routing_decision": "rejected",
+            "routing_accepted": False,
+            "decision_reason": "invalid_or_missing_category",
+            "final_retrieval_mode": "global",
+            "retrieval_mode": "global_fallback",
+            "category_filter_applied": False,
+            "category_fallback_used": True,
+            "fallback_used": True,
+            "fallback_reason": "invalid_category_global_fallback",
+            "number_of_category_results": 0,
+            "number_of_global_fallback_results": len(retrieved),
+        }
+        return raw_retrieved, retrieved, warnings, reranker_used, selection_diagnostics, diagnostics
+
+    if not validation_cfg.enabled:
+        retriever.set_active_category(predicted_category)
+        raw_retrieved, retrieved, warnings, reranker_used, selection_diagnostics = retrieve_top_k_unique_contexts(
+            query.retrieval_question,
+            retriever,
+            reranker,
+            final_top_k,
+            cfg.retrieval.fetch_k,
+            max_candidates=max_candidates,
+            rerank_top_k=rerank_top_k,
+        )
+        diagnostics = {
+            **base_diagnostics,
+            **empty_probe_diagnostics(),
+            "routing_decision": "accepted",
+            "routing_accepted": True,
+            "decision_reason": "routing_validation_disabled",
+            "final_retrieval_mode": "category",
+            "retrieval_mode": "adaptive_category_aware_dense",
+            "category_filter_applied": True,
+            "category_fallback_used": False,
+            "fallback_used": False,
+            "fallback_reason": None,
+            "number_of_category_results": len(retrieved),
+            "number_of_global_fallback_results": 0,
+        }
+        return raw_retrieved, retrieved, warnings, reranker_used, selection_diagnostics, diagnostics
+
+    retriever.set_active_category(None)
+    if hasattr(retriever, "retrieve_global_probe"):
+        probe_candidates = retriever.retrieve_global_probe(query.retrieval_question, validation_cfg.probe_fetch_k)
+    else:
+        probe_candidates = retriever.retrieve(query.retrieval_question, validation_cfg.probe_fetch_k)
+    probe_stats = category_probe_support_stats(
+        probe_candidates,
+        predicted_category,
+        cfg.retrieval.category_field,
+    )
+    accepted, decision_reason = adaptive_routing_decision(probe_stats, thresholds)
+    if accepted:
+        retriever.set_active_category(predicted_category)
+        final_mode = "category"
+        retrieval_mode = "adaptive_category_aware_dense"
+        category_filter_applied = True
+        category_fallback_used = False
+        fallback_used = False
+        fallback_reason = None
+    else:
+        retriever.set_active_category(None)
+        final_mode = "global"
+        retrieval_mode = "global_fallback"
+        category_filter_applied = False
+        category_fallback_used = True
+        fallback_used = True
+        fallback_reason = decision_reason
+
+    raw_retrieved, retrieved, warnings, reranker_used, selection_diagnostics = retrieve_top_k_unique_contexts(
+        query.retrieval_question,
+        retriever,
+        reranker,
+        final_top_k,
+        cfg.retrieval.fetch_k,
+        max_candidates=max_candidates,
+        rerank_top_k=rerank_top_k,
+    )
+    diagnostics = {
+        **base_diagnostics,
+        **probe_stats,
+        "routing_decision": "accepted" if accepted else "rejected",
+        "routing_accepted": accepted,
+        "decision_reason": decision_reason,
+        "final_retrieval_mode": final_mode,
+        "retrieval_mode": retrieval_mode,
+        "category_filter_applied": category_filter_applied,
+        "category_fallback_used": category_fallback_used,
+        "fallback_used": fallback_used,
+        "fallback_reason": fallback_reason,
+        "number_of_category_results": len(retrieved) if accepted else 0,
+        "number_of_global_fallback_results": 0 if accepted else len(retrieved),
+    }
+    return raw_retrieved, retrieved, warnings, reranker_used, selection_diagnostics, diagnostics
+
+
+def category_probe_support_stats(candidates: list, predicted_category: str, category_field: str) -> dict:
+    total = len(candidates)
+    counts: dict[str, int] = {}
+    score_sums: dict[str, float] = {}
+    for item in candidates:
+        category = str((item.metadata or {}).get(category_field) or "").strip()
+        if not category:
+            category = "<missing>"
+        counts[category] = counts.get(category, 0) + 1
+        score_sums[category] = score_sums.get(category, 0.0) + float(item.score)
+
+    predicted_count = counts.get(predicted_category, 0)
+    competitors = {category: count for category, count in counts.items() if category != predicted_category}
+    strongest_competing_category = None
+    competing_count = 0
+    if competitors:
+        strongest_competing_category, competing_count = sorted(
+            competitors.items(),
+            key=lambda item: (-item[1], item[0]),
+        )[0]
+    share = (predicted_count / total) if total else 0.0
+    average_scores = {
+        category: score_sums[category] / counts[category]
+        for category in sorted(counts)
+    }
+    return {
+        "probe_candidate_ids": [item.chunk_id for item in candidates],
+        "probe_candidate_categories": [
+            item.metadata.get(category_field)
+            for item in candidates
+        ],
+        "probe_candidate_scores": [item.score for item in candidates],
+        "probe_score_semantics": "higher_is_better",
+        "total_probe_candidates": total,
+        "predicted_category_count": predicted_count,
+        "predicted_category_share": share,
+        "strongest_competing_category": strongest_competing_category,
+        "competing_category": strongest_competing_category,
+        "competing_category_count": competing_count,
+        "support_margin": predicted_count - competing_count,
+        "average_similarity_by_category": average_scores,
+    }
+
+
+def adaptive_routing_decision(probe_stats: dict, thresholds: dict) -> tuple[bool, str]:
+    if int(probe_stats["total_probe_candidates"]) == 0:
+        return False, "empty_global_probe"
+    failures = []
+    if float(probe_stats["predicted_category_share"]) < float(thresholds["minimum_category_share"]):
+        failures.append("category_share_below_threshold")
+    if int(probe_stats["predicted_category_count"]) < int(thresholds["minimum_category_count"]):
+        failures.append("category_count_below_threshold")
+    if int(probe_stats["support_margin"]) < int(thresholds["minimum_margin"]):
+        failures.append("support_margin_below_threshold")
+    if failures:
+        return False, ",".join(failures)
+    return True, "thresholds_satisfied"
+
+
+def empty_probe_diagnostics() -> dict:
+    return {
+        "probe_candidate_ids": [],
+        "probe_candidate_categories": [],
+        "total_probe_candidates": 0,
+        "predicted_category_count": 0,
+        "predicted_category_share": 0.0,
+        "strongest_competing_category": None,
+        "competing_category": None,
+        "competing_category_count": 0,
+        "support_margin": 0,
+        "average_similarity_by_category": {},
+    }
 
 
 def retrieve_top_k_unique_contexts(

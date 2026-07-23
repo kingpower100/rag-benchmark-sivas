@@ -1,10 +1,12 @@
 import pytest
+import yaml
 from pydantic import ValidationError
 
 from src.pipeline1.config_loader import load_pipeline_config_payload
 from src.pipeline1.schemas.config_schema import PipelineConfig
 from src.pipeline2.config_loader import load_eval_config_payload
 from src.pipeline2.schemas.eval_config_schema import EvalConfig
+from src.pipeline3.schemas.pipeline3_config_schema import Pipeline3Config
 from src.config_utils import official_config_files
 
 
@@ -76,6 +78,102 @@ def test_official_pipeline2_configs_enforce_zero_failure_threshold():
         evaluation = payload["evaluation"]
         assert evaluation["strict_failure_threshold"] is True, cfg_path
         assert float(evaluation["max_generation_failure_rate"]) == 0.0, cfg_path
+
+
+def test_official_e00a_mapping_and_configs_load():
+    mapping_path = "configs/official_experiment_mapping.yaml"
+    with open(mapping_path, "r", encoding="utf-8") as f:
+        mapping = yaml.safe_load(f)["official_experiment_mapping"]
+
+    assert mapping["E00-G"] == {
+        "pipeline1": "configs/pipeline1/final_experiments/E00-G_global_dense_baseline.yaml",
+        "pipeline2": "configs/pipeline2/final_experiments/E00-G_global_dense_baseline_eval.yaml",
+        "pipeline3": "configs/pipeline3/final_experiments/E00-G_global_dense_baseline_eval.yaml",
+    }
+    assert mapping["E00-C"] == {
+        "pipeline1": "configs/pipeline1/final_experiments/E00-C_category_aware_dense_baseline.yaml",
+        "pipeline2": "configs/pipeline2/final_experiments/E00-C_category_aware_dense_baseline_eval.yaml",
+        "pipeline3": "configs/pipeline3/final_experiments/E00-C_category_aware_dense_baseline_eval.yaml",
+    }
+    assert mapping["E00-A"] == {
+        "pipeline1": "configs/pipeline1/final_experiments/E00-A_adaptive_category_aware_dense.yaml",
+        "pipeline2": "configs/pipeline2/final_experiments/E00-A_adaptive_category_aware_dense_eval.yaml",
+        "pipeline3": "configs/pipeline3/final_experiments/E00-A_adaptive_category_aware_dense_eval.yaml",
+    }
+
+    p1 = PipelineConfig.from_yaml(mapping["E00-A"]["pipeline1"])
+    p2 = EvalConfig.from_yaml(mapping["E00-A"]["pipeline2"])
+    p3 = Pipeline3Config.from_yaml(mapping["E00-A"]["pipeline3"])
+
+    assert p1.experiment.experiment_id == "E00-A"
+    assert p1.retrieval.retriever_type == "adaptive_category_aware_dense"
+    assert p1.retrieval.category_routing_validation.probe_fetch_k == 20
+    assert p2.evaluation.eval_run_id == "E00-A_adaptive_category_aware_dense_eval"
+    assert p2.inputs.pipeline1_results_path == "data/runs/pipeline1/E00-A/results.jsonl"
+    assert p2.inputs.rag_outputs == ["data/runs/pipeline1/E00-A/results.jsonl"]
+    assert p3.pipeline3.run_id == "E00-A"
+    assert p3.inputs.pipeline1_results_path == "data/runs/pipeline1/E00-A/results.jsonl"
+
+
+def test_official_b00_uses_adaptive_pgvector_and_preserves_reference_components():
+    mapping_path = "configs/official_experiment_mapping.yaml"
+    with open(mapping_path, "r", encoding="utf-8") as f:
+        mapping = yaml.safe_load(f)["official_experiment_mapping"]
+
+    assert mapping["B00"] == {
+        "pipeline1": "configs/pipeline1/final_experiments/B00_sivas_pgvector_reference.yaml",
+        "pipeline2": "configs/pipeline2/final_experiments/B00_sivas_pgvector_reference_eval.yaml",
+        "pipeline3": "configs/pipeline3/final_experiments/B00_sivas_pgvector_reference_eval.yaml",
+    }
+
+    p1 = PipelineConfig.from_yaml(mapping["B00"]["pipeline1"])
+    p2 = EvalConfig.from_yaml(mapping["B00"]["pipeline2"])
+    p3 = Pipeline3Config.from_yaml(mapping["B00"]["pipeline3"])
+
+    assert p1.experiment.experiment_id == "B00_sivas_pgvector_reference"
+    assert p1.experiment.output_dir == "data/runs/pipeline1"
+    assert p1.data.documents_path == "data/raw/kb_documents_fixed.jsonl"
+    assert p1.data.questions_path == "data/raw/questions_fixed.jsonl"
+
+    assert p1.chunking.strategy == "sivas_character"
+    assert p1.chunking.chunk_size == 2048
+    assert p1.chunking.chunk_overlap == 0
+    assert p1.chunking.max_chunk_chars == 2048
+    assert p1.chunking.oversized_chunk_policy == "warn"
+
+    assert p1.embedding.provider == "mistral"
+    assert p1.embedding.model_name == "mistral-embed"
+    assert p1.index.type == "pgvector"
+    assert p1.index.dense_dim == 1024
+    assert p1.index.pgvector is not None
+    assert p1.index.pgvector.dsn_env == "PGVECTOR_DSN"
+    assert p1.index.pgvector.index_type == "hnsw"
+
+    assert p1.retrieval.retriever_type == "adaptive_category_aware_dense"
+    assert p1.retrieval.top_k == 5
+    assert p1.retrieval.fetch_k == 20
+    assert p1.retrieval.fallback_to_global is True
+    validation = p1.retrieval.category_routing_validation
+    assert validation.enabled is True
+    assert validation.probe_fetch_k == 20
+    assert validation.minimum_category_share == 0.60
+    assert validation.minimum_category_count == 3
+    assert validation.minimum_margin == 2
+
+    assert p1.orchestration.provider == "ollama"
+    assert p1.orchestration.model_name == "mistral-small"
+    assert p1.orchestration.prompt_version == "v1"
+    assert p1.orchestration.prompt_path == "src/pipeline1/prompts/orchestration_promptV1.txt"
+    assert p1.generation.provider == "ollama"
+    assert p1.generation.model_name == "mistral-small"
+    assert p1.generation.prompt_path == "src/pipeline1/prompts/answer_generation_sivas_v1.txt"
+
+    expected_results_path = "data/runs/pipeline1/B00_sivas_pgvector_reference/results.jsonl"
+    assert p2.evaluation.eval_run_id == "B00_sivas_pgvector_reference_eval"
+    assert p2.inputs.pipeline1_results_path == expected_results_path
+    assert p2.inputs.rag_outputs == [expected_results_path]
+    assert p3.pipeline3.run_id == "B00_sivas_pgvector_reference"
+    assert p3.inputs.pipeline1_results_path == expected_results_path
 
 
 def test_pipeline1_base_uses_sivas_defaults_and_safe_run_defaults():

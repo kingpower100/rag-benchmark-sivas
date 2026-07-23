@@ -1,13 +1,13 @@
-# B00 — SIVAS-Compatible Reference Baseline
+# B00 — SIVAS-Compatible Adaptive Category-Aware Baseline
 #
-# Reproduces the documented SIVAS partner production pipeline:
+# Implements the repository's SIVAS-compatible pgvector baseline:
 #
 #   JSONL documents
 #   → exact SIVAS boundary-regex chunking (2048-char ceiling, zero overlap)
 #   → Mistral Embed API (mistral-embed, 1024 dim)
 #   → PostgreSQL + pgvector (HNSW, cosine)
-#   → category-aware dense retrieval via pgvector SQL WHERE clause
-#   → controlled global pgvector fallback
+#   → adaptive category-aware dense retrieval with a global pgvector validation probe
+#   → category-restricted pgvector retrieval when accepted, global pgvector retrieval when rejected
 #   → local Ollama mistral-small orchestration
 #   → local Ollama generation (see TEMPORARY IMPLEMENTATION NOTE below)
 #
@@ -124,17 +124,27 @@ index:
     hnsw_ef_search: 40
 
 # ============================================================
-# Category-aware dense retrieval via pgvector
+# Adaptive category-aware dense retrieval via pgvector
 # ============================================================
-# category_aware_dense + pgvector index → PgvectorDenseRetriever
-# SQL WHERE-clause category filtering with controlled global fallback.
+# adaptive_category_aware_dense + pgvector index → AdaptiveCategoryAwareDenseRetriever
+# The predicted category is validated by a global pgvector probe before final retrieval.
+# Accepted predictions use SQL WHERE-clause category filtering for a second retrieval.
+# Rejected, missing, or invalid predictions use final global pgvector retrieval.
+# This is SIVAS-compatible adaptive routing, not a claim of exact production reproduction
+# of original SIVAS confidence or threshold logic.
 # No FAISS is used anywhere in B00.
 retrieval:
-  retriever_type: "category_aware_dense"
+  retriever_type: "adaptive_category_aware_dense"
   top_k: 5
   fetch_k: 20
   category_field: "kategorie"
   fallback_to_global: true
+  category_routing_validation:
+    enabled: true
+    probe_fetch_k: 20
+    minimum_category_share: 0.60
+    minimum_category_count: 3
+    minimum_margin: 2
   metadata_boosting:
     enabled: false
   metadata_filtering:

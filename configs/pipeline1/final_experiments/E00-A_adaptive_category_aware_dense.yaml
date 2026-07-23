@@ -1,0 +1,111 @@
+# E00-A - Adaptive category-aware dense FAISS baseline
+#
+# Frozen E00 baseline: sentence chunking 512/200, multilingual-e5-small,
+# FAISS cosine retrieval, Prompt V4 orchestration, shared answer-generation prompt.
+
+experiment:
+  experiment_id: "E00-A"
+  random_seed: 42
+  output_dir: "data/runs/pipeline1"
+
+data:
+  dataset_schema: "sivas"
+  documents_path: "data/raw/kb_documents_fixed.jsonl"
+  documents_source_type: "jsonl"
+  questions_path: "data/raw/questions_fixed.jsonl"
+  document_text_field: "text"
+  question_id_field: "question_id"
+  question_field: "frage"
+  allow_document_text_fallback: false
+  allow_unsafe_query_fields: false
+
+chunking:
+  strategy: "sentence"
+  chunk_size: 512
+  chunk_size_unit: "tokens"
+  chunk_overlap: 200
+  chunk_overlap_unit: "tokens"
+  tokenizer_name: "cl100k_base"
+  allow_word_fallback: false
+  max_chunk_chars: 8000
+  max_chunk_tokens: 1800
+  oversized_chunk_policy: "split"
+  oversized_chunk_warning: true
+
+embedding:
+  provider: "sentence_transformers"
+  model_name: "intfloat/multilingual-e5-small"
+  normalize_embeddings: true
+  batch_size: 128
+  device: "cuda"
+  require_cuda: true
+  cache_dir: ".cache/sentence-transformers"
+
+index:
+  type: "faiss"
+  metric: "cosine"
+  dense_dim: 384
+  index_name: "sivas_e00_sentence512_e5_small_faiss"
+
+retrieval:
+  retriever_type: "adaptive_category_aware_dense"
+  top_k: 5
+  fetch_k: 20
+  category_field: "kategorie"
+  fallback_to_global: true
+  category_routing_validation:
+    enabled: true
+    probe_fetch_k: 20
+    minimum_category_share: 0.60
+    minimum_category_count: 3
+    minimum_margin: 2
+  metadata_boosting:
+    enabled: false
+  metadata_filtering:
+    enabled: false
+
+reranker:
+  enabled: false
+  model_name: null
+  device: "cuda"
+
+orchestration:
+  provider: "ollama"
+  fixed: true
+  model_name: "llama3.1:8b"
+  base_url: "http://localhost:11434"
+  temperature: 0.0
+  max_tokens: 256
+  timeout_s: 180
+  prompt_path: "src/pipeline1/prompts/orchestration_promptV4.txt"
+  prompt_version: "orchestration_promptV4"
+
+generation:
+  provider: "ollama"
+  model_name: "qwen2.5:7b-instruct"
+  base_url: "http://localhost:11434"
+  temperature: 0.0
+  max_tokens: 256
+  timeout_s: 180
+  include_metadata_headers: true
+  prompt_path: "src/pipeline1/prompts/answer_generation_sivas_v1.txt"
+  max_prompt_tokens: 8192
+  max_context_tokens: 6000
+  max_chunk_tokens: 1800
+  max_context_chars: 24000
+  max_chunk_chars: 8000
+  context_truncation_strategy: "ranked_budget"
+  log_prompt_stats: true
+
+telemetry:
+  estimate_cost: true
+  pricing:
+    input_per_1k_tokens_usd: 0.0
+    output_per_1k_tokens_usd: 0.0
+
+runtime:
+  save_csv: true
+  log_level: "INFO"
+  resume: true
+  overwrite: false
+  cache_mismatch_policy: "raise"

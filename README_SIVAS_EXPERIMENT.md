@@ -44,6 +44,8 @@ Pipeline 2 reads `questions_fixed.jsonl` only for three-way ID alignment validat
 
 For category-aware retrieval, global fallback is controlled only by `retrieval.fallback_to_global`. When it is `true`, invalid categories or insufficient category-scoped results may fall back to global retrieval. When it is `false`, no global retrieval is allowed for category-aware routing; the run records the disabled-fallback reason in retrieval diagnostics.
 
+B00 uses `adaptive_category_aware_dense` as a SIVAS-compatible adaptive category-aware baseline. Its predicted category is validated by a global pgvector probe before final retrieval. Accepted predictions use a second category-restricted pgvector retrieval; rejected, missing, or invalid predictions use a second global pgvector retrieval. This is not a claim of exact SIVAS production reproduction unless the original SIVAS confidence and threshold logic is separately implemented and verified.
+
 ### Retrieval Evaluation Granularity
 
 Pipeline 2 supports two independent retrieval evaluation levels.
@@ -102,11 +104,17 @@ Changing chunk units or tokenizer changes chunk IDs, chunk caches, embeddings, a
 
 This version changes B00 chunk text and character offsets relative to the older normalized implementation. Delete or bypass old B00 chunk and embedding caches, rebuild B00 chunks, and rebuild pgvector rows before using B00 results. Do not reuse existing pgvector rows generated with the older SIVAS chunks; the pgvector manifest now includes chunk content and offset fingerprints in addition to chunk IDs.
 
+Changing B00 from hard category-aware retrieval to adaptive category-aware retrieval changes the retrieval algorithm. Previous B00 Pipeline 1, Pipeline 2, Pipeline 3, and Pipeline 4 outputs must be archived or marked superseded and must not be reused as official B00 results. Embedding and pgvector index reuse is allowed only when chunking and embedding fingerprints are unchanged and the retrieval-stage manifest confirms compatibility.
+
 ### Configuration Reference
 
 | Field | Type | Runtime effect | Valid values | Default | Backend scope | Deprecated |
 |---|---|---|---|---|---|---|
 | `retrieval.fallback_to_global` | boolean | Enables or forbids global fallback after invalid category or insufficient category results | `true`, `false` | `true` | `category_aware_dense` | No |
+| `retrieval.category_routing_validation.probe_fetch_k` | integer | Raw candidate cap and requested result count for adaptive global category-validation probe | `> 0` | `20` | `adaptive_category_aware_dense` | No |
+| `retrieval.category_routing_validation.minimum_category_share` | number | Minimum predicted-category share among probe candidates required to accept category routing | `0.0-1.0` | `0.60` | `adaptive_category_aware_dense` | No |
+| `retrieval.category_routing_validation.minimum_category_count` | integer | Minimum predicted-category probe candidate count required to accept category routing | `>= 0` | `3` | `adaptive_category_aware_dense` | No |
+| `retrieval.category_routing_validation.minimum_margin` | integer | Minimum count margin between predicted category and strongest competitor required to accept category routing | integer | `2` | `adaptive_category_aware_dense` | No |
 | `retrieval.fetch_k` | integer | Hard maximum raw candidates requested from the retriever backend | `>= top_k` | required | all retrievers | No |
 | `index.dense_dim` | integer | Validated against generated embedding dimension; pgvector/Elasticsearch also use it for vector field dimensions | `> 0` | `384` | all vector backends | No |
 | `index.index_name` | string | Names external Elasticsearch indexes; isolates FAISS cache identity when `index.type: faiss` | non-empty string | `sivas_fixed512_bge_small` | FAISS, Elasticsearch | No |

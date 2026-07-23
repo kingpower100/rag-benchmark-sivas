@@ -517,6 +517,7 @@ def run_pipeline(config_path: str) -> Path:
             },
             "orchestration_enabled": orchestration_enabled,
             "orchestration_status": "enabled" if orchestration_enabled else "disabled",
+            "category_routing_validation": _category_routing_validation_manifest(cfg, run_dir),
             "run_stats": {
                 "n_documents": len(docs),
                 "n_chunks": len(chunks),
@@ -864,7 +865,7 @@ def _resolve_orchestration_prompt_path(prompt_path: str | None, project_root: Pa
 
 
 def _category_aware_retrieval_enabled(cfg: PipelineConfig) -> bool:
-    return cfg.retrieval.retriever_type == "category_aware_dense"
+    return cfg.retrieval.retriever_type in {"category_aware_dense", "adaptive_category_aware_dense"}
 
 
 def _orchestration_enabled(cfg: PipelineConfig) -> bool:
@@ -1157,6 +1158,49 @@ def _pipeline1_output_artifacts(run_dir: Path) -> dict[str, dict[str, str | int 
         path = run_dir / name
         artifacts[name] = _artifact_record(path)
     return artifacts
+
+
+def _category_routing_validation_manifest(cfg: PipelineConfig, run_dir: Path) -> dict:
+    validation_cfg = cfg.retrieval.category_routing_validation
+    summary = {
+        "enabled": bool(
+            cfg.retrieval.retriever_type == "adaptive_category_aware_dense"
+            and validation_cfg.enabled
+        ),
+        "retriever_type": cfg.retrieval.retriever_type,
+        "probe_fetch_k": validation_cfg.probe_fetch_k,
+        "thresholds": {
+            "minimum_category_share": validation_cfg.minimum_category_share,
+            "minimum_category_count": validation_cfg.minimum_category_count,
+            "minimum_margin": validation_cfg.minimum_margin,
+        },
+        "number_accepted": 0,
+        "number_rejected": 0,
+        "number_invalid_categories": 0,
+        "number_global_fallbacks": 0,
+    }
+    results_path = run_dir / "results.jsonl"
+    if cfg.retrieval.retriever_type != "adaptive_category_aware_dense" or not results_path.exists():
+        return summary
+
+    with results_path.open("r", encoding="utf-8") as f:
+        for line in f:
+            if not line.strip():
+                continue
+            row = json.loads(line)
+            diagnostics = row.get("retrieval_diagnostics") if isinstance(row, dict) else None
+            if not isinstance(diagnostics, dict):
+                continue
+            decision = diagnostics.get("routing_decision")
+            if decision == "accepted":
+                summary["number_accepted"] += 1
+            elif decision == "rejected":
+                summary["number_rejected"] += 1
+            if diagnostics.get("category_validated") is not True:
+                summary["number_invalid_categories"] += 1
+            if diagnostics.get("final_retrieval_mode") == "global" or diagnostics.get("fallback_used") is True:
+                summary["number_global_fallbacks"] += 1
+    return summary
 
 
 def _fallback_error_record(cfg: PipelineConfig, query, error: str) -> OutputRecord:

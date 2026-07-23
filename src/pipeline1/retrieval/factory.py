@@ -1,5 +1,6 @@
 import os
 
+from src.pipeline1.retrieval.adaptive_category_aware_dense_retriever import AdaptiveCategoryAwareDenseRetriever
 from src.pipeline1.retrieval.bm25_retriever import BM25Retriever
 from src.pipeline1.retrieval.category_aware_dense_retriever import CategoryAwareDenseRetriever
 from src.pipeline1.retrieval.dense_retriever import DenseRetriever
@@ -28,6 +29,13 @@ def build_retriever(config: RetrievalConfig, embedder, index, chunks, embeddings
     dense_retriever = _build_dense_retriever(config, embedder, index, chunks)
     if config.retriever_type == "category_aware_dense":
         return CategoryAwareDenseRetriever(
+            dense_retriever=dense_retriever,
+            category_field=config.category_field,
+            embeddings=embeddings,
+            index_metric=getattr(index, "metric", "cosine"),
+        )
+    if config.retriever_type == "adaptive_category_aware_dense":
+        return AdaptiveCategoryAwareDenseRetriever(
             dense_retriever=dense_retriever,
             category_field=config.category_field,
             embeddings=embeddings,

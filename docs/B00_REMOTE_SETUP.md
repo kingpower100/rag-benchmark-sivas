@@ -1,4 +1,4 @@
-# B00 Remote Setup — SIVAS pgvector Reference Baseline
+# B00 Remote Setup — SIVAS-Compatible Adaptive Category-Aware pgvector Baseline
 
 This document is structured for a **split local/remote workflow**:
 
@@ -16,6 +16,8 @@ This document is structured for a **split local/remote workflow**:
 
 Only embedding calls the Mistral API.
 Orchestration and generation run against the local Ollama server (`http://localhost:11434`).
+
+B00 uses `adaptive_category_aware_dense`: the orchestration category prediction is validated with a global pgvector retrieval probe. Accepted predictions use a second category-restricted pgvector retrieval; rejected, missing, or invalid predictions use a second global pgvector retrieval. This is SIVAS-compatible adaptive routing, not a verified exact reproduction of the original SIVAS confidence and threshold logic.
 
 > **Temporary implementation note:**
 > The original SIVAS reference system uses Mistral Medium for answer generation.
@@ -74,7 +76,7 @@ python -c "from src.pipeline1.schemas.config_schema import PipelineConfig; \
 - strategy: sivas_character / max_chunk_chars: 2048 / chunk_overlap: 0 (required field, explicit)
 - embedding.provider: mistral / model: mistral-embed / dim: 1024 / metric: cosine
 - index.type: pgvector / dsn_env: PGVECTOR_DSN / schema: rag / table: chunk_embeddings
-- retriever_type: category_aware_dense / top_k: 5 / fetch_k: 20
+- retriever_type: adaptive_category_aware_dense / top_k: 5 / fetch_k: 20 / probe_fetch_k: 20
 - orchestration: ollama / mistral-small / http://localhost:11434 (no Mistral API key)
 - generation: ollama / mistral-small / http://localhost:11434 (no Mistral API key)
   (temporary — original SIVAS system uses mistral-medium; change model_name to restore)
@@ -144,7 +146,7 @@ git commit -m "Add SIVAS-compatible B00 pgvector baseline
 - MistralEmbedder: mistral-embed API, batching, retry, no key logging
 - MistralGenerator: Mistral chat completions provider
 - Schema: sivas_character strategy, mistral provider; chunk_overlap required (no default)
-- B00 P1 config: mistral-embed + pgvector + category-aware dense
+- B00 P1 config: mistral-embed + pgvector + adaptive category-aware dense
   orchestration=ollama/mistral-small, generation=ollama/mistral-small (temporary; original: mistral-medium)
 - B00 P2 eval config: extends base_eval.yaml; all standard metrics
 - B00 P3 eval config: extends base_pipeline3.yaml; matches base judge+RAGAS setup

@@ -105,7 +105,10 @@ def run_preflight_checks(cfg, base_dir: Path | None = None) -> list[str]:
 
 
 def _orchestration_enabled(cfg) -> bool:
-    return bool(cfg.orchestration.enabled and cfg.retrieval.retriever_type == "category_aware_dense")
+    return bool(
+        cfg.orchestration.enabled
+        and cfg.retrieval.retriever_type in {"category_aware_dense", "adaptive_category_aware_dense"}
+    )
 
 
 def _validate_documents_input(cfg, docs_path: Path) -> list[str]:

@@ -11,6 +11,10 @@ official_experiment_mapping:
     pipeline1: "configs/pipeline1/final_experiments/E00-C_category_aware_dense_baseline.yaml"
     pipeline2: "configs/pipeline2/final_experiments/E00-C_category_aware_dense_baseline_eval.yaml"
     pipeline3: "configs/pipeline3/final_experiments/E00-C_category_aware_dense_baseline_eval.yaml"
+  E00-A:
+    pipeline1: "configs/pipeline1/final_experiments/E00-A_adaptive_category_aware_dense.yaml"
+    pipeline2: "configs/pipeline2/final_experiments/E00-A_adaptive_category_aware_dense_eval.yaml"
+    pipeline3: "configs/pipeline3/final_experiments/E00-A_adaptive_category_aware_dense_eval.yaml"
   C00:
     pipeline1: "configs/pipeline1/final_experiments/C00_sentence512_baseline.yaml"
     pipeline2: "configs/pipeline2/final_experiments/C00_sentence512_baseline_eval.yaml"

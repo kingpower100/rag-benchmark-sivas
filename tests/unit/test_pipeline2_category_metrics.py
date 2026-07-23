@@ -5,6 +5,7 @@ from __future__ import annotations
 import pytest
 
 from src.pipeline2.metrics.category_metrics import compute_category_metrics, compute_category_routing_report
+from src.pipeline2.orchestrator import _category_routing_executed_for_row
 from src.pipeline2.metrics.answer_metrics import (
     resolve_ground_truth_answer,
 )
@@ -111,6 +112,110 @@ def test_category_routing_report_uses_runtime_routing_rows():
     assert report["fallback_rate"] == 0.5
     assert report["unknown_rate"] == 0.5
     assert report["category_index_usage_rate"] == 0.5
+
+
+def test_category_routing_report_recognizes_adaptive_accepted_route():
+    rows = [
+        {
+            "retriever_type": "adaptive_category_aware_dense",
+            "category_predicted": "Einkauf",
+            "category_gold": "Einkauf",
+            "category_accuracy": 1.0,
+            "category_validated": True,
+            "fallback_used": False,
+            "category_index_used": True,
+            "retrieval_diagnostics": {
+                "routing_decision": "accepted",
+                "final_retrieval_mode": "category",
+            },
+        }
+    ]
+
+    report = compute_category_routing_report(rows, SIVAS_CATEGORIES)
+
+    assert report["category_routing_active"] is True
+    assert report["routing_evaluated_questions"] == 1
+    assert report["category_index_usage_rate"] == 1.0
+    assert report["fallback_rate"] == 0.0
+
+
+def test_category_routing_report_recognizes_adaptive_rejected_to_global_route():
+    rows = [
+        {
+            "retriever_type": "adaptive_category_aware_dense",
+            "category_predicted": "Einkauf",
+            "category_gold": "Einkauf",
+            "category_accuracy": 1.0,
+            "category_validated": True,
+            "fallback_used": True,
+            "category_index_used": False,
+            "retrieval_diagnostics": {
+                "routing_decision": "rejected",
+                "final_retrieval_mode": "global",
+                "decision_reason": "support_margin_below_threshold",
+            },
+        }
+    ]
+
+    report = compute_category_routing_report(rows, SIVAS_CATEGORIES)
+
+    assert report["category_routing_active"] is True
+    assert report["routing_evaluated_questions"] == 1
+    assert report["validated_category_coverage"] == 1.0
+    assert report["category_index_usage_rate"] == 0.0
+    assert report["fallback_rate"] == 1.0
+
+
+def test_category_routing_report_recognizes_adaptive_invalid_category_global_route():
+    rows = [
+        {
+            "retriever_type": "adaptive_category_aware_dense",
+            "category_predicted": "Unknown",
+            "category_gold": "Technik",
+            "category_accuracy": 0.0,
+            "category_validated": False,
+            "fallback_used": True,
+            "category_index_used": False,
+            "retrieval_diagnostics": {
+                "routing_decision": "rejected",
+                "final_retrieval_mode": "global",
+                "decision_reason": "invalid_or_missing_category",
+            },
+        }
+    ]
+
+    report = compute_category_routing_report(rows, SIVAS_CATEGORIES)
+
+    assert report["category_routing_active"] is True
+    assert report["routing_evaluated_questions"] == 1
+    assert report["validated_category_coverage"] == 0.0
+    assert report["unknown_rate"] == 1.0
+    assert report["fallback_rate"] == 1.0
+
+
+@pytest.mark.parametrize(
+    ("row", "expected"),
+    [
+        ({"retriever_type": "dense", "retrieval_diagnostics": {"retriever_type": "dense"}}, False),
+        ({"retriever_type": "category_aware_dense"}, True),
+        (
+            {
+                "retriever_type": "adaptive_category_aware_dense",
+                "retrieval_diagnostics": {"routing_decision": "accepted", "final_retrieval_mode": "category"},
+            },
+            True,
+        ),
+        (
+            {
+                "retriever_type": "adaptive_category_aware_dense",
+                "retrieval_diagnostics": {"routing_decision": "rejected", "final_retrieval_mode": "global"},
+            },
+            True,
+        ),
+    ],
+)
+def test_pipeline2_orchestrator_routing_detector(row, expected):
+    assert _category_routing_executed_for_row(row) is expected
 
 
 def test_category_all_five_sivas_categories_work():

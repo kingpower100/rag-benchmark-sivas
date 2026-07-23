@@ -195,8 +195,24 @@ class HybridConfig(StrictConfigModel):
     bm25_fetch_k: Optional[int] = Field(default=None, gt=0)
 
 
+class CategoryRoutingValidationConfig(StrictConfigModel):
+    enabled: bool = True
+    probe_fetch_k: int = Field(default=20, gt=0)
+    minimum_category_share: float = Field(default=0.60, ge=0.0, le=1.0)
+    minimum_category_count: int = Field(default=3, ge=0)
+    minimum_margin: int = Field(default=2)
+
+
 class RetrievalConfig(StrictConfigModel):
-    retriever_type: Literal["dense", "bm25", "hybrid_rrf", "elasticsearch_dense", "category_aware_dense", "elasticsearch_hybrid_rrf"] = Field(
+    retriever_type: Literal[
+        "dense",
+        "bm25",
+        "hybrid_rrf",
+        "elasticsearch_dense",
+        "category_aware_dense",
+        "adaptive_category_aware_dense",
+        "elasticsearch_hybrid_rrf",
+    ] = Field(
         default="dense",
         validation_alias=AliasChoices("retriever_type", "type"),
     )
@@ -204,6 +220,7 @@ class RetrievalConfig(StrictConfigModel):
     fetch_k: int = Field(gt=0)
     category_field: str = "kategorie"
     fallback_to_global: bool = True
+    category_routing_validation: CategoryRoutingValidationConfig = Field(default_factory=CategoryRoutingValidationConfig)
     metadata_boosting: MetadataBoostingConfig = Field(default_factory=MetadataBoostingConfig)
     metadata_filtering: MetadataFilteringConfig = Field(default_factory=MetadataFilteringConfig)
     bm25: BM25Config = Field(default_factory=BM25Config)
@@ -469,9 +486,9 @@ class PipelineConfig(StrictConfigModel):
                 f"retrieval.retriever_type='elasticsearch_hybrid_rrf' requires index.type='elasticsearch', "
                 f"got '{index_type}'. Set index.type='elasticsearch' to use the Elasticsearch hybrid retriever."
             )
-        if retriever_type == "category_aware_dense" and not self.orchestration.enabled:
+        if retriever_type in {"category_aware_dense", "adaptive_category_aware_dense"} and not self.orchestration.enabled:
             raise ValueError(
-                "retrieval.retriever_type='category_aware_dense' requires orchestration.enabled=true "
+                f"retrieval.retriever_type='{retriever_type}' requires orchestration.enabled=true "
                 "because category-aware retrieval needs a validated category prediction."
             )
         return self

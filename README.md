@@ -25,6 +25,31 @@ Benchmark configs are grouped by pipeline under `configs/pipeline*/experiments/`
 
 Smoke tests live separately under `configs/pipeline*/smoke/` and are excluded from benchmark leaderboards.
 
+## Dense Retrieval Strategies
+
+Pipeline 1 supports three dense retrieval strategies with distinct routing behavior:
+
+- `dense`: embeds the question and searches the complete configured dense index. It does not use orchestration category predictions for filtering.
+- `category_aware_dense`: uses the orchestration LLM's validated category as a hard routing filter. Valid categories search only that category. Invalid or missing categories, and insufficient category results when `fallback_to_global=true`, fall back to global retrieval. It does not run a global validation probe or compute support metrics.
+- `adaptive_category_aware_dense`: uses evidence-aware category routing. After orchestration predicts and validates a category against the KB taxonomy, the retriever runs a small global probe across all categories. The probe is global, uses `category_routing_validation.probe_fetch_k` as both the requested probe size and raw candidate cap, and is separate from final retrieval. If probe support meets all configured thresholds, Pipeline 1 performs a second retrieval restricted to the predicted category. Otherwise, final retrieval is global.
+
+Adaptive routing is configured under `retrieval.category_routing_validation`:
+
+```yaml
+retrieval:
+  retriever_type: "adaptive_category_aware_dense"
+  category_routing_validation:
+    enabled: true
+    probe_fetch_k: 20
+    minimum_category_share: 0.60
+    minimum_category_count: 3
+    minimum_margin: 2
+```
+
+The adaptive probe computes `predicted_category_count`, `predicted_category_share`, `strongest_competing_category`, `competing_category_count`, `support_margin`, total probe candidates, and average score by category. Probe candidate IDs, categories, and scores are persisted in aligned order. Dense FAISS and pgvector probe scores use the existing backend similarity ranking semantics: higher values rank earlier.
+
+Per-question adaptive diagnostics include the predicted category, validation status, probe fetch size, probe candidates and scores, thresholds, routing decision, decision reason, final retrieval mode, fallback reason, and final chunk IDs. The run manifest includes whether routing validation was enabled, thresholds, probe fetch size, accepted count, rejected count, invalid-category count, and global-fallback count.
+
 ## Active Pipeline 1 Config
 
 - `configs/pipeline1/experiments/91_sivas_fixed512_faiss_dense_mistralsmall_prompt_v0.yaml`
@@ -71,6 +96,8 @@ Official derived chunk annotation packages:
 - `data/ground_truth/chunk_level/C01_sentence256_overlap100`
 - `data/ground_truth/chunk_level/C02_sentence1024_overlap400`
 - `data/ground_truth/chunk_level/E91-E98_fixed512_overlap64`
+
+B00 is the SIVAS-compatible adaptive category-aware pgvector baseline. It uses SIVAS character chunking, Mistral Embed, pgvector, and `adaptive_category_aware_dense`: category predictions are validated through a global pgvector probe, accepted predictions use category-restricted retrieval, and rejected, missing, or invalid predictions use global retrieval. It should not be described as exact SIVAS production reproduction unless the original SIVAS confidence and threshold logic is separately implemented and verified.
 
 Regenerate derived packages only from canonical validated evidence spans:
 

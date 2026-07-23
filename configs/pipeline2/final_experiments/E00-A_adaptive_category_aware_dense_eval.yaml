@@ -1,0 +1,19 @@
+extends: "../base_eval.yaml"
+
+evaluation:
+  eval_run_id: "E00-A_adaptive_category_aware_dense_eval"
+  strict_failure_threshold: true
+  max_generation_failure_rate: 0.0
+
+inputs:
+  pipeline1_results_path: "data/runs/pipeline1/E00-A/results.jsonl"
+  rag_outputs:
+    - "data/runs/pipeline1/E00-A/results.jsonl"
+
+retrieval_evaluation:
+  document_level:
+    enabled: true
+  chunk_level:
+    enabled: true
+    ground_truth_path: "data/ground_truth/chunk_level/E00-G_sentence512_overlap200/gold_chunk_annotations_E00-G_sentence512_overlap200.jsonl"
+    missing_question_policy: error

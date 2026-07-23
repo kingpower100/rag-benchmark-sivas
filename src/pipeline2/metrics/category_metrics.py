@@ -3,6 +3,8 @@ from __future__ import annotations
 from collections import defaultdict
 from typing import Any
 
+CATEGORY_ROUTING_RETRIEVERS = frozenset({"category_aware_dense", "adaptive_category_aware_dense"})
+
 
 def compute_category_metrics(
     detected_category: str | None,
@@ -135,7 +137,15 @@ def compute_category_routing_report(
 
 
 def _category_routing_executed(row: dict[str, Any]) -> bool:
-    if str(row.get("retriever_type") or "") == "category_aware_dense":
+    if str(row.get("retriever_type") or "") in CATEGORY_ROUTING_RETRIEVERS:
         return True
     diagnostics = row.get("retrieval_diagnostics") or {}
-    return isinstance(diagnostics, dict) and str(diagnostics.get("retriever_type") or "") == "category_aware_dense"
+    if not isinstance(diagnostics, dict):
+        return False
+    retriever_type = str(diagnostics.get("retriever_type") or "")
+    if retriever_type in CATEGORY_ROUTING_RETRIEVERS:
+        return True
+    return bool(
+        diagnostics.get("routing_decision") in {"accepted", "rejected"}
+        and diagnostics.get("predicted_category") is not None
+    )
