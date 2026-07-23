@@ -118,7 +118,7 @@ index:
     schema_name: "rag"
     table_name: "chunk_embeddings"
     index_type: "hnsw"
-    rebuild_index: false
+    rebuild_index: true
     hnsw_m: 16
     hnsw_ef_construction: 64
     hnsw_ef_search: 40
