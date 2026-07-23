@@ -79,7 +79,7 @@ generation:
   model_name: "qwen2.5:7b-instruct"
   base_url: "http://localhost:11434"
   temperature: 0.0
-  max_tokens: 256
+  max_tokens: 512
   timeout_s: 180
   include_metadata_headers: true
   prompt_path: "src/pipeline1/prompts/answer_generation_sivas_v1.txt"

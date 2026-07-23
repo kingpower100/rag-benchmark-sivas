@@ -99,6 +99,19 @@ Official derived chunk annotation packages:
 
 B00 is the SIVAS-compatible adaptive category-aware pgvector baseline. It uses SIVAS character chunking, Mistral Embed, pgvector, and `adaptive_category_aware_dense`: category predictions are validated through a global pgvector probe, accepted predictions use category-restricted retrieval, and rejected, missing, or invalid predictions use global retrieval. It should not be described as exact SIVAS production reproduction unless the original SIVAS confidence and threshold logic is separately implemented and verified.
 
+### Official C-Series Experiments
+
+C00-C02 evaluate sentence chunking under fixed global dense retrieval:
+
+- C00: sentence 512 tokens / 200-token overlap baseline.
+- C01: sentence 256 tokens / 100-token overlap.
+- C02: sentence 1024 tokens / 400-token overlap.
+- C05: original SIVAS character chunking with 2048-character ceiling and zero overlap.
+
+C03 is a parent-context retrieval ablation, not a chunk-size experiment. It keeps C00's sentence 512/200 chunking, `retriever_type: dense`, FAISS cosine backend, embedding model, reranker setting, orchestration-disabled state, generation model, and prompts fixed. The only introduced variable relative to C00 is `parent_context.enabled: true`, which expands retrieved child chunks to their deepest-containing Markdown parent sections before generation.
+
+C05 isolates the SIVAS character-based chunking strategy inside the controlled local RAG framework. It reuses B00's `sivas_character` chunking configuration only; it does not inherit B00's Mistral embeddings, pgvector backend, adaptive category-aware retrieval, Mistral orchestration, or Mistral generation. C05 uses the `B00_sivas_character2048_overlap0` chunk-level annotation package because it produces the same chunk inventory.
+
 Regenerate derived packages only from canonical validated evidence spans:
 
 ```bash

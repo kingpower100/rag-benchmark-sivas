@@ -8,3 +8,12 @@ experiment:
 
 orchestration:
   enabled: false
+
+# fallback_to_global and category_routing_validation.enabled are dormant when
+# retriever_type="dense" (the routing branches in retrieval_stage.py are never
+# entered). Declared explicitly so resolved configs match declared intent and
+# all C-series children inherit safe values without relying on schema defaults.
+retrieval:
+  fallback_to_global: false
+  category_routing_validation:
+    enabled: false

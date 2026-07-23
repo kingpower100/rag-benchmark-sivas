@@ -98,6 +98,19 @@ Sentence chunking preserves sentence boundaries wherever possible. Official conf
 
 Changing chunk units or tokenizer changes chunk IDs, chunk caches, embeddings, and FAISS index cache keys. Do not reuse old official outputs after changing these fields.
 
+### C-Series Benchmark Scope
+
+C00-C02 are the official sentence-chunking experiments. They keep retrieval fixed as global dense FAISS retrieval and vary only the sentence chunk size and overlap:
+
+- C00: 512-token chunks with 200-token overlap.
+- C01: 256-token chunks with 100-token overlap.
+- C02: 1024-token chunks with 400-token overlap.
+- C05: original SIVAS character chunking with a 2048-character ceiling and zero overlap.
+
+C03 is the official parent-context retrieval ablation. It is not a chunk-size experiment. C03 keeps C00's chunking, embedding model, FAISS cosine backend, `retriever_type: dense`, reranker-disabled setting, orchestration-disabled state, generation model, and prompts fixed. The only introduced variable relative to C00 is parent-context expansion of retrieved child chunks into Markdown parent sections before answer generation.
+
+C05 is the official SIVAS character-based chunking experiment. It reuses B00's `sivas_character` chunking configuration only, while keeping every non-chunking component frozen to C00: `intfloat/multilingual-e5-small` embeddings, FAISS cosine, global dense retrieval, disabled reranker, disabled orchestration, Qwen2.5 generation, and `answer_generation_sivas_v1.txt`. C05 uses the `B00_sivas_character2048_overlap0` chunk-level ground-truth package because its chunk inventory matches B00's SIVAS character chunks.
+
 ### SIVAS Character Chunking
 
 `sivas_character_v2` preserves source text exactly. It locates boundaries with `(?<=[.!?;:])\s+|\n\n|\n(?=#{1,6}\s)|\n(?=-\s)`, assigns each matched separator to exactly one contiguous source span, and emits chunks by slicing the original document text. For each document, concatenating chunk text must reconstruct the source text exactly.

@@ -27,6 +27,14 @@ official_experiment_mapping:
     pipeline1: "configs/pipeline1/final_experiments/C02_sentence1024.yaml"
     pipeline2: "configs/pipeline2/final_experiments/C02_sentence1024_eval.yaml"
     pipeline3: "configs/pipeline3/final_experiments/C02_sentence1024_eval.yaml"
+  C03:
+    pipeline1: "configs/pipeline1/final_experiments/C03_parent_context.yaml"
+    pipeline2: "configs/pipeline2/final_experiments/C03_parent_context_eval.yaml"
+    pipeline3: "configs/pipeline3/final_experiments/C03_parent_context_eval.yaml"
+  C05:
+    pipeline1: "configs/pipeline1/final_experiments/C05_sivas_character2048_overlap0.yaml"
+    pipeline2: "configs/pipeline2/final_experiments/C05_sivas_character2048_overlap0_eval.yaml"
+    pipeline3: "configs/pipeline3/final_experiments/C05_sivas_character2048_overlap0_eval.yaml"
   E91:
     numeric_id: "91_sivas_fixed512_faiss_dense_mistralsmall_prompt_v0"
     pipeline1: "configs/pipeline1/experiments Orchestration LLM/91_sivas_fixed512_faiss_dense_mistralsmall_prompt_v0.yaml"

@@ -1,0 +1,23 @@
+extends: "../base_eval.yaml"
+
+evaluation:
+  eval_run_id: "C05_sivas_character2048_overlap0_eval"
+  strict_failure_threshold: true
+  max_generation_failure_rate: 0.0
+
+inputs:
+  pipeline1_results_path: "data/runs/pipeline1/C05/results.jsonl"
+  rag_outputs:
+    - "data/runs/pipeline1/C05/results.jsonl"
+
+retrieval_evaluation:
+  document_level:
+    enabled: true
+  chunk_level:
+    enabled: true
+    # C05 uses the same SIVAS character chunk inventory as B00, but keeps all
+    # non-chunking RAG components frozen to C00. This package is compatible
+    # because the gold chunk IDs are generated for strategy=sivas_character,
+    # max_chunk_chars=2048, and chunk_overlap=0.
+    ground_truth_path: "data/ground_truth/chunk_level/B00_sivas_character2048_overlap0/gold_chunk_annotations_B00_sivas_character2048_overlap0.jsonl"
+    missing_question_policy: error

@@ -1,0 +1,40 @@
+extends: "C00_sentence512_baseline.yaml"
+
+# C05 - SIVAS Character-Based Chunking
+#
+# Controlled chunking experiment. All non-chunking components are frozen to C00:
+# local intfloat/multilingual-e5-small embeddings, FAISS cosine index, global
+# dense retrieval, reranker disabled, orchestration disabled, and Qwen2.5 answer
+# generation with answer_generation_sivas_v1.txt.
+#
+# Metadata:
+# - changed variable: chunking strategy
+# - dependency: Ready after YAML creation and validation
+# - compared against: C00, C01, C02, and C03
+# - purpose: Evaluate the original SIVAS character-based chunking strategy inside
+#   the controlled local RAG framework.
+# - note: All non-chunking components are frozen to C00.
+
+experiment:
+  experiment_id: "C05"
+
+orchestration:
+  enabled: false
+
+parent_context:
+  enabled: false
+
+# Exact SIVAS character chunking reused from B00.
+# The implementation uses the repository's sivas_character chunker and its
+# documented SIVAS partner boundary regex:
+#   (?<=[.!?;:])\s+|\n\n|\n(?=#{1,6}\s)|\n(?=-\s)
+chunking:
+  strategy: "sivas_character"
+  chunk_size: 2048
+  chunk_size_unit: null
+  chunk_overlap: 0
+  chunk_overlap_unit: null
+  max_chunk_chars: 2048
+  max_chunk_tokens: 1800
+  oversized_chunk_policy: "warn"
+  oversized_chunk_warning: true

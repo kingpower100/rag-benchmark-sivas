@@ -176,6 +176,63 @@ def test_official_b00_uses_adaptive_pgvector_and_preserves_reference_components(
     assert p3.inputs.pipeline1_results_path == expected_results_path
 
 
+def test_official_c05_reuses_only_b00_chunking_inside_c00_control():
+    mapping_path = "configs/official_experiment_mapping.yaml"
+    with open(mapping_path, "r", encoding="utf-8") as f:
+        mapping = yaml.safe_load(f)["official_experiment_mapping"]
+
+    assert mapping["C05"] == {
+        "pipeline1": "configs/pipeline1/final_experiments/C05_sivas_character2048_overlap0.yaml",
+        "pipeline2": "configs/pipeline2/final_experiments/C05_sivas_character2048_overlap0_eval.yaml",
+        "pipeline3": "configs/pipeline3/final_experiments/C05_sivas_character2048_overlap0_eval.yaml",
+    }
+
+    c00 = PipelineConfig.from_yaml(mapping["C00"]["pipeline1"])
+    b00 = PipelineConfig.from_yaml(mapping["B00"]["pipeline1"])
+    c05 = PipelineConfig.from_yaml(mapping["C05"]["pipeline1"])
+    c05_p2 = EvalConfig.from_yaml(mapping["C05"]["pipeline2"])
+    c05_p3 = Pipeline3Config.from_yaml(mapping["C05"]["pipeline3"])
+
+    assert c05.experiment.experiment_id == "C05"
+    assert c05.experiment.experiment_id != c00.experiment.experiment_id
+    assert c05.experiment.experiment_id != b00.experiment.experiment_id
+    assert c05.experiment.output_dir == c00.experiment.output_dir
+
+    assert c05.chunking.model_dump() == b00.chunking.model_dump()
+    assert c05.data.model_dump() == c00.data.model_dump()
+    assert c05.embedding.model_dump() == c00.embedding.model_dump()
+    assert c05.index.model_dump() == c00.index.model_dump()
+    assert c05.retrieval.model_dump() == c00.retrieval.model_dump()
+    assert c05.reranker.model_dump() == c00.reranker.model_dump()
+    assert c05.orchestration.model_dump() == c00.orchestration.model_dump()
+    assert c05.generation.model_dump() == c00.generation.model_dump()
+    assert c05.telemetry.model_dump() == c00.telemetry.model_dump()
+    assert c05.runtime.model_dump() == c00.runtime.model_dump()
+    assert c05.parent_context.enabled is False
+
+    assert c05.embedding.model_name != b00.embedding.model_name
+    assert c05.index.type != b00.index.type
+    assert c05.retrieval.retriever_type == "dense"
+    assert c05.retrieval.retriever_type != b00.retrieval.retriever_type
+    assert c05.retrieval.retriever_type not in {"category_aware_dense", "adaptive_category_aware_dense"}
+    assert c05.orchestration.enabled is False
+    assert c05.orchestration.model_name == "llama3.1:8b"
+    assert c05.orchestration.model_name != b00.orchestration.model_name
+    assert c05.generation.model_name == "qwen2.5:7b-instruct"
+    assert c05.generation.model_name != b00.generation.model_name
+
+    expected_results_path = "data/runs/pipeline1/C05/results.jsonl"
+    assert c05_p2.inputs.pipeline1_results_path == expected_results_path
+    assert c05_p2.inputs.rag_outputs == [expected_results_path]
+    assert c05_p2.inputs.pipeline1_results_path != "data/runs/pipeline1/C00/results.jsonl"
+    assert c05_p2.retrieval_evaluation is not None
+    assert c05_p2.retrieval_evaluation.document_level.enabled is True
+    assert c05_p2.retrieval_evaluation.chunk_level.enabled is True
+    assert "B00_sivas_character2048_overlap0" in c05_p2.retrieval_evaluation.chunk_level.ground_truth_path
+    assert c05_p3.pipeline3.run_id == "C05"
+    assert c05_p3.inputs.pipeline1_results_path == expected_results_path
+
+
 def test_pipeline1_base_uses_sivas_defaults_and_safe_run_defaults():
     cfg = PipelineConfig.from_yaml("configs/pipeline1/base.yaml")
 
@@ -258,6 +315,22 @@ def test_reranker_disabled_allows_missing_model_name():
 
     assert cfg.reranker.enabled is False
     assert cfg.reranker.model_name is None
+
+
+@pytest.mark.parametrize("exp_id", ["C00", "C01", "C02", "C03", "C05"])
+def test_c_series_routing_fields_are_dormant_safe_defaults(exp_id):
+    mapping_path = "configs/official_experiment_mapping.yaml"
+    with open(mapping_path, "r", encoding="utf-8") as f:
+        mapping = yaml.safe_load(f)["official_experiment_mapping"]
+
+    cfg = PipelineConfig.from_yaml(mapping[exp_id]["pipeline1"])
+
+    assert cfg.retrieval.retriever_type == "dense", f"{exp_id}: expected retriever_type='dense'"
+    assert cfg.retrieval.fallback_to_global is False, f"{exp_id}: fallback_to_global must be False"
+    assert cfg.retrieval.category_routing_validation.enabled is False, (
+        f"{exp_id}: category_routing_validation.enabled must be False"
+    )
+    assert cfg.orchestration.enabled is False, f"{exp_id}: orchestration.enabled must be False"
 
 
 def test_pipeline2_unknown_config_fields_fail():
