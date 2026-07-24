@@ -94,7 +94,7 @@ _q_raw_fixture = np.array([
     _e[0],
     _e[1],
     -_e[0],
-    0.5774 * _e[0] + 0.5774 * _e[1] + 0.5774 * _e[2],
+    0.72 * _e[0] + 0.52 * _e[1] + 0.46 * _e[2],
     _e[3],
 ], dtype="float32")
 _qnorms = np.linalg.norm(_q_raw_fixture, axis=1, keepdims=True)

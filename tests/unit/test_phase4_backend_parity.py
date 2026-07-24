@@ -60,7 +60,7 @@ _q_raw = np.array([
     _e[0],                                                          # Q0: aligns with docs 0,6 (tied)
     _e[1],                                                          # Q1: aligns with doc 3; near 2,4
     -_e[0],                                                         # Q2: anti-aligned; doc 7 wins
-    0.5774 * _e[0] + 0.5774 * _e[1] + 0.5774 * _e[2],            # Q3: spread, small margins
+    0.72 * _e[0] + 0.52 * _e[1] + 0.46 * _e[2],                # Q3: spread, small margins
     _e[3],                                                          # Q4: all docs near zero similarity
 ], dtype="float32")
 QUERY_VECS = _q_raw / np.linalg.norm(_q_raw, axis=1, keepdims=True)
@@ -286,6 +286,27 @@ def test_case4_top5_contains_mixed_components():
     top5_ids = {r[0] for r in ref}
     # Doc 7 (-e0) must not appear in top 5 (its score is negative)
     assert "chunk_007" not in top5_ids
+
+
+def test_case4_top5_boundary_is_not_tied_and_backend_sets_match():
+    """Q3 keeps small score margins without placing a tied group across Top-5."""
+    query = QUERY_VECS[3]
+    scores = _numpy_scores(query)
+    order = np.argsort(-scores)
+    top5_ids = {CHUNK_IDS[i] for i in order[:TOP_K]}
+    rank5_score = float(scores[order[TOP_K - 1]])
+    rank6_score = float(scores[order[TOP_K]])
+
+    assert rank5_score - rank6_score > 100 * SCORE_TOL
+    assert abs(float(scores[0]) - float(scores[6])) < SCORE_TOL
+    assert {"chunk_000", "chunk_006"}.issubset(top5_ids)
+
+    ref_ids = {chunk_id for chunk_id, _, _ in _numpy_top_k(query)}
+    faiss_ids = {chunk_id for chunk_id, _, _ in _mock_faiss_search_for(3)}
+    pgvector_ids = {chunk_id for chunk_id, _, _ in _mock_pgvector_search_for(3)}
+    es_ids = {chunk_id for chunk_id, _, _ in _mock_es_search_for(3)}
+
+    assert ref_ids == faiss_ids == pgvector_ids == es_ids
 
 
 # ---------------------------------------------------------------------------
