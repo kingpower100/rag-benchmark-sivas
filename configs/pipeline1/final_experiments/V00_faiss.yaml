@@ -1,0 +1,20 @@
+extends: "E03_mistral_api_embedding.yaml"
+
+# Phase 4 vector-backend experiment.
+# Inherited chunking winner: C02 (sentence, 1024 tokens, 400 token overlap).
+# Inherited embedding winner: E03 (mistral-embed, 1024 dim, normalize=true).
+# Backend being tested: FAISS (IndexFlatIP, exact cosine on normalized vectors).
+# Backend is the only intended changed variable.
+#
+# V00 REUSE NOTE:
+# The fully resolved configuration is identical to E03 except for
+# experiment.experiment_id and index.index_name (artifact isolation only).
+# The embedding stage will hit the canonical E03 embedding cache
+# (same chunks_key + embedding_config hash). No Mistral API calls are made
+# when the E03 cache is available.
+
+experiment:
+  experiment_id: "V00"
+
+index:
+  index_name: "sivas_phase4_v00_faiss_mistral_embed"

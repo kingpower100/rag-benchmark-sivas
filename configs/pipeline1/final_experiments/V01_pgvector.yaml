@@ -1,0 +1,41 @@
+extends: "E03_mistral_api_embedding.yaml"
+
+# Phase 4 vector-backend experiment.
+# Inherited chunking winner: C02 (sentence, 1024 tokens, 400 token overlap).
+# Inherited embedding winner: E03 (mistral-embed, 1024 dim, normalize=true).
+# Backend being tested: pgvector (exact sequential scan, cosine distance operator <=>).
+# Backend is the only intended changed variable.
+#
+# index_type: "exact" — no HNSW or IVFFlat index is created.
+# Sequential scan (pgvector exact) is mathematically equivalent to FAISS IndexFlatIP
+# for exact cosine retrieval over normalized vectors. All three Phase 4 backends
+# (V00 FAISS, V01 pgvector, V02 Elasticsearch) use exact dense retrieval.
+#
+# retrieval.retriever_type remains "dense" (inherited). The retriever factory
+# detects PgvectorIndex at runtime and instantiates PgvectorDenseRetriever.
+# The schema validator explicitly permits index.type="pgvector" + retriever_type="dense".
+#
+# ENVIRONMENT VARIABLES — credentials must never be stored in this file:
+#   PGVECTOR_DSN   required
+#                  Full PostgreSQL connection string.
+#                  Example: postgresql://user:password@localhost:5432/rag_db
+#
+# table_name "v01_phase4_mistral_embed" is unique to this experiment.
+# It does not share a table with B00 (chunk_embeddings) or any other experiment.
+
+experiment:
+  experiment_id: "V01"
+
+index:
+  type: "pgvector"
+  metric: "cosine"
+  dense_dim: 1024
+  index_name: "sivas_phase4_v01_pgvector_mistral_embed"
+  pgvector:
+    dsn_env: "PGVECTOR_DSN"
+    schema_name: "rag"
+    table_name: "v01_phase4_mistral_embed"
+    index_type: "exact"
+    rebuild_index: false
+    pool_min: 1
+    pool_max: 5

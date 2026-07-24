@@ -1,3 +1,4 @@
+
 extends: "E00-G_global_dense_baseline.yaml"
 
 # C00 is operationally identical to E00-G. A separate execution can be avoided

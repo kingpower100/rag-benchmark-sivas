@@ -1,0 +1,51 @@
+extends: "E03_mistral_api_embedding.yaml"
+
+# Phase 4 vector-backend experiment.
+# Inherited chunking winner: C02 (sentence, 1024 tokens, 400 token overlap).
+# Inherited embedding winner: E03 (mistral-embed, 1024 dim, normalize=true).
+# Backend being tested: Elasticsearch dense-vector retrieval (script_score cosine).
+# Backend is the only intended changed variable.
+#
+# retrieval_mode: "script_score" — brute-force scan over all indexed documents.
+# Equivalent to FAISS IndexFlatIP (V00) and pgvector exact scan (V01).
+# No BM25, hybrid RRF, approximate kNN, or filters are enabled.
+# similarity: "cosine" is the only value accepted by the schema.
+#
+# retrieval.retriever_type MUST be "elasticsearch_dense" when index.type="elasticsearch".
+# This is a backend compatibility requirement enforced by the schema validator,
+# not an algorithm change. The retrieval semantics are identical to V00 and V01:
+# global exact cosine similarity over all chunks, fetch_k=20, top_k=5.
+#
+# ENVIRONMENT VARIABLES — credentials must never be stored in this file:
+#   index.host    default is http://localhost:9200
+#                 Change this value for non-local deployments.
+#                 The framework does not yet support host_env for index.type=elasticsearch;
+#                 update index.host directly or via a deployment overlay.
+#   Credentials (username, password, api_key) are null for unauthenticated local instances.
+#   For secured instances, provide values through your deployment mechanism.
+#   Never commit populated credentials.
+
+experiment:
+  experiment_id: "V02"
+
+index:
+  type: "elasticsearch"
+  metric: "cosine"
+  dense_dim: 1024
+  index_name: "sivas_phase4_v02_elasticsearch_mistral_embed"
+  host: "http://localhost:9200"
+  similarity: "cosine"
+  retrieval_mode: "script_score"
+  num_candidates: 100
+  shards: 1
+  replicas: 0
+  refresh_after_index: true
+  recreate: false
+  request_timeout: 60
+  verify_certs: false
+  username: null
+  password: null
+  api_key: null
+
+retrieval:
+  retriever_type: "elasticsearch_dense"

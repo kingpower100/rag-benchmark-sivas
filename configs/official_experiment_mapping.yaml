@@ -31,6 +31,18 @@ official_experiment_mapping:
     pipeline1: "configs/pipeline1/final_experiments/E03_mistral_api_embedding.yaml"
     pipeline2: "configs/pipeline2/final_experiments/E03_mistral_api_embedding_eval.yaml"
     pipeline3: "configs/pipeline3/final_experiments/E03_mistral_api_embedding_eval.yaml"
+  V00:
+    pipeline1: "configs/pipeline1/final_experiments/V00_faiss.yaml"
+    pipeline2: "configs/pipeline2/final_experiments/V00_faiss_eval.yaml"
+    pipeline3: "configs/pipeline3/final_experiments/V00_faiss_eval.yaml"
+  V01:
+    pipeline1: "configs/pipeline1/final_experiments/V01_pgvector.yaml"
+    pipeline2: "configs/pipeline2/final_experiments/V01_pgvector_eval.yaml"
+    pipeline3: "configs/pipeline3/final_experiments/V01_pgvector_eval.yaml"
+  V02:
+    pipeline1: "configs/pipeline1/final_experiments/V02_elasticsearch_dense.yaml"
+    pipeline2: "configs/pipeline2/final_experiments/V02_elasticsearch_dense_eval.yaml"
+    pipeline3: "configs/pipeline3/final_experiments/V02_elasticsearch_dense_eval.yaml"
   C00:
     pipeline1: "configs/pipeline1/final_experiments/C00_sentence512_baseline.yaml"
     pipeline2: "configs/pipeline2/final_experiments/C00_sentence512_baseline_eval.yaml"

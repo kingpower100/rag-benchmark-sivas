@@ -208,14 +208,22 @@ class ElasticsearchIndex(BaseVectorIndex):
                     "original_context_id": {"type": "keyword"},
                     self.text_field: {"type": "text"},
                     "metadata": {"type": "object", "enabled": True},
-                    self.vector_field: {
-                        "type": "dense_vector",
-                        "dims": self.dense_dim,
-                        "index": True,
-                        "similarity": self.similarity,
-                    },
+                    self.vector_field: self._vector_field_mapping(),
                 }
             }
+        }
+
+    def _vector_field_mapping(self) -> dict[str, Any]:
+        # script_score is a brute-force exhaustive scan; building an ANN/HNSW index
+        # wastes ingestion time and memory without any benefit.
+        # index=False disables HNSW while keeping the field queryable via script_score.
+        if self.retrieval_mode == "script_score":
+            return {"type": "dense_vector", "dims": self.dense_dim, "index": False}
+        return {
+            "type": "dense_vector",
+            "dims": self.dense_dim,
+            "index": True,
+            "similarity": self.similarity,
         }
 
     def _bulk_index_chunks(self, embeddings: np.ndarray) -> None:

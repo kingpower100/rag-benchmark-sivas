@@ -1,0 +1,7 @@
+extends: "../base_pipeline3.yaml"
+
+pipeline3:
+  run_id: "V00"
+
+inputs:
+  pipeline1_results_path: "data/runs/pipeline1/V00/results.jsonl"
