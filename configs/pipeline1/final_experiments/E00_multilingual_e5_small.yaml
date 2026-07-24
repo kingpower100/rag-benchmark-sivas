@@ -1,0 +1,28 @@
+extends: "../phase3_embedding_base.yaml"
+
+# Phase 3 embedding experiment.
+# Inherited baseline: C02.
+# Tested embedding model: intfloat/multilingual-e5-small.
+# Embedding is the only intended changed variable.
+
+experiment:
+  experiment_id: "E00"
+
+embedding:
+  provider: "sentence_transformers"
+  model_name: "intfloat/multilingual-e5-small"
+  normalize_embeddings: true
+  query_prefix: "query: "
+  document_prefix: "passage: "
+  dense_output_only: true
+  pooling: "sentence_transformers_default"
+  max_seq_length: 512
+  expected_dimension: 384
+  batch_size: 128
+  device: "cuda"
+  require_cuda: true
+  cache_dir: ".cache/sentence-transformers"
+
+index:
+  dense_dim: 384
+  index_name: "sivas_phase3_c02_e5_small_faiss"

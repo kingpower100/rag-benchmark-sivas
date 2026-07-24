@@ -119,7 +119,7 @@ class TestSingleTextEncoding:
 class TestBatchEncoding:
     def test_three_texts_returned_in_order(self, monkeypatch):
         monkeypatch.setenv("MISTRAL_API_KEY", "key")
-        embedder = MistralEmbedder(batch_size=10)
+        embedder = MistralEmbedder(batch_size=10, normalize_embeddings=False)
         embs = [[float(i)] * _DIM for i in range(3)]
         mock_resp = _make_response(embs)
         with patch("requests.post", return_value=mock_resp):
@@ -130,7 +130,7 @@ class TestBatchEncoding:
 
     def test_batch_size_splits_calls(self, monkeypatch):
         monkeypatch.setenv("MISTRAL_API_KEY", "key")
-        embedder = MistralEmbedder(batch_size=2)
+        embedder = MistralEmbedder(batch_size=2, normalize_embeddings=False)
         # 5 texts → 3 batches (2, 2, 1)
         embs_batch1 = [[1.0] * _DIM, [2.0] * _DIM]
         embs_batch2 = [[3.0] * _DIM, [4.0] * _DIM]
@@ -147,7 +147,7 @@ class TestBatchEncoding:
 
     def test_response_ordering_by_index(self, monkeypatch):
         monkeypatch.setenv("MISTRAL_API_KEY", "key")
-        embedder = MistralEmbedder(batch_size=10)
+        embedder = MistralEmbedder(batch_size=10, normalize_embeddings=False)
         # Simulate API returning items in reversed index order
         resp = MagicMock(spec=requests.Response)
         resp.status_code = 200
@@ -266,3 +266,60 @@ class TestAuthorizationHeader:
             embedder.encode_texts(["hello"])
         _, kwargs = mock_post.call_args
         assert kwargs["json"]["model"] == "mistral-embed"
+
+
+class TestResponseValidation:
+    def test_normalizes_vectors_for_cosine_semantics(self, monkeypatch):
+        monkeypatch.setenv("MISTRAL_API_KEY", "key")
+        embedder = MistralEmbedder(model_name="mistral-embed", expected_dimension=2, normalize_embeddings=True)
+        mock_resp = _make_response([[3.0, 4.0]])
+        with patch("requests.post", return_value=mock_resp):
+            result = embedder.encode_texts(["hello"])
+        assert np.linalg.norm(result[0]) == pytest.approx(1.0)
+        assert result[0, 0] == pytest.approx(0.6)
+        assert result[0, 1] == pytest.approx(0.8)
+
+    def test_rejects_missing_embedding_item(self, monkeypatch):
+        monkeypatch.setenv("MISTRAL_API_KEY", "key")
+        embedder = MistralEmbedder(model_name="mistral-embed", expected_dimension=2)
+        resp = _make_response([[1.0, 0.0]])
+        with patch("requests.post", return_value=resp):
+            with pytest.raises(RuntimeError, match="expected 2 embeddings"):
+                embedder.encode_texts(["a", "b"])
+
+    def test_rejects_duplicate_indices(self, monkeypatch):
+        monkeypatch.setenv("MISTRAL_API_KEY", "key")
+        embedder = MistralEmbedder(model_name="mistral-embed", expected_dimension=2)
+        resp = MagicMock(spec=requests.Response)
+        resp.status_code = 200
+        resp.json.return_value = {
+            "data": [
+                {"index": 0, "embedding": [1.0, 0.0]},
+                {"index": 0, "embedding": [0.0, 1.0]},
+            ]
+        }
+        resp.raise_for_status = MagicMock()
+        with patch("requests.post", return_value=resp):
+            with pytest.raises(RuntimeError, match="duplicate index"):
+                embedder.encode_texts(["a", "b"])
+
+    def test_rejects_malformed_vector_dimension(self, monkeypatch):
+        monkeypatch.setenv("MISTRAL_API_KEY", "key")
+        embedder = MistralEmbedder(model_name="mistral-embed", expected_dimension=3)
+        resp = _make_response([[1.0, 2.0]])
+        with patch("requests.post", return_value=resp):
+            with pytest.raises(RuntimeError, match="dimension mismatch"):
+                embedder.encode_texts(["hello"])
+
+    def test_rejects_zero_norm_when_normalizing(self, monkeypatch):
+        monkeypatch.setenv("MISTRAL_API_KEY", "key")
+        embedder = MistralEmbedder(model_name="mistral-embed", expected_dimension=2, normalize_embeddings=True)
+        resp = _make_response([[0.0, 0.0]])
+        with patch("requests.post", return_value=resp):
+            with pytest.raises(RuntimeError, match="zero norm"):
+                embedder.encode_texts(["hello"])
+
+    def test_rejects_unsupported_model_before_api_call(self, monkeypatch):
+        monkeypatch.setenv("MISTRAL_API_KEY", "key")
+        with pytest.raises(ValueError, match="mistral-embed"):
+            MistralEmbedder(model_name="invented-model")

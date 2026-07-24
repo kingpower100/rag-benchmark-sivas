@@ -91,15 +91,19 @@ chunking:
 # mistral-embed produces 1024-dimensional cosine embeddings.
 #
 # Fields ignored by provider=mistral (retained for schema compatibility):
-#   normalize_embeddings — not applied locally; the API always returns normalized
-#                          vectors. Only used by local sentence_transformers providers.
 #   device               — not used; all computation runs on Mistral's remote servers.
 #   require_cuda         — not enforced; no local GPU is involved in API-based embedding.
+# normalize_embeddings is applied locally before cosine indexing/querying.
 embedding:
   provider: "mistral"
   model_name: "mistral-embed"
-  normalize_embeddings: true   # sentence_transformers only — ignored for provider=mistral
+  normalize_embeddings: true
   batch_size: 32
+  expected_dimension: 1024
+  api_base_url: "https://api.mistral.ai/v1/embeddings"
+  timeout_s: 60
+  max_retries: 3
+  retry_backoff_base_s: 1.0
   device: "cuda"               # sentence_transformers only — ignored for provider=mistral
   require_cuda: true           # sentence_transformers only — ignored for provider=mistral
 

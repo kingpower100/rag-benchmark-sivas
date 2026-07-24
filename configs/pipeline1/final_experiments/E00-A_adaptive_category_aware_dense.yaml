@@ -36,6 +36,12 @@ embedding:
   provider: "sentence_transformers"
   model_name: "intfloat/multilingual-e5-small"
   normalize_embeddings: true
+  query_prefix: "query: "
+  document_prefix: "passage: "
+  dense_output_only: true
+  pooling: "sentence_transformers_default"
+  max_seq_length: 512
+  expected_dimension: 384
   batch_size: 128
   device: "cuda"
   require_cuda: true

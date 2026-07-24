@@ -41,12 +41,7 @@ class EmbeddingStage(BaseStage):
         chunks: list[ChunkRecord] = stage_input.payload["chunks"]
         chunks_key = str(stage_input.payload["chunks_key"])
         embedder = self.embedder_factory(self.cfg.embedding)
-        embeddings_key = stable_hash_dict(
-            {
-                "chunks_key": chunks_key,
-                "embedding": self.cfg.embedding.model_dump(),
-            }
-        )
+        embeddings_key = self._cache_key_for(chunks_key, self.cfg.embedding.model_dump())
         embeddings_path = self.cache_dir / "embeddings" / f"{embeddings_key}.npy"
         embeddings = EmbeddingCache.load(embeddings_path)
         if embeddings is None:
@@ -82,6 +77,15 @@ class EmbeddingStage(BaseStage):
             embeddings_key=embeddings_key,
             embeddings_path=embeddings_path,
             cache_status=cache_status,
+        )
+
+    @staticmethod
+    def _cache_key_for(chunks_key: str, embedding_config: dict) -> str:
+        return stable_hash_dict(
+            {
+                "chunks_key": chunks_key,
+                "embedding": embedding_config,
+            }
         )
 
     @staticmethod

@@ -16,6 +16,12 @@ def build_embedder(config: EmbeddingConfig):
         return MistralEmbedder(
             model_name=config.model_name,
             batch_size=config.batch_size,
+            normalize_embeddings=config.normalize_embeddings,
+            timeout_s=config.timeout_s,
+            max_retries=config.max_retries,
+            retry_backoff_base_s=config.retry_backoff_base_s,
+            api_base_url=config.api_base_url,
+            expected_dimension=config.expected_dimension,
         )
     return BGEEncoder(
         config.model_name,
@@ -24,4 +30,10 @@ def build_embedder(config: EmbeddingConfig):
         config.device,
         config.require_cuda,
         config.cache_dir,
+        config.query_prefix,
+        config.document_prefix,
+        config.dense_output_only,
+        config.pooling,
+        config.max_seq_length,
+        config.expected_dimension,
     )

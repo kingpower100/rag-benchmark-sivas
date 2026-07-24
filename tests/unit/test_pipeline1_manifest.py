@@ -9,11 +9,31 @@ from src.pipeline1.orchestrator import run_pipeline
 
 
 class _FakeEmbedder:
+    api_base_url = None
+    timeout_s = 60
+    max_retries = 3
+    retry_backoff_base_s = 1.0
+    client_library = None
+
     def encode_texts(self, texts, show_progress=False):
         return np.ones((len(texts), 2), dtype="float32")
 
     def encode_query(self, text):
         return np.ones(2, dtype="float32")
+
+
+class _FakeMistralEmbedder(_FakeEmbedder):
+    api_base_url = "https://api.mistral.ai/v1/embeddings"
+    timeout_s = 12
+    max_retries = 4
+    retry_backoff_base_s = 0.25
+    client_library = "requests/test"
+
+    def encode_texts(self, texts, show_progress=False):
+        return np.ones((len(texts), 1024), dtype="float32")
+
+    def encode_query(self, text):
+        return np.ones(1024, dtype="float32")
 
 
 class _FakeIndex:
@@ -228,6 +248,93 @@ runtime:
     assert manifest["document_input"]["folder_path"] == str(transformed_dir)
     assert manifest["document_input"]["txt_files_loaded"] == 2
     assert manifest["run_stats"]["n_documents"] == 2
+
+
+def test_pipeline1_manifest_records_mistral_embedding_metadata_without_secret(tmp_path, monkeypatch):
+    project_root = tmp_path
+    data_dir = project_root / "data" / "raw"
+    data_dir.mkdir(parents=True)
+    (data_dir / "kb_documents_fixed.jsonl").write_text(
+        (
+            '{"doc_key":"doc-1","doc_name":"sivas_1.md","text":"alpha",'
+            '"kategorie":"ERP","wissensart":"howto","titel":"Alpha","quellpfad":"docs/sivas_1.md"}\n'
+            '{"doc_key":"doc-2","doc_name":"sivas_2.md","text":"beta",'
+            '"kategorie":"ERP","wissensart":"howto","titel":"Beta","quellpfad":"docs/sivas_2.md"}\n'
+        ),
+        encoding="utf-8",
+    )
+    (data_dir / "questions_fixed.jsonl").write_text('{"question_id":"q1","frage":"Q?"}\n', encoding="utf-8")
+    cfg_path = project_root / "config.yaml"
+    cfg_path.write_text(
+        """
+experiment:
+  experiment_id: "test_mistral_exp"
+  random_seed: 42
+  output_dir: "runs"
+data:
+  dataset_schema: "sivas"
+  documents_path: "data/raw/kb_documents_fixed.jsonl"
+  questions_path: "data/raw/questions_fixed.jsonl"
+chunking:
+  strategy: "fixed_word"
+  chunk_size: 10
+  chunk_overlap: 0
+embedding:
+  provider: "mistral"
+  model_name: "mistral-embed"
+  normalize_embeddings: true
+  batch_size: 2
+  expected_dimension: 1024
+  api_base_url: "https://api.mistral.ai/v1/embeddings"
+  timeout_s: 12
+  max_retries: 4
+  retry_backoff_base_s: 0.25
+index:
+  type: "faiss"
+  metric: "cosine"
+  dense_dim: 1024
+retrieval:
+  retriever_type: "dense"
+  top_k: 1
+  fetch_k: 2
+reranker:
+  enabled: false
+generation:
+  provider: "ollama"
+  model_name: "fake"
+  system_prompt: "Use context."
+telemetry:
+  estimate_cost: false
+runtime:
+  save_csv: false
+  log_level: "INFO"
+  resume: false
+  overwrite: true
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("PIPELINE1_SKIP_OLLAMA_PREFLIGHT", "1")
+    monkeypatch.setenv("MISTRAL_API_KEY", "super-secret-key")
+    monkeypatch.setattr("src.pipeline1.orchestrator._project_root", lambda: project_root)
+    monkeypatch.setattr("src.pipeline1.orchestrator.build_embedder", lambda config: _FakeMistralEmbedder())
+    monkeypatch.setattr("src.pipeline1.orchestrator.build_index", lambda config: _FakeIndex())
+    monkeypatch.setattr("src.pipeline1.orchestrator.build_generator", lambda config: _FakeGenerator())
+
+    run_dir = run_pipeline(str(cfg_path))
+
+    manifest_text = (run_dir / "run_manifest.json").read_text(encoding="utf-8")
+    manifest = json.loads(manifest_text)
+    assert "super-secret-key" not in manifest_text
+    assert manifest["models"]["embedding_provider"] == "mistral"
+    assert manifest["models"]["embedding_model"] == "mistral-embed"
+    assert manifest["models"]["embedding_api_base_url"] == "https://api.mistral.ai/v1/embeddings"
+    assert manifest["models"]["embedding_batch_size"] == 2
+    assert manifest["models"]["embedding_normalization"] is True
+    assert manifest["models"]["embedding_dimension_observed"] == 1024
+    assert manifest["models"]["embedding_timeout_s"] == 12
+    assert manifest["models"]["embedding_max_retries"] == 4
+    assert manifest["models"]["embedding_retry_backoff_base_s"] == 0.25
+    assert manifest["models"]["embedding_client_library"] == "requests/test"
 
 
 def test_official_pipeline1_question_failure_marks_run_fail(tmp_path, monkeypatch):

@@ -93,7 +93,12 @@ _MINIMAL_PIPELINE_CONFIG = {
         "questions_path": "data/raw/q.jsonl",
     },
     "chunking": {"strategy": "sentence", "chunk_size": 512, "chunk_overlap": 200},
-    "embedding": {"provider": "sentence_transformers", "model_name": "intfloat/multilingual-e5-small"},
+    "embedding": {
+        "provider": "sentence_transformers",
+        "model_name": "intfloat/multilingual-e5-small",
+        "query_prefix": "query: ",
+        "document_prefix": "passage: ",
+    },
     "index": {"type": "faiss"},
     "retrieval": {"retriever_type": "dense", "top_k": 5, "fetch_k": 20},
     "reranker": {"enabled": False},

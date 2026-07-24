@@ -90,6 +90,16 @@ class EmbeddingConfig(StrictConfigModel):
     device: str = "cpu"
     require_cuda: bool = False
     cache_dir: Optional[str] = None
+    query_prefix: str = ""
+    document_prefix: str = ""
+    dense_output_only: bool = True
+    pooling: Literal["sentence_transformers_default"] = "sentence_transformers_default"
+    max_seq_length: Optional[int] = Field(default=None, gt=0)
+    expected_dimension: Optional[int] = Field(default=None, gt=0)
+    api_base_url: Optional[str] = None
+    timeout_s: int = Field(default=60, gt=0)
+    max_retries: int = Field(default=3, ge=1)
+    retry_backoff_base_s: float = Field(default=1.0, ge=0.0)
 
     @model_validator(mode="before")
     @classmethod
@@ -105,6 +115,38 @@ class EmbeddingConfig(StrictConfigModel):
                 "do not set conflicting values."
             )
         return data
+
+    @model_validator(mode="after")
+    def validate_model_specific_encoding(self) -> "EmbeddingConfig":
+        if self.provider != "sentence_transformers":
+            if any(
+                [
+                    self.query_prefix,
+                    self.document_prefix,
+                    self.max_seq_length is not None,
+                ]
+            ):
+                raise ValueError(
+                    "embedding query/document prefixes and max_seq_length are only "
+                    "supported for provider='sentence_transformers'."
+                )
+            if self.provider == "mistral":
+                if self.model_name != "mistral-embed":
+                    raise ValueError("provider='mistral' currently supports only model_name='mistral-embed'.")
+                if self.expected_dimension != 1024:
+                    raise ValueError("provider='mistral' requires expected_dimension=1024 for mistral-embed.")
+                if self.api_base_url and self.api_base_url.rstrip("/") != "https://api.mistral.ai/v1/embeddings":
+                    raise ValueError("provider='mistral' only supports the official embeddings endpoint.")
+            return self
+        if self.model_name in {"intfloat/multilingual-e5-small", "intfloat/multilingual-e5-base"}:
+            if self.query_prefix != "query: " or self.document_prefix != "passage: ":
+                raise ValueError(
+                    "E5 embedding configs must explicitly set query_prefix='query: ' "
+                    "and document_prefix='passage: '."
+                )
+        if self.model_name == "BAAI/bge-m3" and not self.dense_output_only:
+            raise ValueError("BAAI/bge-m3 must use dense_output_only=true in this framework.")
+        return self
 
 
 class PgvectorConfig(StrictConfigModel):

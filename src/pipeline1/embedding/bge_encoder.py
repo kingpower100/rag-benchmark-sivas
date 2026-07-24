@@ -20,12 +20,26 @@ class BGEEncoder(BaseEmbedder):
         device: str = "cpu",
         require_cuda: bool = False,
         cache_dir: str | None = None,
+        query_prefix: str = "",
+        document_prefix: str = "",
+        dense_output_only: bool = True,
+        pooling: str = "sentence_transformers_default",
+        max_seq_length: int | None = None,
+        expected_dimension: int | None = None,
     ) -> None:
         from sentence_transformers import SentenceTransformer
 
+        if pooling != "sentence_transformers_default":
+            raise ValueError(f"Unsupported pooling mode for SentenceTransformer embedder: {pooling!r}")
         self.requested_device = device
         self.require_cuda = require_cuda
         self.cache_dir = cache_dir
+        self.query_prefix = query_prefix
+        self.document_prefix = document_prefix
+        self.dense_output_only = dense_output_only
+        self.pooling = pooling
+        self.max_seq_length = max_seq_length
+        self.expected_dimension = expected_dimension
         if cache_dir:
             cache_path = Path(cache_dir)
             cache_path.mkdir(parents=True, exist_ok=True)
@@ -36,6 +50,8 @@ class BGEEncoder(BaseEmbedder):
             self.model = SentenceTransformer(model_name, device=device, cache_folder=cache_dir)
         else:
             self.model = SentenceTransformer(model_name, device=device)
+        if max_seq_length is not None:
+            self.model.max_seq_length = max_seq_length
         self.normalize_embeddings = normalize_embeddings
         self.batch_size = batch_size
         self.runtime_device = self._resolve_runtime_device()
@@ -43,13 +59,19 @@ class BGEEncoder(BaseEmbedder):
         self._validate_device_selection()
 
     def encode_texts(self, texts: list[str], show_progress: bool = False) -> np.ndarray:
+        return self._encode_prefixed(texts, self.document_prefix, show_progress)
+
+    def encode_query(self, text: str) -> np.ndarray:
+        return self._encode_prefixed([text], self.query_prefix, False)[0]
+
+    def _encode_prefixed(self, texts: list[str], prefix: str, show_progress: bool = False) -> np.ndarray:
         if not texts:
             return np.empty((0, 0), dtype=np.float32)
         outputs = []
         total_batches = max(1, math.ceil(len(texts) / self.batch_size))
         start_time = time.perf_counter()
         for batch_index, start in enumerate(range(0, len(texts), self.batch_size), start=1):
-            batch = texts[start : start + self.batch_size]
+            batch = [f"{prefix}{text}" for text in texts[start : start + self.batch_size]]
             batch_start = time.perf_counter()
             batch_embeddings = self.model.encode(
                 batch,
@@ -57,6 +79,12 @@ class BGEEncoder(BaseEmbedder):
                 normalize_embeddings=self.normalize_embeddings,
                 show_progress_bar=False,
             )
+            if isinstance(batch_embeddings, dict):
+                if not self.dense_output_only or "dense_vecs" not in batch_embeddings:
+                    raise RuntimeError("SentenceTransformer returned non-dense embedding outputs.")
+                batch_embeddings = batch_embeddings["dense_vecs"]
+            if isinstance(batch_embeddings, (list, tuple)) and batch_embeddings and isinstance(batch_embeddings[0], dict):
+                raise RuntimeError("SentenceTransformer returned multi-output embeddings; dense vectors are required.")
             outputs.append(np.asarray(batch_embeddings))
             elapsed = max(time.perf_counter() - start_time, 1e-9)
             processed = min(batch_index * self.batch_size, len(texts))
@@ -75,10 +103,15 @@ class BGEEncoder(BaseEmbedder):
             )
             if show_progress:
                 pass
-        return np.vstack(outputs)
-
-    def encode_query(self, text: str) -> np.ndarray:
-        return self.encode_texts([text])[0]
+        embeddings = np.vstack(outputs).astype("float32")
+        if len(embeddings.shape) != 2:
+            raise RuntimeError(f"Expected a 2D dense embedding matrix, got shape={embeddings.shape}.")
+        if self.expected_dimension is not None and int(embeddings.shape[1]) != self.expected_dimension:
+            raise RuntimeError(
+                f"Embedding dimension mismatch for {self.model}: expected={self.expected_dimension} "
+                f"observed={int(embeddings.shape[1])}."
+            )
+        return embeddings
 
     def _resolve_runtime_device(self) -> str:
         device = getattr(self.model, "device", None)

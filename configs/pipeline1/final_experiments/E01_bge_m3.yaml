@@ -1,0 +1,28 @@
+extends: "../phase3_embedding_base.yaml"
+
+# Phase 3 embedding experiment.
+# Inherited baseline: C02.
+# Tested embedding model: BAAI/bge-m3.
+# Embedding is the only intended changed variable.
+
+experiment:
+  experiment_id: "E01"
+
+embedding:
+  provider: "sentence_transformers"
+  model_name: "BAAI/bge-m3"
+  normalize_embeddings: true
+  query_prefix: ""
+  document_prefix: ""
+  dense_output_only: true
+  pooling: "sentence_transformers_default"
+  max_seq_length: 8192
+  expected_dimension: 1024
+  batch_size: 32
+  device: "cuda"
+  require_cuda: true
+  cache_dir: ".cache/sentence-transformers"
+
+index:
+  dense_dim: 1024
+  index_name: "sivas_phase3_c02_bge_m3_faiss"

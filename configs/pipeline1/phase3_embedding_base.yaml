@@ -1,0 +1,9 @@
+# Phase 3 embedding experiment base.
+# Inherited baseline: official C02 sentence1024 configuration.
+# Embedding is the only intended changed variable in child experiments.
+
+extends: "final_experiments/C02_sentence1024.yaml"
+
+index:
+  type: "faiss"
+  metric: "cosine"

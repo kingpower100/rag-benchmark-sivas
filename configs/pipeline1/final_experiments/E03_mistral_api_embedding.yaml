@@ -1,0 +1,31 @@
+extends: "../phase3_embedding_base.yaml"
+
+# Phase 3 embedding experiment.
+# Inherited baseline: C02.
+# Tested embedding model/provider: Mistral API mistral-embed.
+# Embedding provider/model is the only intended changed variable.
+# API key is read from MISTRAL_API_KEY and must never be stored in YAML.
+
+experiment:
+  experiment_id: "E03"
+
+embedding:
+  provider: "mistral"
+  model_name: "mistral-embed"
+  normalize_embeddings: true
+  query_prefix: ""
+  document_prefix: ""
+  max_seq_length: null
+  batch_size: 32
+  expected_dimension: 1024
+  api_base_url: "https://api.mistral.ai/v1/embeddings"
+  timeout_s: 60
+  max_retries: 3
+  retry_backoff_base_s: 1.0
+  device: "cpu"
+  require_cuda: false
+  cache_dir: null
+
+index:
+  dense_dim: 1024
+  index_name: "sivas_phase3_c02_mistral_embed_faiss"

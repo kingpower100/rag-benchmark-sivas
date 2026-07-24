@@ -1,3 +1,5 @@
+from pathlib import Path
+
 import pytest
 import yaml
 from pydantic import ValidationError
@@ -113,6 +115,103 @@ def test_official_e00a_mapping_and_configs_load():
     assert p2.inputs.rag_outputs == ["data/runs/pipeline1/E00-A/results.jsonl"]
     assert p3.pipeline3.run_id == "E00-A"
     assert p3.inputs.pipeline1_results_path == "data/runs/pipeline1/E00-A/results.jsonl"
+
+
+def test_official_phase3_embedding_mapping_and_configs_load():
+    mapping_path = "configs/official_experiment_mapping.yaml"
+    with open(mapping_path, "r", encoding="utf-8") as f:
+        mapping = yaml.safe_load(f)["official_experiment_mapping"]
+
+    expected = {
+        "E00": {
+            "pipeline1": "configs/pipeline1/final_experiments/E00_multilingual_e5_small.yaml",
+            "pipeline2": "configs/pipeline2/final_experiments/E00_multilingual_e5_small_eval.yaml",
+            "pipeline3": "configs/pipeline3/final_experiments/E00_multilingual_e5_small_eval.yaml",
+        },
+        "E01": {
+            "pipeline1": "configs/pipeline1/final_experiments/E01_bge_m3.yaml",
+            "pipeline2": "configs/pipeline2/final_experiments/E01_bge_m3_eval.yaml",
+            "pipeline3": "configs/pipeline3/final_experiments/E01_bge_m3_eval.yaml",
+        },
+        "E02": {
+            "pipeline1": "configs/pipeline1/final_experiments/E02_multilingual_e5_base.yaml",
+            "pipeline2": "configs/pipeline2/final_experiments/E02_multilingual_e5_base_eval.yaml",
+            "pipeline3": "configs/pipeline3/final_experiments/E02_multilingual_e5_base_eval.yaml",
+        },
+        "E03": {
+            "pipeline1": "configs/pipeline1/final_experiments/E03_mistral_api_embedding.yaml",
+            "pipeline2": "configs/pipeline2/final_experiments/E03_mistral_api_embedding_eval.yaml",
+            "pipeline3": "configs/pipeline3/final_experiments/E03_mistral_api_embedding_eval.yaml",
+        },
+    }
+    assert {key: mapping[key] for key in expected} == expected
+
+    for exp_id, paths in expected.items():
+        p1 = PipelineConfig.from_yaml(paths["pipeline1"])
+        p2 = EvalConfig.from_yaml(paths["pipeline2"])
+        p3 = Pipeline3Config.from_yaml(paths["pipeline3"])
+        expected_results_path = f"data/runs/pipeline1/{exp_id}/results.jsonl"
+
+        assert p1.experiment.experiment_id == exp_id
+        assert p2.inputs.pipeline1_results_path == expected_results_path
+        assert p2.inputs.rag_outputs == [expected_results_path]
+        assert p2.retrieval_evaluation is not None
+        assert p2.retrieval_evaluation.chunk_level.enabled is True
+        assert "C02_sentence1024_overlap400" in p2.retrieval_evaluation.chunk_level.ground_truth_path
+        assert p3.pipeline3.run_id == exp_id
+        assert p3.inputs.pipeline1_results_path == expected_results_path
+
+
+def test_phase3_embedding_configs_inherit_c02_controlled_baseline():
+    c02 = PipelineConfig.from_yaml("configs/pipeline1/final_experiments/C02_sentence1024.yaml")
+    configs = [
+        PipelineConfig.from_yaml("configs/pipeline1/final_experiments/E00_multilingual_e5_small.yaml"),
+        PipelineConfig.from_yaml("configs/pipeline1/final_experiments/E01_bge_m3.yaml"),
+        PipelineConfig.from_yaml("configs/pipeline1/final_experiments/E02_multilingual_e5_base.yaml"),
+        PipelineConfig.from_yaml("configs/pipeline1/final_experiments/E03_mistral_api_embedding.yaml"),
+    ]
+
+    assert c02.chunking.strategy == "sentence"
+    assert c02.chunking.chunk_size == 1024
+    assert c02.chunking.chunk_overlap == 400
+    assert c02.chunking.chunk_size_unit == "tokens"
+    assert c02.chunking.chunk_overlap_unit == "tokens"
+    assert c02.parent_context.enabled is False
+
+    for cfg in configs:
+        assert cfg.chunking.model_dump() == c02.chunking.model_dump()
+        assert cfg.data.model_dump() == c02.data.model_dump()
+        assert cfg.retrieval.model_dump() == c02.retrieval.model_dump()
+        assert cfg.reranker.model_dump() == c02.reranker.model_dump()
+        assert cfg.orchestration.model_dump() == c02.orchestration.model_dump()
+        assert cfg.generation.model_dump() == c02.generation.model_dump()
+        assert cfg.telemetry.model_dump() == c02.telemetry.model_dump()
+        assert cfg.runtime.model_dump() == c02.runtime.model_dump()
+        assert cfg.parent_context.model_dump() == c02.parent_context.model_dump()
+        assert cfg.index.type == c02.index.type
+        assert cfg.index.metric == c02.index.metric
+        assert cfg.index.similarity == c02.index.similarity
+        assert cfg.experiment.output_dir == c02.experiment.output_dir
+
+    assert [cfg.experiment.experiment_id for cfg in configs] == ["E00", "E01", "E02", "E03"]
+    assert [cfg.embedding.model_name for cfg in configs] == [
+        "intfloat/multilingual-e5-small",
+        "BAAI/bge-m3",
+        "intfloat/multilingual-e5-base",
+        "mistral-embed",
+    ]
+    assert [cfg.embedding.provider for cfg in configs] == ["sentence_transformers", "sentence_transformers", "sentence_transformers", "mistral"]
+    assert [cfg.index.dense_dim for cfg in configs] == [384, 1024, 768, 1024]
+    assert len({cfg.index.index_name for cfg in configs}) == 4
+
+
+def test_c02_chunk_ground_truth_package_exists_and_resolves():
+    package = Path("data/ground_truth/chunk_level/C02_sentence1024_overlap400")
+
+    assert (package / "final_annotation_manifest.json").is_file()
+    assert (package / "final_annotation_validation.json").is_file()
+    assert (package / "integration_package.json").is_file()
+    assert (package / "gold_chunk_annotations_C02_sentence1024_overlap400.jsonl").is_file()
 
 
 def test_official_b00_uses_adaptive_pgvector_and_preserves_reference_components():
