@@ -7,7 +7,7 @@ extends: "A_winner_base.yaml"
 # Reranker model: BAAI/bge-reranker-v2-m3 (multilingual, supports German).
 # rerank_top_k=20: candidate pool passed to the cross-encoder.
 # final_top_k=5:   documents returned after reranking.
-# device=cpu:      set device=cuda for production runs with GPU available.
+# device=cuda:     run the reranker on the production GPU.
 #
 # The retriever fetches fetch_k=20 candidates; all 20 are passed to the reranker;
 # the reranker outputs the top 5 by cross-encoder score.
@@ -18,6 +18,6 @@ experiment:
 reranker:
   enabled: true
   model_name: "BAAI/bge-reranker-v2-m3"
-  device: "cpu"
+  device: "cuda"
   rerank_top_k: 20
   final_top_k: 5

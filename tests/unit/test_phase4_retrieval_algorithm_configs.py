@@ -309,9 +309,9 @@ def test_a03_reranker_final_top_k():
     assert cfg.reranker.final_top_k == 5
 
 
-def test_a03_reranker_device_cpu():
+def test_a03_reranker_device_cuda():
     cfg = _load_p1("A03")
-    assert cfg.reranker.device == "cpu"
+    assert cfg.reranker.device == "cuda"
 
 
 def test_a03_elasticsearch_backend():
