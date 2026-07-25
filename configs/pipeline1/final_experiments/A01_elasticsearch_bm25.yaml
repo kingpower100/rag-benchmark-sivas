@@ -20,7 +20,7 @@ retrieval:
   retriever_type: "bm25"
   bm25:
     backend: "elasticsearch"
-    host: "http://localhost:9200"
+    host: "http://localhost:9201"
     index_name: "sivas_phase4_a01_bm25_c02_chunks"
     analyzer: "german"
     rebuild_index: false

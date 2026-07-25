@@ -13,7 +13,7 @@ extends: "E03_mistral_api_embedding.yaml"
 # Equivalent to V00 (FAISS IndexFlatIP) and V01 (pgvector exact scan).
 #
 # ENVIRONMENT VARIABLES — credentials must never be stored in this file:
-#   index.host    default is http://localhost:9200
+#   index.host    default is http://localhost:9201
 #                 Change this value for non-local deployments.
 #   username, password, api_key are null for unauthenticated local instances.
 #   Never commit populated credentials.
@@ -26,7 +26,7 @@ index:
   metric: "cosine"
   dense_dim: 1024
   index_name: "sivas_phase4_a00_elasticsearch_dense_mistral_embed"
-  host: "http://localhost:9200"
+  host: "http://localhost:9201"
   similarity: "cosine"
   retrieval_mode: "script_score"
   num_candidates: 100
