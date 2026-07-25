@@ -33,7 +33,7 @@ index:
   metric: "cosine"
   dense_dim: 1024
   index_name: "sivas_phase4_v02_elasticsearch_mistral_embed"
-  host: "http://localhost:9200"
+  host: "http://localhost:9201"
   similarity: "cosine"
   retrieval_mode: "script_score"
   num_candidates: 100
