@@ -698,12 +698,13 @@ def _retrieved_chunk_ids_for_eval(row: dict[str, Any], qid: str) -> list[str]:
         value = row.get("retrieved_chunk_ids")
         if not isinstance(value, list):
             raise ValueError(f"retrieved_chunk_ids must be a list for question_id={qid!r}.")
-        invalid = [item for item in value if item is not None and not isinstance(item, str)]
+        invalid = [item for item in value if not isinstance(item, str)]
         if invalid:
             raise ValueError(f"retrieved_chunk_ids contains non-string identifiers for question_id={qid!r}.")
-        ids = [item.strip() for item in value if isinstance(item, str) and item.strip()]
-        if ids:
-            return ids
+        ids = [item.strip() for item in value]
+        if any(not item for item in ids):
+            raise ValueError(f"retrieved_chunk_ids contains blank identifiers for question_id={qid!r}.")
+        return ids
     nested = row.get("retrieved_chunks")
     if isinstance(nested, list):
         invalid_nested = [

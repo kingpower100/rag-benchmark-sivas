@@ -7,6 +7,7 @@ from src.pipeline2.orchestrator import (
     _index_by_id,
     _gold_by_question,
     _merge_gold_with_qa_fallback,
+    _retrieved_chunk_ids_for_eval,
     _validate_pipeline1_questions_have_qa,
     _validate_pipeline1_questions_have_gold_contexts,
     _validate_no_duplicate_pipeline1_question_ids,
@@ -106,6 +107,83 @@ def test_chunk_only_evaluation_uses_retrieved_chunk_ids_without_document_metrics
     assert evaluated[0]["chunk_mrr_at_3"] == 0.5
     assert evaluated[0]["gold_chunk_ids"] == ["chunk_gold"]
     assert evaluated[0]["retrieved_chunk_ids_for_eval"] == ["chunk_a", "chunk_gold"]
+
+
+def test_retrieved_chunk_ids_empty_list_is_valid_zero_result():
+    assert _retrieved_chunk_ids_for_eval({"retrieved_chunk_ids": []}, "q1") == []
+
+
+def test_chunk_only_evaluation_scores_empty_retrieval_as_zero(tmp_path):
+    gt_path = tmp_path / "gold.jsonl"
+    chunk_gt = ChunkGroundTruth(
+        by_question={"q1": {"chunk_gold"}},
+        path=gt_path,
+        chunk_config_ids={"cfg"},
+        package_metadata={},
+    )
+    cfg = EvalConfig.model_validate(
+        {
+            "evaluation": {"eval_run_id": "eval", "retrieval_only": True},
+            "inputs": {"rag_outputs": []},
+            "retrieval": {"ks": [1, 3, 5]},
+            "retrieval_evaluation": {
+                "document_level": {"enabled": False},
+                "chunk_level": {"enabled": True, "ground_truth_path": str(gt_path)},
+            },
+        }
+    )
+
+    evaluated = EvaluationOrchestrator()._evaluate_rows(
+        [{"question_id": "q1", "experiment_id": "exp", "retrieved_chunk_ids": [], "retrieved_chunks": []}],
+        {"q1": {"id": "q1", "answer": "100"}},
+        {},
+        cfg,
+        chunk_gt,
+    )
+
+    assert evaluated[0]["retrieved_chunk_ids_for_eval"] == []
+    for k in (1, 3, 5):
+        assert evaluated[0][f"chunk_hit_at_{k}"] == 0.0
+        assert evaluated[0][f"chunk_recall_at_{k}"] == 0.0
+        assert evaluated[0][f"chunk_mrr_at_{k}"] == 0.0
+        assert evaluated[0][f"chunk_ndcg_at_{k}"] == 0.0
+
+
+def test_retrieved_chunk_ids_normalizes_non_empty_top_level_ids():
+    row = {"retrieved_chunk_ids": [" chunk_a ", "chunk_b"]}
+
+    assert _retrieved_chunk_ids_for_eval(row, "q1") == ["chunk_a", "chunk_b"]
+
+
+def test_retrieved_chunk_ids_none_raises():
+    with pytest.raises(ValueError, match="retrieved_chunk_ids must be a list"):
+        _retrieved_chunk_ids_for_eval({"retrieved_chunk_ids": None}, "q1")
+
+
+def test_retrieved_chunk_ids_non_string_value_raises():
+    with pytest.raises(ValueError, match="non-string identifiers"):
+        _retrieved_chunk_ids_for_eval({"retrieved_chunk_ids": ["chunk_a", 3]}, "q1")
+
+
+def test_retrieved_chunk_ids_blank_string_raises():
+    with pytest.raises(ValueError, match="blank identifiers"):
+        _retrieved_chunk_ids_for_eval({"retrieved_chunk_ids": ["chunk_a", " "]}, "q1")
+
+
+def test_retrieved_chunks_nested_ids_are_used_only_when_top_level_absent():
+    row = {"retrieved_chunks": [{"chunk_id": " chunk_a "}, {"chunk_id": "chunk_b"}]}
+
+    assert _retrieved_chunk_ids_for_eval(row, "q1") == ["chunk_a", "chunk_b"]
+
+
+def test_absent_retrieved_chunk_ids_with_empty_retrieved_chunks_raises():
+    with pytest.raises(ValueError, match="stable retrieved chunk identifiers"):
+        _retrieved_chunk_ids_for_eval({"retrieved_chunks": []}, "q1")
+
+
+def test_absent_retrieved_chunk_ids_and_retrieved_chunks_raises():
+    with pytest.raises(ValueError, match="stable retrieved chunk identifiers"):
+        _retrieved_chunk_ids_for_eval({}, "q1")
 
 
 def test_combined_document_and_chunk_evaluation_outputs_both_namespaces(tmp_path):
