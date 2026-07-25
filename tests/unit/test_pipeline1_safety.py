@@ -363,11 +363,31 @@ def test_bge_encoder_propagates_requested_device(monkeypatch):
 
 
 def test_reranker_propagates_requested_device(monkeypatch):
-    torch = _install_fake_torch(monkeypatch)
+    torch = _install_fake_torch(monkeypatch, cuda_available=True, device_count=1)
     from src.pipeline1.retrieval.cross_encoder_reranker import CrossEncoderReranker
     from src.pipeline1.schemas.retrieval import RetrievalItem
 
     captured = {}
+
+    class FakeParameter:
+        def __init__(self, device: str) -> None:
+            self.device = torch.device(device)
+
+    class FakeHFModel:
+        def __init__(self) -> None:
+            self.parameter = FakeParameter("cpu")
+
+        def parameters(self):
+            yield self.parameter
+
+        def to(self, device):
+            captured["to_device"] = str(device)
+            self.parameter.device = torch.device("cuda:0")
+            return self
+
+        def eval(self):
+            captured["eval_called"] = True
+            return self
 
     class FakeCrossEncoder:
         def __init__(self, model_name: str, device: str = "cpu") -> None:
@@ -375,6 +395,7 @@ def test_reranker_propagates_requested_device(monkeypatch):
             captured["device"] = device
             self.device = torch.device("cuda:0" if str(device).startswith("cuda") else "cpu")
             self._target_device = self.device
+            self.model = FakeHFModel()
 
         def predict(self, pairs):
             return [0.5 for _ in pairs]
@@ -388,9 +409,100 @@ def test_reranker_propagates_requested_device(monkeypatch):
     ranked = reranker.rerank("question", items, 1)
 
     assert captured["device"] == "cuda"
+    assert captured["to_device"] == "cuda"
+    assert captured["eval_called"] is True
     assert str(reranker.requested_device) == "cuda"
     assert str(reranker.runtime_device).startswith("cuda")
     assert ranked[0].chunk_id == "c1"
+
+
+def test_reranker_cpu_device_does_not_execute_cuda_move(monkeypatch):
+    from src.pipeline1.retrieval.cross_encoder_reranker import CrossEncoderReranker
+
+    captured = {"to_called": False, "eval_called": False}
+
+    class FakeParameter:
+        device = _FakeDevice("cpu")
+
+    class FakeHFModel:
+        def parameters(self):
+            yield FakeParameter()
+
+        def to(self, device):
+            captured["to_called"] = True
+            return self
+
+        def eval(self):
+            captured["eval_called"] = True
+            return self
+
+    class FakeCrossEncoder:
+        def __init__(self, model_name: str, device: str = "cpu") -> None:
+            self.device = _FakeDevice(device)
+            self.model = FakeHFModel()
+
+    fake_module = types.ModuleType("sentence_transformers")
+    fake_module.CrossEncoder = FakeCrossEncoder
+    monkeypatch.setitem(sys.modules, "sentence_transformers", fake_module)
+
+    reranker = CrossEncoderReranker("fake-reranker", device="cpu")
+
+    assert str(reranker.runtime_device) == "cpu"
+    assert captured["to_called"] is False
+    assert captured["eval_called"] is False
+
+
+def test_reranker_cuda_unavailable_raises(monkeypatch):
+    _install_fake_torch(monkeypatch, cuda_available=False, device_count=0)
+    from src.pipeline1.retrieval.cross_encoder_reranker import CrossEncoderReranker
+
+    class FakeCrossEncoder:
+        def __init__(self, model_name: str, device: str = "cpu") -> None:
+            self.model = object()
+
+    fake_module = types.ModuleType("sentence_transformers")
+    fake_module.CrossEncoder = FakeCrossEncoder
+    monkeypatch.setitem(sys.modules, "sentence_transformers", fake_module)
+
+    with pytest.raises(RuntimeError, match="torch.cuda.is_available\\(\\) returned False"):
+        CrossEncoderReranker("fake-reranker", device="cuda")
+
+
+def test_reranker_runtime_device_uses_model_parameters(monkeypatch):
+    torch = _install_fake_torch(monkeypatch, cuda_available=True, device_count=1)
+    from src.pipeline1.retrieval.cross_encoder_reranker import CrossEncoderReranker
+
+    class FakeParameter:
+        def __init__(self) -> None:
+            self.device = torch.device("cpu")
+
+    class FakeHFModel:
+        def __init__(self) -> None:
+            self.parameter = FakeParameter()
+
+        def parameters(self):
+            yield self.parameter
+
+        def to(self, device):
+            self.parameter.device = torch.device("cuda:0")
+            return self
+
+        def eval(self):
+            return self
+
+    class FakeCrossEncoder:
+        def __init__(self, model_name: str, device: str = "cpu") -> None:
+            self.device = torch.device("cpu")
+            self._target_device = torch.device("cpu")
+            self.model = FakeHFModel()
+
+    fake_module = types.ModuleType("sentence_transformers")
+    fake_module.CrossEncoder = FakeCrossEncoder
+    monkeypatch.setitem(sys.modules, "sentence_transformers", fake_module)
+
+    reranker = CrossEncoderReranker("fake-reranker", device="cuda")
+
+    assert str(reranker.runtime_device) == "cuda:0"
 
 
 def test_cuda_requested_but_cpu_runtime_warns(monkeypatch):

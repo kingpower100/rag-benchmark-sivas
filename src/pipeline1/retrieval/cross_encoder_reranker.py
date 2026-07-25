@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 from collections.abc import Iterable
+import logging
 import math
 import warnings
 
 from src.pipeline1.schemas.retrieval import RetrievalItem
+
+logger = logging.getLogger(__name__)
 
 
 class CrossEncoderReranker:
@@ -14,8 +17,15 @@ class CrossEncoderReranker:
         self.model_name = model_name
         self.requested_device = device
         self.model = CrossEncoder(model_name, device=device)
+        self._place_model_on_requested_cuda_if_needed()
         self.runtime_device = self._resolve_runtime_device()
         self._validate_device_selection()
+        logger.info(
+            "CrossEncoder initialized requested_device=%s runtime_device=%s model=%s",
+            self.requested_device,
+            self.runtime_device,
+            self.model_name,
+        )
 
     def rerank(self, question: str, items: list[RetrievalItem], top_k: int) -> list[RetrievalItem]:
         if not items:
@@ -66,16 +76,39 @@ class CrossEncoderReranker:
             normalized.append(value)
         return normalized
 
+    def _place_model_on_requested_cuda_if_needed(self) -> None:
+        if not str(self.requested_device).startswith("cuda"):
+            return
+
+        import torch
+
+        if not torch.cuda.is_available():
+            raise RuntimeError(
+                "CUDA was requested for the CrossEncoder reranker, "
+                "but torch.cuda.is_available() returned False."
+            )
+
+        hf_model = getattr(self.model, "model", None)
+        if hf_model is None:
+            raise RuntimeError(
+                "CUDA was requested for the CrossEncoder reranker, but the underlying "
+                "HuggingFace model is not available as CrossEncoder.model."
+            )
+
+        resolved_device = torch.device(self.requested_device)
+        hf_model.to(resolved_device)
+        hf_model.eval()
+
     def _resolve_runtime_device(self) -> str:
-        device = getattr(self.model, "device", None)
-        if device is not None:
-            return str(device)
         if hasattr(self.model, "model"):
             try:
                 parameter = next(self.model.model.parameters())
                 return str(parameter.device)
             except Exception:
                 pass
+        device = getattr(self.model, "device", None)
+        if device is not None:
+            return str(device)
         target = getattr(self.model, "_target_device", None)
         if target is not None:
             return str(target)
