@@ -1,29 +1,16 @@
 extends: "A00_elasticsearch_dense.yaml"
 
-# ============================================================
-# A-SERIES WINNER PLACEHOLDER — NOT AN OFFICIAL EXPERIMENT
-# ============================================================
-# This file is a handoff template. It is not run directly and
-# is NOT registered in configs/official_experiment_mapping.yaml.
+# A-series winner base. Not an official executable experiment.
 #
-# Before running A03 (reranker) or A04-K* (top-k sweep), update
-# this file to reflect the winning retrieval algorithm from A00,
-# A01, or A02 as determined by Pipeline 2 + Pipeline 3 evaluation.
+# Confirmed winner of the A00-A02 retrieval comparison:
+#   A00 - Elasticsearch dense retrieval.
 #
-# Procedure:
-#   1. Run A00, A01, A02 through Pipeline 1, 2, 3.
-#   2. Identify the winner by comparing MRR@5, Recall@5, and P3 scores.
-#   3. Replace retrieval.retriever_type below with the winner's value.
-#   4. If winner is A01 (bm25): copy the bm25 block from A01.
-#      If winner is A02 (hybrid_rrf): copy hybrid + bm25 blocks from A02.
-#   5. Remove this comment block.
-# ============================================================
+# Downstream A03/A04 configs inherit the complete A00 configuration here:
+# C02 chunking, E03 mistral-embed embeddings, Elasticsearch script_score dense
+# retrieval, fetch_k=20, top_k=5, shared dataset, orchestration, and generation.
 
 experiment:
   experiment_id: "A_WINNER_BASE"
-
-retrieval:
-  retriever_type: "elasticsearch_dense"   # <-- REPLACE WITH WINNER ALGORITHM
 
 reranker:
   enabled: false
