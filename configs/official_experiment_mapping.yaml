@@ -43,6 +43,34 @@ official_experiment_mapping:
     pipeline1: "configs/pipeline1/final_experiments/V02_elasticsearch_dense.yaml"
     pipeline2: "configs/pipeline2/final_experiments/V02_elasticsearch_dense_eval.yaml"
     pipeline3: "configs/pipeline3/final_experiments/V02_elasticsearch_dense_eval.yaml"
+  A00:
+    pipeline1: "configs/pipeline1/final_experiments/A00_elasticsearch_dense.yaml"
+    pipeline2: "configs/pipeline2/final_experiments/A00_elasticsearch_dense_eval.yaml"
+    pipeline3: "configs/pipeline3/final_experiments/A00_elasticsearch_dense_eval.yaml"
+  A01:
+    pipeline1: "configs/pipeline1/final_experiments/A01_elasticsearch_bm25.yaml"
+    pipeline2: "configs/pipeline2/final_experiments/A01_elasticsearch_bm25_eval.yaml"
+    pipeline3: "configs/pipeline3/final_experiments/A01_elasticsearch_bm25_eval.yaml"
+  A02:
+    pipeline1: "configs/pipeline1/final_experiments/A02_elasticsearch_hybrid_rrf.yaml"
+    pipeline2: "configs/pipeline2/final_experiments/A02_elasticsearch_hybrid_rrf_eval.yaml"
+    pipeline3: "configs/pipeline3/final_experiments/A02_elasticsearch_hybrid_rrf_eval.yaml"
+  A03:
+    pipeline1: "configs/pipeline1/final_experiments/A03_reranker.yaml"
+    pipeline2: "configs/pipeline2/final_experiments/A03_reranker_eval.yaml"
+    pipeline3: "configs/pipeline3/final_experiments/A03_reranker_eval.yaml"
+  A04-K03:
+    pipeline1: "configs/pipeline1/final_experiments/A04-K03_top3.yaml"
+    pipeline2: "configs/pipeline2/final_experiments/A04-K03_top3_eval.yaml"
+    pipeline3: "configs/pipeline3/final_experiments/A04-K03_top3_eval.yaml"
+  A04-K05:
+    pipeline1: "configs/pipeline1/final_experiments/A04-K05_top5.yaml"
+    pipeline2: "configs/pipeline2/final_experiments/A04-K05_top5_eval.yaml"
+    pipeline3: "configs/pipeline3/final_experiments/A04-K05_top5_eval.yaml"
+  A04-K10:
+    pipeline1: "configs/pipeline1/final_experiments/A04-K10_top10.yaml"
+    pipeline2: "configs/pipeline2/final_experiments/A04-K10_top10_eval.yaml"
+    pipeline3: "configs/pipeline3/final_experiments/A04-K10_top10_eval.yaml"
   C00:
     pipeline1: "configs/pipeline1/final_experiments/C00_sentence512_baseline.yaml"
     pipeline2: "configs/pipeline2/final_experiments/C00_sentence512_baseline_eval.yaml"

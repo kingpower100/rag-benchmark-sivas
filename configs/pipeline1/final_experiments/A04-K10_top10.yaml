@@ -1,0 +1,17 @@
+extends: "A_winner_base.yaml"
+
+# Phase 4 top-k optimization experiment.
+# Inherited: C02 chunking, E03 embedding, Elasticsearch backend, A-series winner algorithm.
+# Variable: top_k=10 — returns 10 retrieved chunks to the generation stage.
+#
+# fetch_k=20 (inherited) satisfies fetch_k >= top_k.
+# Evaluate with retrieval.k=10 and ks=[1,3,5,10] in Pipeline 2.
+
+experiment:
+  experiment_id: "A04-K10"
+
+retrieval:
+  top_k: 10
+
+reranker:
+  final_top_k: 10

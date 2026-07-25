@@ -1,0 +1,27 @@
+extends: "A00_elasticsearch_dense.yaml"
+
+# Phase 4 retrieval-algorithm experiment.
+# Inherited: C02 chunking, E03 embedding, Elasticsearch backend (from A00).
+# Algorithm tested: Elasticsearch BM25 (classic lexical retrieval, German analyzer).
+#
+# The dense vector index from A00 is still built (embedding cache reuse).
+# BM25 retrieval operates on a separate text index (index_name below).
+# BM25 is a pure lexical retriever; no vector similarity is computed at query time.
+#
+# retrieval.bm25.host resolves from retrieval.bm25.host_env when set;
+# otherwise falls back to retrieval.bm25.host. No env-var override is configured
+# here — update host directly or set host_env for non-local deployments.
+# Never commit credentials.
+
+experiment:
+  experiment_id: "A01"
+
+retrieval:
+  retriever_type: "bm25"
+  bm25:
+    backend: "elasticsearch"
+    host: "http://localhost:9200"
+    index_name: "sivas_phase4_a01_bm25_c02_chunks"
+    analyzer: "german"
+    rebuild_index: false
+    allow_fallback: false

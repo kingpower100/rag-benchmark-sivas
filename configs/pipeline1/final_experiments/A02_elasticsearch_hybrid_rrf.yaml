@@ -1,0 +1,30 @@
+extends: "A00_elasticsearch_dense.yaml"
+
+# Phase 4 retrieval-algorithm experiment.
+# Inherited: C02 chunking, E03 embedding, Elasticsearch backend (from A00).
+# Algorithm tested: Elasticsearch Hybrid RRF — dense cosine + BM25 fused via
+# Reciprocal Rank Fusion (rrf_k=60, equal weights).
+#
+# Dense leg: ElasticsearchDenseRetriever (script_score cosine, fetch_k=20).
+# BM25 leg:  ElasticsearchBM25Retriever — reuses the same text index as A01.
+# Fusion:    rrf_score(doc) = 1/(rrf_k + dense_rank) + 1/(rrf_k + bm25_rank).
+#
+# Both legs fetch dense_fetch_k=20 / bm25_fetch_k=20 candidates independently.
+# Final top_k=5 documents are selected from the fused ranked list.
+
+experiment:
+  experiment_id: "A02"
+
+retrieval:
+  retriever_type: "elasticsearch_hybrid_rrf"
+  hybrid:
+    rrf_k: 60
+    dense_fetch_k: 20
+    bm25_fetch_k: 20
+  bm25:
+    backend: "elasticsearch"
+    host: "http://localhost:9200"
+    index_name: "sivas_phase4_a01_bm25_c02_chunks"
+    analyzer: "german"
+    rebuild_index: false
+    allow_fallback: false

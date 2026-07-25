@@ -1,0 +1,44 @@
+extends: "E03_mistral_api_embedding.yaml"
+
+# Phase 4 retrieval-algorithm experiment — A-series anchor.
+# Inherited chunking winner: C02 (sentence, 1024 tokens, 400 token overlap).
+# Inherited embedding winner: E03 (mistral-embed, 1024 dim, normalize=true).
+# Backend fixed: Elasticsearch dense-vector retrieval (script_score cosine).
+# Algorithm tested: global exact cosine similarity — baseline for A-series comparisons.
+#
+# All A-series experiments (A00–A04) share identical chunking, embedding, and backend.
+# Only the retrieval algorithm changes across experiments.
+#
+# retrieval_mode: "script_score" — brute-force exhaustive scan; no HNSW built.
+# Equivalent to V00 (FAISS IndexFlatIP) and V01 (pgvector exact scan).
+#
+# ENVIRONMENT VARIABLES — credentials must never be stored in this file:
+#   index.host    default is http://localhost:9200
+#                 Change this value for non-local deployments.
+#   username, password, api_key are null for unauthenticated local instances.
+#   Never commit populated credentials.
+
+experiment:
+  experiment_id: "A00"
+
+index:
+  type: "elasticsearch"
+  metric: "cosine"
+  dense_dim: 1024
+  index_name: "sivas_phase4_a00_elasticsearch_dense_mistral_embed"
+  host: "http://localhost:9200"
+  similarity: "cosine"
+  retrieval_mode: "script_score"
+  num_candidates: 100
+  shards: 1
+  replicas: 0
+  refresh_after_index: true
+  recreate: false
+  request_timeout: 60
+  verify_certs: false
+  username: null
+  password: null
+  api_key: null
+
+retrieval:
+  retriever_type: "elasticsearch_dense"

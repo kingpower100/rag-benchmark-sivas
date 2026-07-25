@@ -1,0 +1,23 @@
+extends: "../base_eval.yaml"
+
+evaluation:
+  eval_run_id: "A04-K03_top3_eval"
+  strict_failure_threshold: true
+  max_generation_failure_rate: 0.0
+
+inputs:
+  pipeline1_results_path: "data/runs/pipeline1/A04-K03/results.jsonl"
+  rag_outputs:
+    - "data/runs/pipeline1/A04-K03/results.jsonl"
+
+retrieval:
+  k: 3
+  ks: [1, 3]
+
+retrieval_evaluation:
+  document_level:
+    enabled: true
+  chunk_level:
+    enabled: true
+    ground_truth_path: "data/ground_truth/chunk_level/C02_sentence1024_overlap400/gold_chunk_annotations_C02_sentence1024_overlap400.jsonl"
+    missing_question_policy: error

@@ -1,0 +1,17 @@
+extends: "A_winner_base.yaml"
+
+# Phase 4 top-k optimization experiment.
+# Inherited: C02 chunking, E03 embedding, Elasticsearch backend, A-series winner algorithm.
+# Variable: top_k=5 — returns 5 retrieved chunks to the generation stage.
+#
+# This is the default top_k inherited from the baseline; used as the A04 reference point.
+# Evaluate with retrieval.k=5 and ks=[1,3,5] in Pipeline 2.
+
+experiment:
+  experiment_id: "A04-K05"
+
+retrieval:
+  top_k: 5
+
+reranker:
+  final_top_k: 5
