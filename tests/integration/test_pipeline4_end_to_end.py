@@ -177,6 +177,79 @@ class TestPipeline4EndToEnd:
         expected = 0.35 * recall + 0.25 * mrr + 0.20 * ndcg + 0.20 * cp
         assert abs(score - expected) < 1e-5
 
+    def test_a04_k03_aggregates_without_at5_metrics(self, tmp_path):
+        p2_root = tmp_path / "pipeline2"
+        p3_root = tmp_path / "pipeline3"
+        p2_dir = p2_root / "p2_A04-K03_top3_eval"
+        p2_dir.mkdir(parents=True)
+        question_ids = [f"q{i:03d}" for i in range(96)]
+        summary_row = {
+            "experiment_id": "A04-K03",
+            "n_questions": 96,
+            "run_valid": True,
+            "generation_failure_rate": 0.0,
+            "mean_recall_at_1": 0.25,
+            "mean_mrr_at_1": 0.25,
+            "mean_ndcg_at_1": 0.25,
+            "mean_context_precision_at_1": 0.25,
+            "mean_recall_at_3": 0.50,
+            "mean_mrr_at_3": 0.60,
+            "mean_ndcg_at_3": 0.70,
+            "mean_context_precision_at_3": 0.80,
+            "mean_chunk_hit_at_3": 0.30,
+            "mean_chunk_recall_at_3": 0.40,
+            "mean_chunk_mrr_at_3": 0.50,
+            "mean_chunk_ndcg_at_3": 0.60,
+            "unknown_rate": 0.10,
+            "mean_embedding_similarity": 0.80,
+            "mean_official_bertscore_f1": 0.75,
+        }
+        (p2_dir / "summary_metrics.json").write_text(
+            json.dumps({"summary_by_experiment": [summary_row]}, indent=2),
+            encoding="utf-8",
+        )
+        rows = [{"question_id": qid, "experiment_id": "A04-K03"} for qid in question_ids]
+        _write_jsonl(p2_dir / "per_question.jsonl", rows)
+        _write_jsonl(p2_dir / "per_question_metrics.jsonl", rows)
+        (p2_dir / "eval_manifest.json").write_text(
+            json.dumps(
+                {
+                    "final_verdict": "valid",
+                    "strict_audit_pass": True,
+                    "qa_hash": "qa_hash_abc",
+                    "gold_contexts_hash": "gold_hash_abc",
+                    "fake_run_detection": {"suspicious": False, "checks": []},
+                    "row_counts": {
+                        "pipeline1_results": 96,
+                        "questions_rows": 96,
+                        "evaluated_rows": 96,
+                    },
+                },
+                indent=2,
+            ),
+            encoding="utf-8",
+        )
+        cfg = {
+            "pipeline2_runs_dir": str(p2_root),
+            "pipeline3_runs_dir": str(p3_root),
+            "output_dir": str(tmp_path / "pipeline4_out"),
+            "run_id": "a04_k03_variable_k",
+            "ranking_mode": "retrieval_only",
+        }
+        cfg_path = tmp_path / "p4_a04_k03.yaml"
+        cfg_path.write_text(yaml.dump(cfg), encoding="utf-8")
+
+        run_dir = Pipeline4Orchestrator().run(str(cfg_path))
+
+        rows = list(csv.DictReader((run_dir / "retrieval_leaderboard.csv").open(encoding="utf-8")))
+        assert len(rows) == 1
+        assert rows[0]["experiment_id"] == "A04-K03"
+        assert rows[0]["primary_k"] == "3"
+        assert rows[0]["recall_at_primary_k"] == "0.500000"
+        assert rows[0]["recall_at_5"] == ""
+        data = json.loads((run_dir / "leaderboard.json").read_text(encoding="utf-8"))
+        assert data["retrieval_leaderboard"][0]["recall_at_5"] is None
+
 
 def _write_fixture_runs(p2_root: Path, p3_root: Path) -> None:
     question_ids = [f"q{i:03d}" for i in range(96)]

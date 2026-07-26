@@ -61,6 +61,47 @@ def _p2(exp_id="exp_a", recall=0.5, mrr=0.9, ndcg=0.6, cp=0.35, unknown=0.2) -> 
     )
 
 
+def _p2_k03() -> P2Summary:
+    return P2Summary(
+        experiment_id="A04-K03",
+        n_questions=96,
+        run_valid=True,
+        generation_failure_rate=0.0,
+        mean_recall_at_5=None,
+        mean_mrr_at_5=None,
+        mean_ndcg_at_5=None,
+        mean_context_precision_at_5=None,
+        unknown_rate=0.2,
+        mean_embedding_similarity=0.88,
+        mean_official_bertscore_f1=0.66,
+        qa_hash="qa_hash_abc",
+        gold_contexts_hash="qa_hash_abc",
+        p2_run_dir="/fake/A04-K03",
+        audit_manifest_present=True,
+        final_verdict="valid",
+        strict_audit_pass=True,
+        fake_run_suspicious=False,
+        row_counts={
+            "pipeline1_results": 96,
+            "questions_rows": 96,
+            "evaluated_rows": 96,
+        },
+        question_ids=[f"q{i:03d}" for i in range(96)],
+        expected_question_count=96,
+        required_outputs_present=True,
+        primary_k=3,
+        available_ks=[1, 3],
+        primary_recall=0.5,
+        primary_mrr=0.6,
+        primary_ndcg=0.7,
+        primary_context_precision=0.8,
+        primary_chunk_hit=0.3,
+        primary_chunk_recall=0.4,
+        primary_chunk_mrr=0.5,
+        primary_chunk_ndcg=0.6,
+    )
+
+
 def _p3(exp_id="exp_a") -> P3Summary:
     return P3Summary(
         run_id=f"p3_{exp_id}",
@@ -160,6 +201,8 @@ class TestWriteRetrievalLeaderboard:
         assert len(rows) == 2
         assert "rank" in rows[0]
         assert "retrieval_score" in rows[0]
+        assert "primary_k" in rows[0]
+        assert "recall_at_primary_k" in rows[0]
 
     def test_ranked_by_score_descending(self):
         p2_list = [_p2("a", recall=0.3), _p2("b", recall=0.8)]
@@ -206,6 +249,25 @@ class TestWriteFullSummary:
         assert rows[0]["judge_model"] == ""
         assert rows[0]["mean_judge_correctness"] == ""
 
+    def test_missing_at5_metrics_are_blank_not_zero(self):
+        p2_list = [_p2_k03()]
+        p3_map = {"A04-K03": None}
+        cfg = _cfg()
+        records, groups, _ = _make_records_and_groups(p2_list, p3_map, cfg)
+
+        with tempfile.TemporaryDirectory() as tmp:
+            out = Path(tmp) / "summary.csv"
+            write_full_summary(records, out)
+            rows = list(csv.DictReader(out.open(encoding="utf-8")))
+
+        assert rows[0]["primary_k"] == "3"
+        assert rows[0]["mean_recall_at_primary_k"] == "0.500000"
+        assert rows[0]["mean_chunk_ndcg_at_primary_k"] == "0.600000"
+        assert rows[0]["mean_recall_at_5"] == ""
+        assert rows[0]["mean_mrr_at_5"] == ""
+        assert rows[0]["mean_ndcg_at_5"] == ""
+        assert rows[0]["mean_context_precision_at_5"] == ""
+
 
 class TestLeaderboardJson:
     def test_json_has_expected_keys(self):
@@ -228,6 +290,7 @@ class TestLeaderboardJson:
         assert "comparison_groups" in data
         assert "ranking_mode" in data
         assert data["metric_display_labels"]["recall_at_5"] == "Document Recall@5"
+        assert data["metric_display_labels"]["recall_at_primary_k"] == "Document Recall@primary_k"
         assert "document discovery" in data["retrieval_metric_note"]
 
 
@@ -249,5 +312,5 @@ class TestComparisonReport:
             text = out.read_text(encoding="utf-8")
         assert text.startswith("# Pipeline 4")
         assert "Retrieval Leaderboard" in text
-        assert "Document Recall@5" in text
+        assert "Document Recall@primary_k" in text
         assert "not exact answer-passage localization" in text

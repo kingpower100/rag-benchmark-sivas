@@ -53,6 +53,68 @@ def test_load_p2_summary_marks_legacy_manifest_missing(tmp_path: Path):
     assert summary.required_outputs_present is False
 
 
+def test_load_p2_summary_accepts_a04_k03_without_at5_metrics(tmp_path: Path):
+    run_dir = tmp_path / "p2_a04_k03"
+    run_dir.mkdir()
+    _write_p2_summary(
+        run_dir,
+        "A04-K03",
+        96,
+        metrics={
+            "mean_recall_at_1": 0.2,
+            "mean_mrr_at_1": 0.2,
+            "mean_ndcg_at_1": 0.2,
+            "mean_context_precision_at_1": 0.2,
+            "mean_chunk_hit_at_1": 0.1,
+            "mean_recall_at_3": 0.5,
+            "mean_mrr_at_3": 0.6,
+            "mean_ndcg_at_3": 0.7,
+            "mean_context_precision_at_3": 0.8,
+            "mean_chunk_hit_at_3": 0.3,
+            "mean_chunk_recall_at_3": 0.4,
+            "mean_chunk_mrr_at_3": 0.5,
+            "mean_chunk_ndcg_at_3": 0.6,
+        },
+    )
+
+    summary = load_p2_summary(run_dir)
+
+    assert summary.primary_k == 3
+    assert summary.available_ks == [1, 3]
+    assert summary.primary_recall == 0.5
+    assert summary.primary_mrr == 0.6
+    assert summary.primary_ndcg == 0.7
+    assert summary.primary_context_precision == 0.8
+    assert summary.primary_chunk_hit == 0.3
+    assert summary.primary_chunk_recall == 0.4
+    assert summary.primary_chunk_mrr == 0.5
+    assert summary.primary_chunk_ndcg == 0.6
+    assert summary.mean_recall_at_5 is None
+    assert summary.mean_mrr_at_5 is None
+    assert summary.mean_ndcg_at_5 is None
+    assert summary.mean_context_precision_at_5 is None
+
+
+def test_load_p2_summary_uses_a04_primary_cutoffs(tmp_path: Path):
+    cases = [("A04-K03", 3), ("A04-K05", 5), ("A04-K10", 10)]
+    for exp_id, primary_k in cases:
+        run_dir = tmp_path / exp_id
+        run_dir.mkdir()
+        metrics = {}
+        for k in [1, 3, 5, 10]:
+            if k <= primary_k:
+                metrics[f"mean_recall_at_{k}"] = k / 10
+                metrics[f"mean_mrr_at_{k}"] = k / 10
+                metrics[f"mean_ndcg_at_{k}"] = k / 10
+                metrics[f"mean_context_precision_at_{k}"] = k / 10
+        _write_p2_summary(run_dir, exp_id, 96, metrics=metrics)
+
+        summary = load_p2_summary(run_dir)
+
+        assert summary.primary_k == primary_k
+        assert summary.primary_recall == primary_k / 10
+
+
 def test_load_p3_summary_reads_row_level_coverage(tmp_path: Path):
     run_dir = tmp_path / "p3_a"
     run_dir.mkdir()
@@ -90,7 +152,18 @@ def test_load_p3_summary_detects_duplicate_question_ids(tmp_path: Path):
     assert summary.duplicate_question_ids == ["q001"]
 
 
-def _write_p2_summary(run_dir: Path, exp_id: str, n_questions: int) -> None:
+def _write_p2_summary(
+    run_dir: Path,
+    exp_id: str,
+    n_questions: int,
+    metrics: dict | None = None,
+) -> None:
+    metric_values = metrics or {
+        "mean_recall_at_5": 0.5,
+        "mean_mrr_at_5": 0.6,
+        "mean_ndcg_at_5": 0.7,
+        "mean_context_precision_at_5": 0.8,
+    }
     (run_dir / "summary_metrics.json").write_text(
         json.dumps(
             {
@@ -100,10 +173,7 @@ def _write_p2_summary(run_dir: Path, exp_id: str, n_questions: int) -> None:
                         "n_questions": n_questions,
                         "run_valid": True,
                         "generation_failure_rate": 0.0,
-                        "mean_recall_at_5": 0.5,
-                        "mean_mrr_at_5": 0.6,
-                        "mean_ndcg_at_5": 0.7,
-                        "mean_context_precision_at_5": 0.8,
+                        **metric_values,
                     }
                 ]
             }

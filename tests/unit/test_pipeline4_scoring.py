@@ -78,6 +78,49 @@ def test_retrieval_score_custom_weights():
     assert compute_retrieval_score(p2, weights) == pytest.approx(1.0, abs=1e-9)
 
 
+def test_retrieval_score_uses_primary_k_without_at5_metrics():
+    p2 = P2Summary(
+        experiment_id="A04-K03",
+        n_questions=96,
+        run_valid=True,
+        generation_failure_rate=0.0,
+        mean_recall_at_5=None,
+        mean_mrr_at_5=None,
+        mean_ndcg_at_5=None,
+        mean_context_precision_at_5=None,
+        unknown_rate=0.1,
+        mean_embedding_similarity=0.88,
+        mean_official_bertscore_f1=0.66,
+        qa_hash="abc123",
+        gold_contexts_hash="abc123",
+        p2_run_dir="/fake/p2",
+        primary_k=3,
+        available_ks=[1, 3],
+        primary_recall=0.5,
+        primary_mrr=0.7,
+        primary_ndcg=0.6,
+        primary_context_precision=0.4,
+    )
+    weights = RetrievalScoreWeights()
+
+    score = compute_retrieval_score(p2, weights)
+
+    expected = 0.35 * 0.5 + 0.25 * 0.7 + 0.20 * 0.6 + 0.20 * 0.4
+    assert score == pytest.approx(expected, abs=1e-9)
+    assert p2.mean_recall_at_5 is None
+
+
+def test_missing_context_precision_is_excluded_not_zeroed():
+    p2 = _p2(recall=0.5, mrr=0.7, ndcg=0.6, cp=None)
+    p2.primary_context_precision = None
+    weights = RetrievalScoreWeights()
+
+    score = compute_retrieval_score(p2, weights)
+
+    expected = (0.35 * 0.5 + 0.25 * 0.7 + 0.20 * 0.6) / (0.35 + 0.25 + 0.20)
+    assert score == pytest.approx(expected, abs=1e-9)
+
+
 def test_rqi_formula():
     p2 = _p2(recall=0.5, unknown_rate=0.2)
     p3 = _p3(correctness=4.0, faithfulness=3.5, context_relevance=4.5)

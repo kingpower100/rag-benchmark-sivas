@@ -17,6 +17,22 @@ from src.pipeline4.scoring import (
 from src.pipeline4.validation import ComparisonGroup, ExperimentValidation
 
 
+def _fmt(v: Any) -> str:
+    if v is None:
+        return ""
+    if isinstance(v, float):
+        return f"{v:.6f}"
+    return str(v)
+
+
+def _round_optional(v: Optional[float]) -> Optional[float]:
+    return None if v is None else round(v, 6)
+
+
+def _md_float(v: Optional[float]) -> str:
+    return "N/A" if v is None else f"{v:.4f}"
+
+
 @dataclass
 class ExperimentRecord:
     experiment_id: str
@@ -24,10 +40,20 @@ class ExperimentRecord:
     n_questions: int
     run_valid: bool
     generation_failure_rate: float
-    mean_recall_at_5: float
-    mean_mrr_at_5: float
-    mean_ndcg_at_5: float
-    mean_context_precision_at_5: float
+    primary_k: int
+    available_ks: list[int]
+    primary_recall: float
+    primary_mrr: float
+    primary_ndcg: float
+    primary_context_precision: Optional[float]
+    primary_chunk_hit: Optional[float]
+    primary_chunk_recall: Optional[float]
+    primary_chunk_mrr: Optional[float]
+    primary_chunk_ndcg: Optional[float]
+    mean_recall_at_5: Optional[float]
+    mean_mrr_at_5: Optional[float]
+    mean_ndcg_at_5: Optional[float]
+    mean_context_precision_at_5: Optional[float]
     unknown_rate: float
     mean_embedding_similarity: Optional[float]
     mean_official_bertscore_f1: Optional[float]
@@ -94,6 +120,16 @@ def build_records(
             n_questions=p2.n_questions,
             run_valid=p2.run_valid,
             generation_failure_rate=p2.generation_failure_rate,
+            primary_k=p2.primary_k,
+            available_ks=p2.available_ks,
+            primary_recall=p2.primary_recall,
+            primary_mrr=p2.primary_mrr,
+            primary_ndcg=p2.primary_ndcg,
+            primary_context_precision=p2.primary_context_precision,
+            primary_chunk_hit=p2.primary_chunk_hit,
+            primary_chunk_recall=p2.primary_chunk_recall,
+            primary_chunk_mrr=p2.primary_chunk_mrr,
+            primary_chunk_ndcg=p2.primary_chunk_ndcg,
             mean_recall_at_5=p2.mean_recall_at_5,
             mean_mrr_at_5=p2.mean_mrr_at_5,
             mean_ndcg_at_5=p2.mean_ndcg_at_5,
@@ -145,6 +181,15 @@ def write_retrieval_leaderboard(records: list[ExperimentRecord], out_path: Path)
         "rank",
         "experiment_id",
         "retrieval_score",
+        "primary_k",
+        "recall_at_primary_k",
+        "mrr_at_primary_k",
+        "ndcg_at_primary_k",
+        "context_precision_at_primary_k",
+        "chunk_hit_at_primary_k",
+        "chunk_recall_at_primary_k",
+        "chunk_mrr_at_primary_k",
+        "chunk_ndcg_at_primary_k",
         "recall_at_5",
         "mrr_at_5",
         "ndcg_at_5",
@@ -163,10 +208,19 @@ def write_retrieval_leaderboard(records: list[ExperimentRecord], out_path: Path)
                     "rank": r.retrieval_rank,
                     "experiment_id": r.experiment_id,
                     "retrieval_score": f"{r.retrieval_score:.6f}",
-                    "recall_at_5": f"{r.mean_recall_at_5:.6f}",
-                    "mrr_at_5": f"{r.mean_mrr_at_5:.6f}",
-                    "ndcg_at_5": f"{r.mean_ndcg_at_5:.6f}",
-                    "context_precision_at_5": f"{r.mean_context_precision_at_5:.6f}",
+                    "primary_k": r.primary_k,
+                    "recall_at_primary_k": _fmt(r.primary_recall),
+                    "mrr_at_primary_k": _fmt(r.primary_mrr),
+                    "ndcg_at_primary_k": _fmt(r.primary_ndcg),
+                    "context_precision_at_primary_k": _fmt(r.primary_context_precision),
+                    "chunk_hit_at_primary_k": _fmt(r.primary_chunk_hit),
+                    "chunk_recall_at_primary_k": _fmt(r.primary_chunk_recall),
+                    "chunk_mrr_at_primary_k": _fmt(r.primary_chunk_mrr),
+                    "chunk_ndcg_at_primary_k": _fmt(r.primary_chunk_ndcg),
+                    "recall_at_5": _fmt(r.mean_recall_at_5),
+                    "mrr_at_5": _fmt(r.mean_mrr_at_5),
+                    "ndcg_at_5": _fmt(r.mean_ndcg_at_5),
+                    "context_precision_at_5": _fmt(r.mean_context_precision_at_5),
                     "unknown_rate": f"{r.unknown_rate:.6f}",
                     "n_questions": r.n_questions,
                     "p2_status": r.p2_status,
@@ -187,6 +241,8 @@ def write_rqi_leaderboard(records: list[ExperimentRecord], out_path: Path) -> No
         "judge_correctness_norm",
         "judge_faithfulness_norm",
         "judge_context_relevance_norm",
+        "primary_k",
+        "recall_at_primary_k",
         "recall_at_5",
         "no_unknown",
         "n_questions",
@@ -219,7 +275,9 @@ def write_rqi_leaderboard(records: list[ExperimentRecord], out_path: Path) -> No
                         if r.mean_judge_context_relevance is not None
                         else ""
                     ),
-                    "recall_at_5": f"{r.mean_recall_at_5:.6f}",
+                    "primary_k": r.primary_k,
+                    "recall_at_primary_k": _fmt(r.primary_recall),
+                    "recall_at_5": _fmt(r.mean_recall_at_5),
                     "no_unknown": f"{1.0 - r.unknown_rate:.6f}",
                     "n_questions": r.n_questions,
                     "judge_model": r.judge_model or "",
@@ -241,6 +299,16 @@ def write_full_summary(records: list[ExperimentRecord], out_path: Path) -> None:
         "rqi_rank",
         "retrieval_score",
         "rqi",
+        "primary_k",
+        "available_ks",
+        "mean_recall_at_primary_k",
+        "mean_mrr_at_primary_k",
+        "mean_ndcg_at_primary_k",
+        "mean_context_precision_at_primary_k",
+        "mean_chunk_hit_at_primary_k",
+        "mean_chunk_recall_at_primary_k",
+        "mean_chunk_mrr_at_primary_k",
+        "mean_chunk_ndcg_at_primary_k",
         "n_questions",
         "run_valid",
         "generation_failure_rate",
@@ -271,13 +339,6 @@ def write_full_summary(records: list[ExperimentRecord], out_path: Path) -> None:
         "p3_run_dir",
     ]
 
-    def _fmt(v: Any) -> str:
-        if v is None:
-            return ""
-        if isinstance(v, float):
-            return f"{v:.6f}"
-        return str(v)
-
     with open(out_path, "w", newline="", encoding="utf-8") as f:
         writer = csv.DictWriter(f, fieldnames=fieldnames)
         writer.writeheader()
@@ -294,6 +355,16 @@ def write_full_summary(records: list[ExperimentRecord], out_path: Path) -> None:
                     "rqi_rank": r.rqi_rank if r.rqi_rank is not None else "",
                     "retrieval_score": _fmt(r.retrieval_score),
                     "rqi": _fmt(r.rqi),
+                    "primary_k": r.primary_k,
+                    "available_ks": ",".join(str(k) for k in r.available_ks),
+                    "mean_recall_at_primary_k": _fmt(r.primary_recall),
+                    "mean_mrr_at_primary_k": _fmt(r.primary_mrr),
+                    "mean_ndcg_at_primary_k": _fmt(r.primary_ndcg),
+                    "mean_context_precision_at_primary_k": _fmt(r.primary_context_precision),
+                    "mean_chunk_hit_at_primary_k": _fmt(r.primary_chunk_hit),
+                    "mean_chunk_recall_at_primary_k": _fmt(r.primary_chunk_recall),
+                    "mean_chunk_mrr_at_primary_k": _fmt(r.primary_chunk_mrr),
+                    "mean_chunk_ndcg_at_primary_k": _fmt(r.primary_chunk_ndcg),
                     "n_questions": r.n_questions,
                     "run_valid": r.run_valid,
                     "generation_failure_rate": _fmt(r.generation_failure_rate),
@@ -342,10 +413,20 @@ def write_leaderboard_json(
                 "rank": r.retrieval_rank,
                 "experiment_id": r.experiment_id,
                 "retrieval_score": round(r.retrieval_score, 6),
-                "recall_at_5": round(r.mean_recall_at_5, 6),
-                "mrr_at_5": round(r.mean_mrr_at_5, 6),
-                "ndcg_at_5": round(r.mean_ndcg_at_5, 6),
-                "context_precision_at_5": round(r.mean_context_precision_at_5, 6),
+                "primary_k": r.primary_k,
+                "available_ks": r.available_ks,
+                "recall_at_primary_k": round(r.primary_recall, 6),
+                "mrr_at_primary_k": round(r.primary_mrr, 6),
+                "ndcg_at_primary_k": round(r.primary_ndcg, 6),
+                "context_precision_at_primary_k": _round_optional(r.primary_context_precision),
+                "chunk_hit_at_primary_k": _round_optional(r.primary_chunk_hit),
+                "chunk_recall_at_primary_k": _round_optional(r.primary_chunk_recall),
+                "chunk_mrr_at_primary_k": _round_optional(r.primary_chunk_mrr),
+                "chunk_ndcg_at_primary_k": _round_optional(r.primary_chunk_ndcg),
+                "recall_at_5": _round_optional(r.mean_recall_at_5),
+                "mrr_at_5": _round_optional(r.mean_mrr_at_5),
+                "ndcg_at_5": _round_optional(r.mean_ndcg_at_5),
+                "context_precision_at_5": _round_optional(r.mean_context_precision_at_5),
                 "unknown_rate": round(r.unknown_rate, 6),
                 "n_questions": r.n_questions,
                 "comparison_group_id": r.comparison_group_id,
@@ -378,7 +459,9 @@ def write_leaderboard_json(
                     if r.mean_judge_context_relevance is not None
                     else None
                 ),
-                "recall_at_5": round(r.mean_recall_at_5, 6),
+                "primary_k": r.primary_k,
+                "recall_at_primary_k": round(r.primary_recall, 6),
+                "recall_at_5": _round_optional(r.mean_recall_at_5),
                 "no_unknown": round(1.0 - r.unknown_rate, 6),
                 "n_questions": r.n_questions,
                 "judge_model": r.judge_model,
@@ -401,6 +484,14 @@ def write_leaderboard_json(
     payload = {
         "ranking_mode": cfg.ranking_mode,
         "metric_display_labels": {
+            "recall_at_primary_k": "Document Recall@primary_k",
+            "mrr_at_primary_k": "Document MRR@primary_k",
+            "ndcg_at_primary_k": "Document nDCG@primary_k",
+            "context_precision_at_primary_k": "Document Precision@primary_k",
+            "chunk_hit_at_primary_k": "Chunk Hit@primary_k",
+            "chunk_recall_at_primary_k": "Chunk Recall@primary_k",
+            "chunk_mrr_at_primary_k": "Chunk MRR@primary_k",
+            "chunk_ndcg_at_primary_k": "Chunk nDCG@primary_k",
             "recall_at_5": "Document Recall@5",
             "mrr_at_5": "Document MRR@5",
             "ndcg_at_5": "Document nDCG@5",
@@ -524,15 +615,19 @@ def write_comparison_report(
         "and ranking, not exact answer-passage localization."
     )
     lines.append("")
-    lines.append(
-        f"| Component | Weight | Formula |"
-    )
+    lines.append("| Component | Weight | Formula |")
     lines.append("|-----------|--------|---------|")
-    lines.append(f"| Recall@5 | {w.recall_at_5} | `{w.recall_at_5} × Recall@5` |")
-    lines.append(f"| MRR@5 | {w.mrr_at_5} | `{w.mrr_at_5} × MRR@5` |")
-    lines.append(f"| NDCG@5 | {w.ndcg_at_5} | `{w.ndcg_at_5} × NDCG@5` |")
+    lines.append(f"| Recall@primary_k | {w.recall_at_5} | `{w.recall_at_5} x Recall@primary_k` |")
+    lines.append(f"| MRR@primary_k | {w.mrr_at_5} | `{w.mrr_at_5} x MRR@primary_k` |")
+    lines.append(f"| nDCG@primary_k | {w.ndcg_at_5} | `{w.ndcg_at_5} x nDCG@primary_k` |")
     lines.append(
-        f"| ContextPrecision@5 | {w.context_precision_at_5} | `{w.context_precision_at_5} × ContextPrecision@5` |"
+        f"| ContextPrecision@primary_k | {w.context_precision_at_5} | "
+        f"`{w.context_precision_at_5} x ContextPrecision@primary_k` when available |"
+    )
+    lines.append("")
+    lines.append(
+        "Unavailable primary-k metric components are excluded from retrieval-score "
+        "calculations and the remaining weights are renormalized."
     )
     lines.append("")
 
@@ -542,16 +637,10 @@ def write_comparison_report(
         rw = cfg.rqi_weights
         lines.append("| Component | Weight | Normalization |")
         lines.append("|-----------|--------|---------------|")
-        lines.append(
-            f"| Correctness | {rw.correctness} | `judge_correctness / 5` |"
-        )
-        lines.append(
-            f"| Faithfulness | {rw.faithfulness} | `judge_faithfulness / 5` |"
-        )
-        lines.append(
-            f"| Context Relevance | {rw.context_relevance} | `judge_context_relevance / 5` |"
-        )
-        lines.append(f"| Recall@5 | {rw.recall_at_5} | raw |")
+        lines.append(f"| Correctness | {rw.correctness} | `judge_correctness / 5` |")
+        lines.append(f"| Faithfulness | {rw.faithfulness} | `judge_faithfulness / 5` |")
+        lines.append(f"| Context Relevance | {rw.context_relevance} | `judge_context_relevance / 5` |")
+        lines.append(f"| Recall@primary_k | {rw.recall_at_5} | raw |")
         lines.append(f"| No-Unknown | {rw.no_unknown} | `1 - unknown_rate` |")
         lines.append("")
 
@@ -561,14 +650,15 @@ def write_comparison_report(
     ranked_ret.sort(key=lambda r: (r.retrieval_rank, r.experiment_id))
     if ranked_ret:
         lines.append(
-            "| Rank | Experiment | Retrieval Score | Document Recall@5 | Document MRR@5 | Document nDCG@5 | Document Precision@5 | Unknown Rate |"
+            "| Rank | Experiment | Retrieval Score | primary_k | Document Recall@primary_k | "
+            "Document MRR@primary_k | Document nDCG@primary_k | Document Precision@primary_k | Unknown Rate |"
         )
-        lines.append("|------|-----------|----------------|----------|-------|--------|------|-------------|")
+        lines.append("|------|-----------|----------------|-----------|----------|-------|--------|------|-------------|")
         for r in ranked_ret:
             lines.append(
                 f"| {r.retrieval_rank} | `{r.experiment_id}` | {r.retrieval_score:.4f} "
-                f"| {r.mean_recall_at_5:.4f} | {r.mean_mrr_at_5:.4f} "
-                f"| {r.mean_ndcg_at_5:.4f} | {r.mean_context_precision_at_5:.4f} "
+                f"| {r.primary_k} | {r.primary_recall:.4f} | {r.primary_mrr:.4f} "
+                f"| {r.primary_ndcg:.4f} | {_md_float(r.primary_context_precision)} "
                 f"| {r.unknown_rate:.4f} |"
             )
     else:
@@ -581,17 +671,17 @@ def write_comparison_report(
         lines.append("## RQI Leaderboard")
         lines.append("")
         lines.append(
-            "| Rank | Experiment | RQI | Correctness/5 | Faithfulness/5 | CR/5 | Recall@5 | 1-Unknown |"
+            "| Rank | Experiment | RQI | Correctness/5 | Faithfulness/5 | CR/5 | Recall@primary_k | 1-Unknown |"
         )
         lines.append("|------|-----------|-----|---------------|----------------|------|----------|-----------|")
         for r in ranked_rqi:
-            c_norm = f"{r.mean_judge_correctness / 5.0:.4f}" if r.mean_judge_correctness is not None else "—"
-            f_norm = f"{r.mean_judge_faithfulness / 5.0:.4f}" if r.mean_judge_faithfulness is not None else "—"
-            cr_norm = f"{r.mean_judge_context_relevance / 5.0:.4f}" if r.mean_judge_context_relevance is not None else "—"
+            c_norm = f"{r.mean_judge_correctness / 5.0:.4f}" if r.mean_judge_correctness is not None else "N/A"
+            f_norm = f"{r.mean_judge_faithfulness / 5.0:.4f}" if r.mean_judge_faithfulness is not None else "N/A"
+            cr_norm = f"{r.mean_judge_context_relevance / 5.0:.4f}" if r.mean_judge_context_relevance is not None else "N/A"
             lines.append(
                 f"| {r.rqi_rank} | `{r.experiment_id}` | {r.rqi:.4f} "
                 f"| {c_norm} | {f_norm} | {cr_norm} "
-                f"| {r.mean_recall_at_5:.4f} | {1.0 - r.unknown_rate:.4f} |"
+                f"| {r.primary_recall:.4f} | {1.0 - r.unknown_rate:.4f} |"
             )
         lines.append("")
 
@@ -618,25 +708,26 @@ def write_comparison_report(
     lines.append("")
     lines.append(
         "**Retrieval Score** = "
-        f"{cfg.retrieval_score_weights.recall_at_5}×Recall@5 + "
-        f"{cfg.retrieval_score_weights.mrr_at_5}×MRR@5 + "
-        f"{cfg.retrieval_score_weights.ndcg_at_5}×NDCG@5 + "
-        f"{cfg.retrieval_score_weights.context_precision_at_5}×ContextPrecision@5"
+        f"{cfg.retrieval_score_weights.recall_at_5}xRecall@primary_k + "
+        f"{cfg.retrieval_score_weights.mrr_at_5}xMRR@primary_k + "
+        f"{cfg.retrieval_score_weights.ndcg_at_5}xnDCG@primary_k + "
+        f"{cfg.retrieval_score_weights.context_precision_at_5}xContextPrecision@primary_k "
+        "when available"
     )
     lines.append("")
     if cfg.ranking_mode == "overall_rag":
         rw = cfg.rqi_weights
         lines.append(
             "**RQI** = "
-            f"{rw.correctness}×(Correctness/5) + "
-            f"{rw.faithfulness}×(Faithfulness/5) + "
-            f"{rw.context_relevance}×(ContextRelevance/5) + "
-            f"{rw.recall_at_5}×Recall@5 + "
-            f"{rw.no_unknown}×(1−UnknownRate)"
+            f"{rw.correctness}x(Correctness/5) + "
+            f"{rw.faithfulness}x(Faithfulness/5) + "
+            f"{rw.context_relevance}x(ContextRelevance/5) + "
+            f"{rw.recall_at_5}xRecall@primary_k + "
+            f"{rw.no_unknown}x(1-UnknownRate)"
         )
         lines.append("")
     lines.append(
-        "All judge metrics (correctness, faithfulness, context_relevance) are on a 0–5 scale "
+        "All judge metrics (correctness, faithfulness, context_relevance) are on a 0-5 scale "
         "and are normalized to [0, 1] by dividing by 5. "
         "`judge_overall_score` from Pipeline 3 is **not** used in the RQI formula."
     )

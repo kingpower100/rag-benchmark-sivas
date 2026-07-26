@@ -12,6 +12,3 @@ experiment:
 
 retrieval:
   top_k: 3
-
-reranker:
-  final_top_k: 3

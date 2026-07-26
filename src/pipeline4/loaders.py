@@ -14,10 +14,10 @@ class P2Summary:
     n_questions: int
     run_valid: bool
     generation_failure_rate: float
-    mean_recall_at_5: float
-    mean_mrr_at_5: float
-    mean_ndcg_at_5: float
-    mean_context_precision_at_5: float
+    mean_recall_at_5: Optional[float]
+    mean_mrr_at_5: Optional[float]
+    mean_ndcg_at_5: Optional[float]
+    mean_context_precision_at_5: Optional[float]
     unknown_rate: float
     mean_embedding_similarity: Optional[float]
     mean_official_bertscore_f1: Optional[float]
@@ -36,6 +36,29 @@ class P2Summary:
     expected_question_count: Optional[int] = None
     required_outputs_present: bool = False
     missing_required_outputs: list[str] = field(default_factory=list)
+    primary_k: int = 5
+    available_ks: list[int] = field(default_factory=lambda: [5])
+    primary_recall: float = 0.0
+    primary_mrr: float = 0.0
+    primary_ndcg: float = 0.0
+    primary_context_precision: Optional[float] = None
+    primary_chunk_hit: Optional[float] = None
+    primary_chunk_recall: Optional[float] = None
+    primary_chunk_mrr: Optional[float] = None
+    primary_chunk_ndcg: Optional[float] = None
+
+    def __post_init__(self) -> None:
+        if not self.available_ks:
+            self.available_ks = [5] if self.mean_recall_at_5 is not None else []
+        if self.primary_k == 5:
+            if self.mean_recall_at_5 is not None:
+                self.primary_recall = self.mean_recall_at_5
+            if self.mean_mrr_at_5 is not None:
+                self.primary_mrr = self.mean_mrr_at_5
+            if self.mean_ndcg_at_5 is not None:
+                self.primary_ndcg = self.mean_ndcg_at_5
+            if self.mean_context_precision_at_5 is not None:
+                self.primary_context_precision = self.mean_context_precision_at_5
 
 
 @dataclass
@@ -89,17 +112,9 @@ def load_p2_summary(run_dir: Path) -> P2Summary:
 
     exp = experiments[0]
     experiment_id = exp["experiment_id"]
-
-    for required in (
-        "mean_recall_at_5",
-        "mean_mrr_at_5",
-        "mean_ndcg_at_5",
-        "mean_context_precision_at_5",
-    ):
-        if required not in exp or exp[required] is None:
-            raise ValueError(
-                f"Required P2 metric '{required}' is missing or null in {summary_path}"
-            )
+    available_ks = _available_metric_cutoffs(exp)
+    primary_k = _primary_k_for_experiment(experiment_id, available_ks)
+    primary_metrics = _primary_metrics(exp, primary_k, summary_path)
 
     qa_hash: Optional[str] = None
     gold_contexts_hash: Optional[str] = None
@@ -131,10 +146,20 @@ def load_p2_summary(run_dir: Path) -> P2Summary:
         n_questions=int(exp["n_questions"]),
         run_valid=bool(exp.get("run_valid", False)),
         generation_failure_rate=float(exp.get("generation_failure_rate", 0.0)),
-        mean_recall_at_5=float(exp["mean_recall_at_5"]),
-        mean_mrr_at_5=float(exp["mean_mrr_at_5"]),
-        mean_ndcg_at_5=float(exp["mean_ndcg_at_5"]),
-        mean_context_precision_at_5=float(exp["mean_context_precision_at_5"]),
+        primary_k=primary_k,
+        available_ks=available_ks,
+        primary_recall=primary_metrics["recall"],
+        primary_mrr=primary_metrics["mrr"],
+        primary_ndcg=primary_metrics["ndcg"],
+        primary_context_precision=primary_metrics["context_precision"],
+        primary_chunk_hit=_optional_float(exp.get(f"mean_chunk_hit_at_{primary_k}")),
+        primary_chunk_recall=_optional_float(exp.get(f"mean_chunk_recall_at_{primary_k}")),
+        primary_chunk_mrr=_optional_float(exp.get(f"mean_chunk_mrr_at_{primary_k}")),
+        primary_chunk_ndcg=_optional_float(exp.get(f"mean_chunk_ndcg_at_{primary_k}")),
+        mean_recall_at_5=_optional_float(exp.get("mean_recall_at_5")),
+        mean_mrr_at_5=_optional_float(exp.get("mean_mrr_at_5")),
+        mean_ndcg_at_5=_optional_float(exp.get("mean_ndcg_at_5")),
+        mean_context_precision_at_5=_optional_float(exp.get("mean_context_precision_at_5")),
         unknown_rate=float(exp.get("unknown_rate", 0.0)),
         mean_embedding_similarity=exp.get("mean_embedding_similarity"),
         mean_official_bertscore_f1=exp.get("mean_official_bertscore_f1"),
@@ -270,6 +295,55 @@ def _read_csv_question_ids(path: Path) -> list[str]:
 
 def _duplicate_ids(ids: list[str]) -> list[str]:
     return sorted(qid for qid, count in Counter(ids).items() if count > 1)
+
+
+def _available_metric_cutoffs(exp: dict) -> list[int]:
+    prefix = "mean_recall_at_"
+    cutoffs: list[int] = []
+    for key, value in exp.items():
+        if key.startswith(prefix) and value is not None:
+            suffix = key[len(prefix):]
+            if suffix.isdigit():
+                cutoffs.append(int(suffix))
+    return sorted(set(cutoffs))
+
+
+def _primary_k_for_experiment(experiment_id: str, available_ks: list[int]) -> int:
+    explicit = {
+        "A04-K03": 3,
+        "A04-K05": 5,
+        "A04-K10": 10,
+    }
+    if experiment_id in explicit:
+        return explicit[experiment_id]
+    if 5 in available_ks:
+        return 5
+    if available_ks:
+        return max(available_ks)
+    raise ValueError(f"No retrieval metric cutoffs found for experiment {experiment_id!r}.")
+
+
+def _primary_metrics(exp: dict, primary_k: int, summary_path: Path) -> dict[str, Optional[float]]:
+    required = {
+        "recall": f"mean_recall_at_{primary_k}",
+        "mrr": f"mean_mrr_at_{primary_k}",
+        "ndcg": f"mean_ndcg_at_{primary_k}",
+    }
+    metrics: dict[str, Optional[float]] = {}
+    for name, key in required.items():
+        if key not in exp or exp[key] is None:
+            raise ValueError(
+                f"Required primary P2 metric '{key}' is missing or null in {summary_path}"
+            )
+        metrics[name] = float(exp[key])
+    metrics["context_precision"] = _optional_float(exp.get(f"mean_context_precision_at_{primary_k}"))
+    return metrics
+
+
+def _optional_float(value: object) -> Optional[float]:
+    if value is None:
+        return None
+    return float(value)
 
 
 def _resolve_question_id(row: dict) -> str:

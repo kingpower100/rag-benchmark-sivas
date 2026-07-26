@@ -19,8 +19,8 @@ Verifies:
 """
 from __future__ import annotations
 
-import yaml
 import pytest
+import yaml
 
 from src.pipeline1.config_loader import load_pipeline_config_payload
 from src.pipeline1.schemas.config_schema import PipelineConfig
@@ -340,23 +340,53 @@ def test_a04_k10_top_k():
 
 def test_a04_k03_reranker_final_top_k():
     cfg = _load_p1("A04-K03")
-    assert cfg.reranker.final_top_k == 3
+    assert cfg.reranker.final_top_k is None
 
 
 def test_a04_k05_reranker_final_top_k():
     cfg = _load_p1("A04-K05")
-    assert cfg.reranker.final_top_k == 5
+    assert cfg.reranker.final_top_k is None
 
 
 def test_a04_k10_reranker_final_top_k():
     cfg = _load_p1("A04-K10")
-    assert cfg.reranker.final_top_k == 10
+    assert cfg.reranker.final_top_k is None
 
 
 @pytest.mark.parametrize("exp_id", ["A04-K03", "A04-K05", "A04-K10"])
 def test_a04_reranker_disabled(exp_id):
     cfg = _load_p1(exp_id)
     assert cfg.reranker.enabled is False
+
+
+@pytest.mark.parametrize("exp_id,path", P1_PATHS.items())
+def test_a04_child_configs_do_not_override_reranker_final_top_k(exp_id, path):
+    if not exp_id.startswith("A04-K"):
+        pytest.skip("A04 top-k child config invariant only")
+    with open(path, "r", encoding="utf-8") as f:
+        raw = yaml.safe_load(f) or {}
+    assert "reranker" not in raw
+
+
+def test_a04_resolved_configs_differ_behaviorally_only_by_top_k_and_identity():
+    configs = {exp_id: _load_p1(exp_id).model_dump() for exp_id in ("A04-K03", "A04-K05", "A04-K10")}
+    baseline = configs["A04-K03"]
+    for exp_id, cfg in configs.items():
+        if exp_id == "A04-K03":
+            continue
+        diffs: list[str] = []
+        _collect_diffs(baseline, cfg, "", diffs)
+        assert sorted(diffs) == ["experiment.experiment_id", "retrieval.top_k"]
+
+
+def _collect_diffs(left, right, prefix: str, diffs: list[str]) -> None:
+    if isinstance(left, dict) and isinstance(right, dict):
+        for key in sorted(set(left) | set(right)):
+            path = f"{prefix}.{key}" if prefix else key
+            _collect_diffs(left.get(key), right.get(key), path, diffs)
+        return
+    if left != right:
+        diffs.append(prefix)
 
 
 # ---------------------------------------------------------------------------
