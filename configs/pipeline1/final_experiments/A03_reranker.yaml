@@ -1,16 +1,15 @@
-extends: "A_winner_base.yaml"
+extends: "A02_elasticsearch_hybrid_rrf.yaml"
 
 # Phase 4 retrieval-algorithm experiment.
-# Inherited: C02 chunking, E03 embedding, Elasticsearch backend, A-series winner algorithm.
-# Algorithm tested: cross-encoder reranker on top of the A-series winner retriever.
+# Inherited: C02 chunking, E03 embedding, Elasticsearch backend, A02 Hybrid RRF.
+# Algorithm tested: cross-encoder reranker on top of the A02 Hybrid RRF retriever.
 #
 # Reranker model: BAAI/bge-reranker-v2-m3 (multilingual, supports German).
 # rerank_top_k=20: candidate pool passed to the cross-encoder.
-# final_top_k=5:   documents returned after reranking.
 # device=cuda:     run the reranker on the production GPU.
 #
 # The retriever fetches fetch_k=20 candidates; all 20 are passed to the reranker;
-# the reranker outputs the top 5 by cross-encoder score.
+# the reranker output count follows retrieval.top_k.
 
 experiment:
   experiment_id: "A03"
@@ -20,4 +19,3 @@ reranker:
   model_name: "BAAI/bge-reranker-v2-m3"
   device: "cuda"
   rerank_top_k: 20
-  final_top_k: 5

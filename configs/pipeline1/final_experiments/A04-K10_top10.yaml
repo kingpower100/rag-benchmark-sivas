@@ -1,7 +1,8 @@
-extends: "A_winner_base.yaml"
+extends: "A03_reranker.yaml"
 
 # Phase 4 top-k optimization experiment.
-# Inherited: C02 chunking, E03 embedding, Elasticsearch backend, A-series winner algorithm.
+# Inherited: C02 chunking, E03 embedding, Elasticsearch backend, A02 Hybrid RRF,
+# and A03 reranker.
 # Variable: top_k=10 — returns 10 retrieved chunks to the generation stage.
 #
 # fetch_k=20 (inherited) satisfies fetch_k >= top_k.

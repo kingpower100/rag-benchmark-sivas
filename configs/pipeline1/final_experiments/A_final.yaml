@@ -1,0 +1,35 @@
+# ============================================================
+# FINAL A-SERIES WINNER
+# ============================================================
+# Selected through controlled sequential evaluation
+#
+# Base Retrieval Algorithm : A02 — Elasticsearch Hybrid RRF
+# Reranker                 : Enabled (A03)
+# Top-K                    : 10 (A04-K10)
+#
+# Selection Methodology
+# ---------------------
+# Winner selected using both:
+#
+# • Pipeline 2
+#   - Document-level retrieval metrics
+#   - Chunk-level retrieval metrics
+#   - BERTScore
+#   - Embedding Similarity
+#
+# • Pipeline 3
+#   - RAGAS
+#   - LLM-as-Judge
+#
+# Objective:
+# Select the best end-to-end RAG system rather than the best retriever in isolation.
+# ============================================================
+#
+# Pipeline 2 evaluation cutoffs for this winner:
+#   evaluation.k  = 10
+#   evaluation.ks = [1, 3, 5, 10]
+
+extends: "A04-K10_top10.yaml"
+
+experiment:
+  experiment_id: "A_final"
