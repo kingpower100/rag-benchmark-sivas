@@ -74,8 +74,12 @@ def validate_inputs(
         else:
             warnings.append(message)
 
+    context_validation_errors = _context_validation_errors(rag_rows)
+    if context_validation_errors:
+        errors.extend(context_validation_errors)
+
     missing_contexts = [
-        _resolve_id(row) for row in rag_rows if not _extract_context_texts(row)
+        _resolve_id(row) for row in rag_rows if not _has_any_context_field(row)
     ]
     if missing_contexts:
         message = f"Missing retrieved contexts for {len(missing_contexts)} rows: {missing_contexts[:5]}"
@@ -85,7 +89,7 @@ def validate_inputs(
             warnings.append(message)
 
     missing_retrieved_contexts = [
-        _resolve_id(row) for row in rag_rows if not _extract_retrieved_context_texts(row)
+        _resolve_id(row) for row in rag_rows if not _has_retrieved_context_field(row)
     ]
     if missing_retrieved_contexts:
         message = (
@@ -98,7 +102,7 @@ def validate_inputs(
             warnings.append(message)
 
     missing_generation_contexts = [
-        _resolve_id(row) for row in rag_rows if not _extract_generation_context_texts(row)
+        _resolve_id(row) for row in rag_rows if not _has_generation_context_field(row)
     ]
     if missing_generation_contexts:
         message = (
@@ -227,6 +231,80 @@ def _extract_context_texts(row: dict[str, Any]) -> list[str]:
                 result.append(chunk)
         return result
     return []
+
+
+def _context_validation_errors(rag_rows: list[dict[str, Any]]) -> list[str]:
+    errors: list[str] = []
+    for row in rag_rows:
+        qid = _resolve_id(row) or "<unknown>"
+        errors.extend(_validate_text_list_field(row, "generation_context_texts", qid))
+        errors.extend(_validate_text_list_field(row, "retrieved_context_texts", qid))
+        errors.extend(_validate_text_list_field(row, "retrieved_chunk_texts", qid))
+        errors.extend(_validate_retrieved_chunks_field(row, qid))
+    return errors
+
+
+def _has_any_context_field(row: dict[str, Any]) -> bool:
+    return _has_generation_context_field(row) or _has_retrieved_context_field(row)
+
+
+def _has_generation_context_field(row: dict[str, Any]) -> bool:
+    return isinstance(row.get("generation_context_texts"), list)
+
+
+def _has_retrieved_context_field(row: dict[str, Any]) -> bool:
+    return (
+        isinstance(row.get("retrieved_context_texts"), list)
+        or isinstance(row.get("retrieved_chunk_texts"), list)
+        or isinstance(row.get("retrieved_chunks"), list)
+    )
+
+
+def _validate_text_list_field(row: dict[str, Any], field: str, qid: str) -> list[str]:
+    if field not in row:
+        return []
+    value = row.get(field)
+    if value is None:
+        return [f"{field} is null for question_id={qid!r}; expected a list."]
+    if not isinstance(value, list):
+        return [f"{field} must be a list for question_id={qid!r}."]
+    invalid = [
+        index
+        for index, item in enumerate(value)
+        if not isinstance(item, str) or not item.strip()
+    ]
+    if invalid:
+        return [f"{field} contains non-string or blank entries for question_id={qid!r}: {invalid[:5]}"]
+    return []
+
+
+def _validate_retrieved_chunks_field(row: dict[str, Any], qid: str) -> list[str]:
+    if "retrieved_chunks" not in row:
+        return []
+    value = row.get("retrieved_chunks")
+    if value is None:
+        return ["retrieved_chunks is null for question_id={!r}; expected a list.".format(qid)]
+    if not isinstance(value, list):
+        return [f"retrieved_chunks must be a list for question_id={qid!r}."]
+    errors: list[str] = []
+    for index, item in enumerate(value):
+        if isinstance(item, str):
+            if not item.strip():
+                errors.append(f"retrieved_chunks[{index}] is blank for question_id={qid!r}.")
+            continue
+        if not isinstance(item, dict):
+            errors.append(f"retrieved_chunks[{index}] must be an object or string for question_id={qid!r}.")
+            continue
+        text = item.get("chunk_text") if "chunk_text" in item else item.get("text")
+        if text is None:
+            errors.append(
+                f"retrieved_chunks[{index}] missing chunk_text/text for question_id={qid!r}."
+            )
+        elif not isinstance(text, str) or not text.strip():
+            errors.append(
+                f"retrieved_chunks[{index}] has blank chunk_text/text for question_id={qid!r}."
+            )
+    return errors[:5]
 
 
 def _extract_generation_context_texts(row: dict[str, Any]) -> list[str]:

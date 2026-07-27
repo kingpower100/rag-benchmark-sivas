@@ -13,7 +13,7 @@ from src.pipeline3.stages.validation_stage import (
 
 
 def _make_rag_row(question_id="q1", answer="Some answer", contexts=None):
-    resolved_contexts = contexts or ["Context text here."]
+    resolved_contexts = ["Context text here."] if contexts is None else contexts
     return {
         "question_id": question_id,
         "experiment_id": "exp1",
@@ -75,11 +75,31 @@ def test_missing_answer_is_warning_not_error():
     assert any("Missing generated_answer" in w for w in report.warnings)
 
 
-def test_missing_context_is_warning_not_error():
+def test_empty_context_lists_are_valid_zero_retrieval():
     row = {
         "question_id": "q1",
+        "question": "What is the price?",
         "generated_answer": "Some answer",
         "retrieved_context_texts": [],
+        "generation_context_texts": [],
+    }
+    report = validate_inputs(
+        [row],
+        [_make_qa_row("q1")],
+        [_make_questions_row("q1")],
+    )
+    assert report.passed is True
+    assert not any("Missing retrieved contexts" in w for w in report.warnings)
+    assert report.stats["missing_contexts"] == 0
+    assert report.stats["missing_retrieved_contexts"] == 0
+    assert report.stats["missing_generation_contexts"] == 0
+
+
+def test_missing_context_field_is_warning_not_error_in_non_official_mode():
+    row = {
+        "question_id": "q1",
+        "question": "What is the price?",
+        "generated_answer": "Some answer",
     }
     report = validate_inputs(
         [row],
@@ -88,6 +108,7 @@ def test_missing_context_is_warning_not_error():
     )
     assert report.passed is True
     assert any("Missing retrieved contexts" in w for w in report.warnings)
+    assert any("Missing generation contexts" in w for w in report.warnings)
 
 
 def test_build_qa_index_keys_by_question_id():
@@ -185,7 +206,7 @@ def test_official_validation_missing_generated_answer_fails():
 
 def test_official_validation_missing_retrieved_contexts_fails():
     row = _make_rag_row("q1")
-    row["retrieved_context_texts"] = []
+    del row["retrieved_context_texts"]
     with pytest.raises(ValidationError, match="Missing retrieved contexts"):
         validate_inputs(
             [row],
@@ -198,8 +219,61 @@ def test_official_validation_missing_retrieved_contexts_fails():
 
 def test_official_validation_missing_generation_contexts_fails():
     row = _make_rag_row("q1")
-    row["generation_context_texts"] = []
+    del row["generation_context_texts"]
     with pytest.raises(ValidationError, match="Missing generation contexts"):
+        validate_inputs(
+            [row],
+            [_make_qa_row("q1")],
+            [_make_questions_row("q1")],
+            official_mode=True,
+            pipeline1_manifests=[{"run_status": "PASS", "failed_questions": 0}],
+        )
+
+
+def test_official_validation_empty_retrieval_contexts_pass():
+    row = _make_rag_row("q1", contexts=[])
+    report = validate_inputs(
+        [row],
+        [_make_qa_row("q1")],
+        [_make_questions_row("q1")],
+        official_mode=True,
+        pipeline1_manifests=[{"run_status": "PASS", "failed_questions": 0}],
+    )
+
+    assert report.passed is True
+    assert report.stats["failed_rows"] == 0
+
+
+def test_official_validation_null_retrieved_contexts_fails():
+    row = _make_rag_row("q1")
+    row["retrieved_context_texts"] = None
+    with pytest.raises(ValidationError, match="retrieved_context_texts is null"):
+        validate_inputs(
+            [row],
+            [_make_qa_row("q1")],
+            [_make_questions_row("q1")],
+            official_mode=True,
+            pipeline1_manifests=[{"run_status": "PASS", "failed_questions": 0}],
+        )
+
+
+def test_official_validation_empty_string_context_field_fails():
+    row = _make_rag_row("q1")
+    row["retrieved_context_texts"] = ""
+    with pytest.raises(ValidationError, match="retrieved_context_texts must be a list"):
+        validate_inputs(
+            [row],
+            [_make_qa_row("q1")],
+            [_make_questions_row("q1")],
+            official_mode=True,
+            pipeline1_manifests=[{"run_status": "PASS", "failed_questions": 0}],
+        )
+
+
+def test_official_validation_blank_context_entry_fails():
+    row = _make_rag_row("q1")
+    row["retrieved_context_texts"] = [""]
+    with pytest.raises(ValidationError, match="blank entries"):
         validate_inputs(
             [row],
             [_make_qa_row("q1")],
