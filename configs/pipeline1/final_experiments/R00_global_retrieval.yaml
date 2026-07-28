@@ -1,0 +1,41 @@
+extends: "A_final.yaml"
+
+# ============================================================
+# R00 — Global Retrieval Routing Anchor
+# ============================================================
+# R-series routing experiment.
+# Inherited stack (via A_final → A04-K10 → A03 → A02 → A00
+#                  → E03 → phase3_embedding_base → C02 → C00
+#                  → E00-G → base.yaml):
+#   Chunking   : C02 sentence / 1024 tokens / 400 overlap
+#   Embedding  : E03 mistral-embed (1024 dim, normalize=true)
+#   Backend    : V02-class Elasticsearch script_score cosine
+#   Algorithm  : A02 Hybrid RRF (dense cosine + BM25 via RRF)
+#   Reranker   : A03 BAAI/bge-reranker-v2-m3 (cuda, rerank_top_k=20)
+#
+# Retrieval scope : complete Elasticsearch knowledge base (global).
+# Category routing: disabled — orchestration.enabled=false
+#                   is inherited from A_final / C00 chain.
+# Fallback        : none (global retrieval is always performed).
+# top_k           : 5 (overrides A_final / A04-K10 top_k=10).
+# fetch_k         : 20 (unchanged, inherited via E00-G).
+#
+# Dense index : sivas_phase4_a00_elasticsearch_dense_mistral_embed
+# BM25 index  : sivas_phase4_a01_bm25_c02_chunks
+# Reranker    : BAAI/bge-reranker-v2-m3 (cuda, rerank_top_k=20)
+#
+# R00 is the global-retrieval control arm of the R-series.
+# Only top_k changes from A_final; the complete retrieval and
+# generation pipeline is otherwise unchanged.
+#
+# Research question (control arm):
+#   What is the end-to-end RAG performance of the fully
+#   optimised global Hybrid RRF retrieval stack without any
+#   category routing?
+# ============================================================
+
+experiment:
+  experiment_id: "R00"
+
+retrieval:
+  top_k: 5

@@ -139,6 +139,29 @@ class ElasticsearchIndex(BaseVectorIndex):
         )
         return hits
 
+    def search_hits_filtered(
+        self,
+        query_embedding: np.ndarray,
+        top_k: int,
+        category_field: str,
+        category_value: str,
+    ) -> list[dict[str, Any]]:
+        """Dense search with a term filter on a metadata field (script_score mode only)."""
+        start = time.perf_counter()
+        query_vector = np.asarray(query_embedding, dtype="float32").tolist()
+        response = self._script_score_search_filtered(query_vector, top_k, category_field, category_value)
+        hits = response.get("hits", {}).get("hits", [])
+        latency_ms = (time.perf_counter() - start) * 1000
+        self.logger.info(
+            "Elasticsearch dense category-filtered query index=%s field=%s top_k=%s hits=%s latency_ms=%.2f",
+            self.index_name,
+            category_field,
+            top_k,
+            len(hits),
+            latency_ms,
+        )
+        return hits
+
     @property
     def ntotal(self) -> int:
         try:
@@ -257,6 +280,32 @@ class ElasticsearchIndex(BaseVectorIndex):
             query={
                 "script_score": {
                     "query": {"match_all": {}},
+                    "script": {
+                        "source": f"cosineSimilarity(params.query_vector, '{self.vector_field}') + 1.0",
+                        "params": {"query_vector": query_vector},
+                    },
+                }
+            },
+            source=["chunk_id", "document_id", "original_context_id", self.text_field, "metadata"],
+        )
+
+    def _script_score_search_filtered(
+        self,
+        query_vector: list[float],
+        top_k: int,
+        category_field: str,
+        category_value: str,
+    ) -> dict[str, Any]:
+        return self.client.search(
+            index=self.search_index_name,
+            size=top_k,
+            query={
+                "script_score": {
+                    "query": {
+                        "bool": {
+                            "filter": [{"term": {category_field: category_value}}]
+                        }
+                    },
                     "script": {
                         "source": f"cosineSimilarity(params.query_vector, '{self.vector_field}') + 1.0",
                         "params": {"query_vector": query_vector},

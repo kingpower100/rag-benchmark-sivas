@@ -1,0 +1,69 @@
+extends: "A_final.yaml"
+
+# ============================================================
+# R01 — Adaptive Category-Aware Retrieval
+# ============================================================
+# R-series routing experiment (Treatment arm).
+# Compares against R00 (Global Hybrid RRF) to isolate
+# the effect of adaptive category routing.
+#
+# Inherited stack (via A_final → A04-K10 → A03 → A02 → A00
+#                  → E03 → phase3_embedding_base → C02 → C00
+#                  → E00-G → base.yaml):
+#   Chunking   : C02 sentence / 1024 tokens / 400 overlap
+#   Embedding  : E03 mistral-embed (1024 dim, normalize=true)
+#   Backend    : V02-class Elasticsearch script_score cosine
+#   Algorithm  : A02 Hybrid RRF (dense cosine + BM25 via RRF)
+#   Reranker   : A03 BAAI/bge-reranker-v2-m3 (cuda, rerank_top_k=20)
+#
+# Runtime flow
+# ------------
+#   1. Orchestration LLM (llama3.1:8b / orchestration_promptV4)
+#      predicts the document category and cleans the question.
+#   2. A global Hybrid RRF probe (probe_fetch_k=20) retrieves
+#      candidates across the full index.
+#   3. Routing validation checks against category share (≥0.60),
+#      category count (≥3), and support margin (≥2).
+#   4a. Thresholds satisfied → Hybrid RRF retrieval scoped to
+#       the predicted category (dense + BM25 term filter).
+#   4b. Thresholds not satisfied → Hybrid RRF global fallback
+#       (same algorithm as R00, no category restriction).
+#   5. Cross-encoder reranker (BAAI/bge-reranker-v2-m3) is
+#      applied to the final candidate pool.
+#   6. Top-5 results are returned to the generation stage.
+#
+# Controlled variables (identical to R00)
+# ----------------------------------------
+#   Chunking strategy, embedding model, dense index, BM25 index,
+#   RRF parameters (rrf_k=60), reranker model, fetch_k, top_k=5,
+#   generation model, generation prompt.
+#
+# Independent variable (differs from R00)
+# ----------------------------------------
+#   Adaptive category-aware routing with validated global fallback.
+#
+# Research question
+# -----------------
+#   Does adaptive category-aware retrieval with controlled global
+#   fallback improve end-to-end RAG performance compared with pure
+#   global retrieval when the retrieval algorithm (Hybrid RRF),
+#   reranker, retrieval depth (top_k=5), embedding model, chunking
+#   strategy, and generation pipeline are fixed?
+# ============================================================
+
+experiment:
+  experiment_id: "R01"
+
+retrieval:
+  retriever_type: "adaptive_category_aware_hybrid_rrf"
+  top_k: 5
+  fallback_to_global: true
+  category_routing_validation:
+    enabled: true
+    probe_fetch_k: 20
+    minimum_category_share: 0.60
+    minimum_category_count: 3
+    minimum_margin: 2
+
+orchestration:
+  enabled: true

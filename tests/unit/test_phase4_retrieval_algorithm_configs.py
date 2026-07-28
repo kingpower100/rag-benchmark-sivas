@@ -306,7 +306,7 @@ def test_a03_reranker_rerank_top_k():
 
 def test_a03_reranker_final_top_k():
     cfg = _load_p1("A03")
-    assert cfg.reranker.final_top_k == 5
+    assert cfg.reranker.final_top_k is None
 
 
 def test_a03_reranker_device_cuda():
@@ -354,9 +354,9 @@ def test_a04_k10_reranker_final_top_k():
 
 
 @pytest.mark.parametrize("exp_id", ["A04-K03", "A04-K05", "A04-K10"])
-def test_a04_reranker_disabled(exp_id):
+def test_a04_reranker_enabled(exp_id):
     cfg = _load_p1(exp_id)
-    assert cfg.reranker.enabled is False
+    assert cfg.reranker.enabled is True
 
 
 @pytest.mark.parametrize("exp_id,path", P1_PATHS.items())

@@ -28,3 +28,5 @@ retrieval:
     analyzer: "german"
     rebuild_index: false
     allow_fallback: false
+
+

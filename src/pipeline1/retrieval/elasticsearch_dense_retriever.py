@@ -133,6 +133,21 @@ class ElasticsearchDenseRetriever(BaseRetriever):
             diagnostics=diagnostics,
         )
 
+    def retrieve_with_category(
+        self, question: str, top_k: int, category: str, category_field: str
+    ) -> list[RetrievalItem]:
+        """Dense retrieval scoped to a single category via an Elasticsearch term filter."""
+        candidate_k = max(top_k, self.fetch_k)
+        query_vec = self.embedder.encode_query(question)
+        if hasattr(self.index, "search_hits_filtered"):
+            hits = self.index.search_hits_filtered(
+                query_vec, candidate_k, f"metadata.{category_field}", category
+            )
+        else:
+            hits = self._search_hits(query_vec, candidate_k)
+        query_metadata = extract_query_metadata(question, (chunk.metadata for chunk in self.chunks))
+        return [self._hit_to_item(hit, query_metadata) for hit in hits]
+
     def extract_query_metadata(self, question: str):
         return extract_query_metadata(question, (chunk.metadata for chunk in self.chunks))
 

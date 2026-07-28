@@ -148,7 +148,7 @@ class RetrievalStage(BaseStage):
             number_of_global_fallback_results = 0
             retrieval_warnings: list[str] = []
             adaptive_diagnostics: dict = {}
-            if self.cfg.retrieval.retriever_type == "adaptive_category_aware_dense" and hasattr(retriever, "set_active_category"):
+            if self.cfg.retrieval.retriever_type in {"adaptive_category_aware_dense", "adaptive_category_aware_hybrid_rrf"} and hasattr(retriever, "set_active_category"):
                 (
                     raw_retrieved,
                     retrieved,
@@ -266,7 +266,7 @@ class RetrievalStage(BaseStage):
             retrieval_diagnostics.update(
                 {
                     **selection_diagnostics,
-                    **(adaptive_diagnostics if self.cfg.retrieval.retriever_type == "adaptive_category_aware_dense" else {}),
+                    **(adaptive_diagnostics if self.cfg.retrieval.retriever_type in {"adaptive_category_aware_dense", "adaptive_category_aware_hybrid_rrf"} else {}),
                     "final_top_k": final_top_k,
                     "rerank_top_k": rerank_top_k,
                     "cleaned_question": query.cleaned_question,
@@ -478,7 +478,7 @@ def run_adaptive_category_aware_retrieval(
             "routing_accepted": True,
             "decision_reason": "routing_validation_disabled",
             "final_retrieval_mode": "category",
-            "retrieval_mode": "adaptive_category_aware_dense",
+            "retrieval_mode": cfg.retrieval.retriever_type,
             "category_filter_applied": True,
             "category_fallback_used": False,
             "fallback_used": False,

@@ -60,6 +60,28 @@ class ElasticsearchBM25Retriever(BaseRetriever):
         }
         return rows
 
+    def retrieve_with_category(
+        self, question: str, top_k: int, category: str, category_field: str
+    ) -> list[RetrievalItem]:
+        """BM25 retrieval scoped to a single category via an Elasticsearch term filter."""
+        try:
+            response = self.client.search(
+                index=self.index_name,
+                size=top_k,
+                query={
+                    "bool": {
+                        "must": [{"match": {"cleaned_context": {"query": question}}}],
+                        "filter": [{"term": {f"metadata.{category_field}": category}}],
+                    }
+                },
+            )
+        except Exception as ex:
+            raise ElasticsearchBM25Error(
+                f"Elasticsearch BM25 category-filtered search failed for index '{self.index_name}' at {self.host}: {ex}"
+            ) from ex
+        hits = response.get("hits", {}).get("hits", [])
+        return [self._hit_to_item(hit) for hit in hits]
+
     def extract_query_metadata(self, question: str):
         from src.pipeline1.retrieval.metadata import extract_query_metadata
 

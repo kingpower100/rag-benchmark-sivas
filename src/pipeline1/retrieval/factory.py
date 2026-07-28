@@ -25,6 +25,8 @@ def build_retriever(config: RetrievalConfig, embedder, index, chunks, embeddings
         )
     if config.retriever_type == "elasticsearch_hybrid_rrf":
         return _build_elasticsearch_hybrid_rrf_retriever(config, embedder, index, chunks)
+    if config.retriever_type == "adaptive_category_aware_hybrid_rrf":
+        return _build_adaptive_category_aware_hybrid_rrf_retriever(config, embedder, index, chunks)
 
     dense_retriever = _build_dense_retriever(config, embedder, index, chunks)
     if config.retriever_type == "category_aware_dense":
@@ -112,6 +114,24 @@ def _build_bm25_retriever(config: RetrievalConfig, chunks):
         if config.bm25.allow_fallback:
             return BM25Retriever(chunks=chunks, k1=config.bm25.k1, b=config.bm25.b)
         raise
+
+
+def _build_adaptive_category_aware_hybrid_rrf_retriever(config: RetrievalConfig, embedder, index, chunks):
+    """Build AdaptiveCategoryAwareHybridRRFRetriever wrapping an ElasticsearchHybridRRFRetriever.
+
+    The schema guarantees index.type='elasticsearch' and orchestration.enabled=True when this
+    retriever_type is selected.  The hybrid sub-retriever is built identically to the
+    elasticsearch_hybrid_rrf path so both R00 and R01 share the same algorithm.
+    """
+    from src.pipeline1.retrieval.adaptive_category_aware_hybrid_rrf_retriever import (
+        AdaptiveCategoryAwareHybridRRFRetriever,
+    )
+
+    hybrid = _build_elasticsearch_hybrid_rrf_retriever(config, embedder, index, chunks)
+    return AdaptiveCategoryAwareHybridRRFRetriever(
+        hybrid_retriever=hybrid,
+        category_field=config.category_field,
+    )
 
 
 def _build_elasticsearch_hybrid_rrf_retriever(config: RetrievalConfig, embedder, index, chunks):

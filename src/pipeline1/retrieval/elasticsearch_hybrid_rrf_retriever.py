@@ -103,6 +103,32 @@ class ElasticsearchHybridRRFRetriever(BaseRetriever):
             diagnostics=diagnostics,
         )
 
+    def retrieve_with_category(
+        self, question: str, top_k: int, category: str, category_field: str
+    ) -> list[RetrievalItem]:
+        """Hybrid RRF retrieval with both legs scoped to a single category term filter.
+
+        Existing retrieve() behaviour is unchanged; this method is the sole
+        entry point for category-restricted queries.  Category filtering is
+        delegated to retrieve_with_category on each sub-retriever if present,
+        falling back to global retrieve() otherwise.
+        """
+        dense_k = max(top_k, self.dense_fetch_k)
+        bm25_k = max(top_k, self.bm25_fetch_k)
+        if hasattr(self.dense_retriever, "retrieve_with_category"):
+            dense = self.dense_retriever.retrieve_with_category(question, dense_k, category, category_field)
+        else:
+            dense = self.dense_retriever.retrieve(question, dense_k)
+        if hasattr(self.bm25_retriever, "retrieve_with_category"):
+            bm25 = self.bm25_retriever.retrieve_with_category(question, bm25_k, category, category_field)
+        else:
+            bm25 = self.bm25_retriever.retrieve(question, bm25_k)
+        fused = self._fuse(dense, bm25)
+        self.last_dense_candidates = list(dense)
+        self.last_bm25_candidates = list(bm25)
+        self.last_fused_candidates = list(fused)
+        return fused[:top_k]
+
     def extract_query_metadata(self, question: str):
         if hasattr(self.dense_retriever, "extract_query_metadata"):
             return self.dense_retriever.extract_query_metadata(question)

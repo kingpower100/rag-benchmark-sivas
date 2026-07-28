@@ -43,3 +43,9 @@ package-dir = {"" = "."}
 [tool.pytest.ini_options]
 pythonpath = ["."]
 testpaths = ["tests"]
+tmp_path_retention_policy = "none"
+addopts = "--basetemp=tests/.tmp"
+markers = [
+    "integration: marks tests as integration tests requiring external services",
+    "requires_ollama: marks tests requiring a running Ollama server at localhost:11434",
+]

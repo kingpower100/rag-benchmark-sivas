@@ -254,6 +254,7 @@ class RetrievalConfig(StrictConfigModel):
         "category_aware_dense",
         "adaptive_category_aware_dense",
         "elasticsearch_hybrid_rrf",
+        "adaptive_category_aware_hybrid_rrf",
     ] = Field(
         default="dense",
         validation_alias=AliasChoices("retriever_type", "type"),
@@ -528,7 +529,12 @@ class PipelineConfig(StrictConfigModel):
                 f"retrieval.retriever_type='elasticsearch_hybrid_rrf' requires index.type='elasticsearch', "
                 f"got '{index_type}'. Set index.type='elasticsearch' to use the Elasticsearch hybrid retriever."
             )
-        if retriever_type in {"category_aware_dense", "adaptive_category_aware_dense"} and not self.orchestration.enabled:
+        if retriever_type == "adaptive_category_aware_hybrid_rrf" and index_type != "elasticsearch":
+            raise ValueError(
+                f"retrieval.retriever_type='adaptive_category_aware_hybrid_rrf' requires index.type='elasticsearch', "
+                f"got '{index_type}'. Both retrieval legs (dense and BM25) use Elasticsearch."
+            )
+        if retriever_type in {"category_aware_dense", "adaptive_category_aware_dense", "adaptive_category_aware_hybrid_rrf"} and not self.orchestration.enabled:
             raise ValueError(
                 f"retrieval.retriever_type='{retriever_type}' requires orchestration.enabled=true "
                 "because category-aware retrieval needs a validated category prediction."
