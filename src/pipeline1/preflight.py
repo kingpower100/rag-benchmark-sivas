@@ -6,6 +6,7 @@ from pathlib import Path
 import requests
 
 from src.pipeline1.io.jsonl_reader import list_txt_files
+from src.pipeline1.retrieval.modes import CATEGORY_PREDICTION_RETRIEVER_TYPES
 
 
 def _resolve_path(base_dir: Path | None, raw_path: str) -> Path:
@@ -19,6 +20,10 @@ def run_preflight_checks(cfg, base_dir: Path | None = None) -> list[str]:
     questions_path = _resolve_path(base_dir, cfg.data.questions_path)
     errors.extend(_validate_documents_input(cfg, docs_path))
     orchestration_enabled = _orchestration_enabled(cfg)
+    if cfg.retrieval.retriever_type in CATEGORY_PREDICTION_RETRIEVER_TYPES and not cfg.orchestration.enabled:
+        errors.append(
+            f"retrieval.retriever_type={cfg.retrieval.retriever_type} requires orchestration.enabled=true"
+        )
     if orchestration_enabled:
         errors.extend(_validate_orchestration_prompt(cfg, base_dir))
     if not questions_path.exists() or not questions_path.is_file():
@@ -107,7 +112,7 @@ def run_preflight_checks(cfg, base_dir: Path | None = None) -> list[str]:
 def _orchestration_enabled(cfg) -> bool:
     return bool(
         cfg.orchestration.enabled
-        and cfg.retrieval.retriever_type in {"category_aware_dense", "adaptive_category_aware_dense"}
+        and cfg.retrieval.retriever_type in CATEGORY_PREDICTION_RETRIEVER_TYPES
     )
 
 

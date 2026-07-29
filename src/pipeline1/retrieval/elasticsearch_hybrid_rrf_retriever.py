@@ -127,6 +127,19 @@ class ElasticsearchHybridRRFRetriever(BaseRetriever):
         self.last_dense_candidates = list(dense)
         self.last_bm25_candidates = list(bm25)
         self.last_fused_candidates = list(fused)
+        self.last_retrieval_diagnostics = {
+            **dict(getattr(self.dense_retriever, "last_retrieval_diagnostics", {})),
+            **dict(getattr(self.bm25_retriever, "last_retrieval_diagnostics", {})),
+            "es_hybrid_dense_candidates": len(dense),
+            "es_hybrid_bm25_candidates": len(bm25),
+            "es_hybrid_fused_candidates": len(fused),
+            "dedupe_policy": DedupePolicy.CHUNK_ID.value,
+            "category_filter_applied": True,
+            "category_filter_applied_dense": True,
+            "category_filter_applied_bm25": True,
+            "category_filter_field": category_field,
+            "detected_category": category,
+        }
         return fused[:top_k]
 
     def extract_query_metadata(self, question: str):

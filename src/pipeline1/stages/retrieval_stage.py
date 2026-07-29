@@ -278,6 +278,7 @@ class RetrievalStage(BaseStage):
                         if query.category_validation_reason == "orchestration_disabled"
                         else "enabled"
                     ),
+                    "orchestration_enabled": query.category_validation_reason != "orchestration_disabled",
                     "retrieval_mode": retrieval_mode,
                     "category_filter_applied": category_filter_applied,
                     "category_fallback_used": category_fallback_used,
@@ -305,12 +306,33 @@ class RetrievalStage(BaseStage):
                     "reranked_candidate_ids": [item.chunk_id for item in reranked_candidates],
                     "final_candidate_ids": [item.chunk_id for item in retrieved],
                     "final_chunk_ids": [item.chunk_id for item in retrieved],
+                    "dense_candidate_count": len(raw_dense_retrieved),
+                    "bm25_candidate_count": len(raw_bm25_retrieved),
+                    "fused_candidate_count": len(fused_retrieved),
+                    "reranked_candidate_count": len(reranked_candidates),
+                    "final_context_count": len(retrieved),
                     # Fields required for per-question output records.
                     "retriever_type": self.cfg.retrieval.retriever_type,
+                    "configured_retriever_type": self.cfg.retrieval.retriever_type,
+                    "effective_retriever_type": self.cfg.retrieval.retriever_type,
                     "retrieval_scope": "category" if (category_filter_applied and not category_fallback_used) else "global",
                     "category_index_used": bool(retrieval_diagnostics.get("category_index_used", False)),
                     "fallback_used": category_fallback_used,
                     "fallback_reason": fallback_reason,
+                    "deduplicated_candidate_count": len({item.chunk_id for item in fused_retrieved}) if fused_retrieved else len({item.chunk_id for item in raw_retrieved}),
+                    "reranker_input_count": selection_diagnostics.get("reranker_candidate_count", 0),
+                    "orchestration_attempted": query.category_validation_reason != "orchestration_disabled",
+                    "validated_category": query.detected_category if query.category_validated else None,
+                    "category_valid": query.category_validated,
+                    "routing_reason": adaptive_diagnostics.get("decision_reason"),
+                    "category_share": adaptive_diagnostics.get("predicted_category_share"),
+                    "category_count": adaptive_diagnostics.get("predicted_category_count"),
+                    "routing_margin": adaptive_diagnostics.get("support_margin"),
+                    "minimum_category_share": adaptive_diagnostics.get("routing_thresholds", {}).get("minimum_category_share"),
+                    "minimum_category_count": adaptive_diagnostics.get("routing_thresholds", {}).get("minimum_category_count"),
+                    "minimum_margin": adaptive_diagnostics.get("routing_thresholds", {}).get("minimum_margin"),
+                    "category_filter_applied_dense": bool(retrieval_diagnostics.get("category_filter_applied_dense", False)),
+                    "category_filter_applied_bm25": bool(retrieval_diagnostics.get("category_filter_applied_bm25", False)),
                 }
             )
             retrieval_pipeline_time_ms = (time.perf_counter() - retrieval_start) * 1000
@@ -502,7 +524,7 @@ def run_adaptive_category_aware_retrieval(
     if accepted:
         retriever.set_active_category(predicted_category)
         final_mode = "category"
-        retrieval_mode = "adaptive_category_aware_dense"
+        retrieval_mode = cfg.retrieval.retriever_type
         category_filter_applied = True
         category_fallback_used = False
         fallback_used = False

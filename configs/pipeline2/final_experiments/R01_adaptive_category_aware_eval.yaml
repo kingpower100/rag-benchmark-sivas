@@ -10,6 +10,15 @@ inputs:
   rag_outputs:
     - "data/runs/pipeline1/R01/results.jsonl"
 
+source_validation:
+  expected_experiment_id: "R01"
+  expected_retriever_type: "adaptive_category_aware_hybrid_rrf"
+  expected_orchestration_enabled: true
+  require_hybrid_diagnostics: true
+  require_reranker_diagnostics: true
+  require_routing_diagnostics: true
+  require_routing_reconciliation: true
+
 retrieval:
   k: 5
   ks: [1, 3, 5]

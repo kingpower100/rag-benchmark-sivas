@@ -139,14 +139,26 @@ class ElasticsearchDenseRetriever(BaseRetriever):
         """Dense retrieval scoped to a single category via an Elasticsearch term filter."""
         candidate_k = max(top_k, self.fetch_k)
         query_vec = self.embedder.encode_query(question)
-        if hasattr(self.index, "search_hits_filtered"):
-            hits = self.index.search_hits_filtered(
-                query_vec, candidate_k, f"metadata.{category_field}", category
+        if not hasattr(self.index, "search_hits_filtered"):
+            raise RuntimeError(
+                "Category-scoped Elasticsearch dense retrieval requires filtered "
+                "search support; refusing unfiltered fallback."
             )
-        else:
-            hits = self._search_hits(query_vec, candidate_k)
+        hits = self.index.search_hits_filtered(
+            query_vec, candidate_k, f"metadata.{category_field}", category
+        )
         query_metadata = extract_query_metadata(question, (chunk.metadata for chunk in self.chunks))
-        return [self._hit_to_item(hit, query_metadata) for hit in hits]
+        items = [self._hit_to_item(hit, query_metadata) for hit in hits]
+        self.last_dense_candidates = items
+        self.last_retrieval_diagnostics = {
+            "backend": "elasticsearch_dense",
+            "category_filter_applied_dense": True,
+            "category_filter_field": category_field,
+            "detected_category": category,
+            "hits_count": len(items),
+            "top_k": top_k,
+        }
+        return items
 
     def extract_query_metadata(self, question: str):
         return extract_query_metadata(question, (chunk.metadata for chunk in self.chunks))

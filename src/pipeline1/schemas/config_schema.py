@@ -6,6 +6,7 @@ import warnings
 from pydantic import AliasChoices, BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from src.pipeline1.config_loader import load_pipeline_config_payload
+from src.pipeline1.retrieval.modes import CATEGORY_PREDICTION_RETRIEVER_TYPES
 
 DEFAULT_ORCHESTRATION_MODEL = "mistral-small"
 ALLOWED_ORCHESTRATION_MODELS = frozenset(
@@ -534,7 +535,7 @@ class PipelineConfig(StrictConfigModel):
                 f"retrieval.retriever_type='adaptive_category_aware_hybrid_rrf' requires index.type='elasticsearch', "
                 f"got '{index_type}'. Both retrieval legs (dense and BM25) use Elasticsearch."
             )
-        if retriever_type in {"category_aware_dense", "adaptive_category_aware_dense", "adaptive_category_aware_hybrid_rrf"} and not self.orchestration.enabled:
+        if retriever_type in CATEGORY_PREDICTION_RETRIEVER_TYPES and not self.orchestration.enabled:
             raise ValueError(
                 f"retrieval.retriever_type='{retriever_type}' requires orchestration.enabled=true "
                 "because category-aware retrieval needs a validated category prediction."

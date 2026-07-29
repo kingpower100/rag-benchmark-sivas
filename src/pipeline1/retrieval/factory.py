@@ -139,9 +139,9 @@ def _build_elasticsearch_hybrid_rrf_retriever(config: RetrievalConfig, embedder,
 
     The dense leg is always an ElasticsearchDenseRetriever (the schema validator
     guarantees index.type='elasticsearch' when this retriever_type is selected).
-    The BM25 leg is constructed from retrieval.bm25 — it can be either the local
-    in-memory BM25Retriever (bm25.backend='local') or ElasticsearchBM25Retriever
-    (bm25.backend='elasticsearch').  No silent FAISS/pgvector fallback occurs.
+    Official R00/R01 configurations require Elasticsearch BM25 with
+    allow_fallback=false. Local BM25 is only used by configurations that
+    explicitly select bm25.backend='local' or permit fallback.
     """
     from src.pipeline1.retrieval.elasticsearch_hybrid_rrf_retriever import (
         ElasticsearchHybridRRFRetriever,

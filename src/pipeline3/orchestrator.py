@@ -8,6 +8,7 @@ from pathlib import Path
 from typing import Any
 
 from src.config_utils import is_official_config_path
+from src.evaluation.source_validation import load_pipeline1_manifest, validate_pipeline1_source
 from src.pipeline1.utils.hashing import file_sha256, stable_hash_dict
 from src.pipeline3.aggregation.summarizer import summarize_semantic_metrics
 from src.pipeline3.io.writer import (
@@ -58,6 +59,14 @@ class Pipeline3Orchestrator:
         # ── Stage 1 ──────────────────────────────────────────────────────────
         print("[1/4] Loading evaluation inputs")
         loader_result: LoaderResult = load_inputs(cfg, project_root)
+        if official_run:
+            validate_pipeline1_source(
+                results_path=loader_result.rag_path,
+                manifest=load_pipeline1_manifest(loader_result.rag_path),
+                rows=loader_result.rag_rows,
+                source_validation=cfg.source_validation,
+                pipeline_name="Official Pipeline 3",
+            )
 
         # ── Stage 2 ──────────────────────────────────────────────────────────
         print("[2/4] Validating data integrity")

@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from src.config_utils import is_official_config_path
+from src.evaluation.source_validation import load_pipeline1_manifest, validate_pipeline1_source
 from src.pipeline2.aggregation.summarizer import summarize_by_category, summarize_by_experiment
 from src.pipeline2.io.jsonl import read_jsonl, write_jsonl
 from src.pipeline2.io.tabular import write_csv
@@ -138,6 +139,14 @@ class EvaluationOrchestrator:
             if official_run:
                 _validate_pipeline1_manifest_pass_for_official(resolved)
             rows = read_jsonl(resolved)
+            if official_run:
+                validate_pipeline1_source(
+                    results_path=resolved,
+                    manifest=load_pipeline1_manifest(resolved),
+                    rows=rows,
+                    source_validation=cfg.source_validation,
+                    pipeline_name="Official Pipeline 2",
+                )
             print(f"Pipeline 1 results rows: {len(rows)}")
             rag_rows.extend(rows)
         print("[2/6] Loading SIVAS QA ground truth")
@@ -1195,15 +1204,7 @@ def _is_generation_failure(row: dict[str, Any]) -> bool:
 
 
 def _validate_pipeline1_manifest_pass_for_official(results_path: Path) -> None:
-    manifest_path = results_path.parent / "run_manifest.json"
-    if not manifest_path.exists():
-        manifest_path = results_path.parent / "manifest.json"
-    if not manifest_path.exists():
-        raise ValueError(f"Official Pipeline 2 requires a Pipeline 1 manifest next to {results_path}")
-    try:
-        manifest = json.loads(manifest_path.read_text(encoding="utf-8"))
-    except json.JSONDecodeError as ex:
-        raise ValueError(f"Pipeline 1 manifest is malformed JSON: {manifest_path}") from ex
+    manifest = load_pipeline1_manifest(results_path)
     run_stats = manifest.get("run_stats") if isinstance(manifest.get("run_stats"), dict) else {}
     run_status = manifest.get("run_status") or run_stats.get("run_status")
     failed_raw = manifest.get("failed_questions", run_stats.get("failed_questions"))
@@ -1214,7 +1215,7 @@ def _validate_pipeline1_manifest_pass_for_official(results_path: Path) -> None:
     if run_status != "PASS" or failed_questions != 0:
         raise RuntimeError(
             "Official Pipeline 2 rejects non-PASS Pipeline 1 output: "
-            f"manifest={manifest_path}, run_status={run_status}, failed_questions={failed_questions}"
+            f"manifest={results_path.parent / 'run_manifest.json'}, run_status={run_status}, failed_questions={failed_questions}"
         )
 
 

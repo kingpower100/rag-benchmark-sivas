@@ -33,6 +33,10 @@ from src.pipeline1.stages.document_stage import DocumentStage
 from src.pipeline1.stages.embedding_stage import EmbeddingStage
 from src.pipeline1.stages.generation_stage import GenerationStage
 from src.pipeline1.orchestration.prompt import DEFAULT_ORCHESTRATION_PROMPT_PATH, ORCHESTRATION_PROMPT_VERSION
+from src.pipeline1.retrieval.modes import (
+    ADAPTIVE_CATEGORY_AWARE_RETRIEVER_TYPES,
+    CATEGORY_PREDICTION_RETRIEVER_TYPES,
+)
 from src.pipeline1.stages.orchestration_stage import OrchestrationStage
 from src.pipeline1.stages.retrieval_stage import (
     RetrievalStage,
@@ -531,6 +535,7 @@ def run_pipeline(config_path: str) -> Path:
             "orchestration_enabled": orchestration_enabled,
             "orchestration_status": "enabled" if orchestration_enabled else "disabled",
             "category_routing_validation": _category_routing_validation_manifest(cfg, run_dir),
+            "retrieval_evidence": _retrieval_evidence_manifest(cfg, run_dir),
             "run_stats": {
                 "n_documents": len(docs),
                 "n_chunks": len(chunks),
@@ -878,7 +883,7 @@ def _resolve_orchestration_prompt_path(prompt_path: str | None, project_root: Pa
 
 
 def _category_aware_retrieval_enabled(cfg: PipelineConfig) -> bool:
-    return cfg.retrieval.retriever_type in {"category_aware_dense", "adaptive_category_aware_dense"}
+    return cfg.retrieval.retriever_type in CATEGORY_PREDICTION_RETRIEVER_TYPES
 
 
 def _orchestration_enabled(cfg: PipelineConfig) -> bool:
@@ -1175,11 +1180,12 @@ def _pipeline1_output_artifacts(run_dir: Path) -> dict[str, dict[str, str | int 
 
 def _category_routing_validation_manifest(cfg: PipelineConfig, run_dir: Path) -> dict:
     validation_cfg = cfg.retrieval.category_routing_validation
+    adaptive_enabled = bool(
+        cfg.retrieval.retriever_type in ADAPTIVE_CATEGORY_AWARE_RETRIEVER_TYPES
+        and validation_cfg.enabled
+    )
     summary = {
-        "enabled": bool(
-            cfg.retrieval.retriever_type == "adaptive_category_aware_dense"
-            and validation_cfg.enabled
-        ),
+        "enabled": adaptive_enabled,
         "retriever_type": cfg.retrieval.retriever_type,
         "probe_fetch_k": validation_cfg.probe_fetch_k,
         "thresholds": {
@@ -1191,9 +1197,25 @@ def _category_routing_validation_manifest(cfg: PipelineConfig, run_dir: Path) ->
         "number_rejected": 0,
         "number_invalid_categories": 0,
         "number_global_fallbacks": 0,
+        "total_questions": 0,
+        "routed_question_count": 0,
+        "questions_failed_before_routing": 0,
+        "questions_missing_routing_diagnostics": 0,
+        "orchestration_attempted_count": 0,
+        "orchestration_success_count": 0,
+        "valid_category_count": 0,
+        "invalid_category_count": 0,
+        "category_route_count": 0,
+        "global_route_count": 0,
+        "fallback_count": 0,
+        "unknown_category_count": 0,
+        "routing_acceptance_rate": 0.0,
+        "category_route_rate": 0.0,
+        "global_route_rate": 0.0,
+        "fallback_rate": 0.0,
     }
     results_path = run_dir / "results.jsonl"
-    if cfg.retrieval.retriever_type != "adaptive_category_aware_dense" or not results_path.exists():
+    if not adaptive_enabled or not results_path.exists():
         return summary
 
     with results_path.open("r", encoding="utf-8") as f:
@@ -1201,18 +1223,159 @@ def _category_routing_validation_manifest(cfg: PipelineConfig, run_dir: Path) ->
             if not line.strip():
                 continue
             row = json.loads(line)
+            summary["total_questions"] += 1
             diagnostics = row.get("retrieval_diagnostics") if isinstance(row, dict) else None
             if not isinstance(diagnostics, dict):
+                summary["questions_missing_routing_diagnostics"] += 1
                 continue
+            if diagnostics.get("orchestration_status") == "enabled":
+                summary["orchestration_attempted_count"] += 1
+                if not row.get("orchestration_error"):
+                    summary["orchestration_success_count"] += 1
+            if row.get("category_validated") is True or diagnostics.get("category_validated") is True:
+                summary["valid_category_count"] += 1
+            else:
+                summary["invalid_category_count"] += 1
+            if not (row.get("detected_category") or diagnostics.get("predicted_category")):
+                summary["unknown_category_count"] += 1
             decision = diagnostics.get("routing_decision")
             if decision == "accepted":
                 summary["number_accepted"] += 1
             elif decision == "rejected":
                 summary["number_rejected"] += 1
+            else:
+                if row.get("error"):
+                    summary["questions_failed_before_routing"] += 1
+                else:
+                    summary["questions_missing_routing_diagnostics"] += 1
+                continue
+            summary["routed_question_count"] += 1
             if diagnostics.get("category_validated") is not True:
                 summary["number_invalid_categories"] += 1
-            if diagnostics.get("final_retrieval_mode") == "global" or diagnostics.get("fallback_used") is True:
+            fallback_used = diagnostics.get("fallback_used") is True or diagnostics.get("category_fallback_used") is True
+            final_mode = str(diagnostics.get("final_retrieval_mode") or diagnostics.get("retrieval_scope") or "")
+            if final_mode == "category" and not fallback_used:
+                summary["category_route_count"] += 1
+            elif final_mode == "global" or fallback_used:
+                summary["global_route_count"] += 1
+            if fallback_used:
+                summary["fallback_count"] += 1
                 summary["number_global_fallbacks"] += 1
+            elif final_mode == "global":
+                summary["number_global_fallbacks"] += 1
+    routed = int(summary["routed_question_count"])
+    if routed:
+        summary["routing_acceptance_rate"] = summary["number_accepted"] / routed
+        summary["category_route_rate"] = summary["category_route_count"] / routed
+        summary["global_route_rate"] = summary["global_route_count"] / routed
+        summary["fallback_rate"] = summary["fallback_count"] / routed
+    _validate_category_routing_summary(summary)
+    return summary
+
+
+def _validate_category_routing_summary(summary: dict) -> None:
+    total = int(summary["total_questions"])
+    routed = int(summary["routed_question_count"])
+    category_routes = int(summary["category_route_count"])
+    global_routes = int(summary["global_route_count"])
+    failed_before_routing = int(summary["questions_failed_before_routing"])
+    missing_diagnostics = int(summary["questions_missing_routing_diagnostics"])
+    orchestration_attempted = int(summary["orchestration_attempted_count"])
+    if category_routes + global_routes != routed:
+        raise RuntimeError(
+            "Category routing manifest is inconsistent: "
+            f"category_route_count + global_route_count != routed_question_count "
+            f"({category_routes} + {global_routes} != {routed})."
+        )
+    if orchestration_attempted > total:
+        raise RuntimeError(
+            "Category routing manifest is inconsistent: "
+            f"orchestration_attempted_count={orchestration_attempted} exceeds total_questions={total}."
+        )
+    if routed + failed_before_routing + missing_diagnostics > total:
+        raise RuntimeError(
+            "Category routing manifest is inconsistent: routed, failed-before-routing, "
+            "and missing-diagnostic counts exceed total_questions."
+        )
+
+
+def _retrieval_evidence_manifest(cfg: PipelineConfig, run_dir: Path) -> dict:
+    summary = {
+        "experiment_id": cfg.experiment.experiment_id,
+        "retriever_type": cfg.retrieval.retriever_type,
+        "orchestration_enabled": _orchestration_enabled(cfg),
+        "total_questions": 0,
+        "successful_questions": 0,
+        "failed_questions": 0,
+        "rows_with_routing_diagnostics": 0,
+        "rows_missing_routing_diagnostics": 0,
+        "dense_candidates_total": 0,
+        "bm25_candidates_total": 0,
+        "fused_candidates_total": 0,
+        "reranked_candidates_total": 0,
+        "category_route_count": 0,
+        "global_route_count": 0,
+        "fallback_route_count": 0,
+        "routing_reconciliation_status": "not_applicable",
+        "hybrid_evidence_present": False,
+        "reranking_evidence_present": False,
+        "global_retrieval_only": cfg.retrieval.retriever_type == "elasticsearch_hybrid_rrf",
+    }
+    results_path = run_dir / "results.jsonl"
+    if not results_path.exists():
+        return summary
+    with results_path.open("r", encoding="utf-8") as f:
+        for line in f:
+            if not line.strip():
+                continue
+            row = json.loads(line)
+            summary["total_questions"] += 1
+            if row.get("error"):
+                summary["failed_questions"] += 1
+                continue
+            summary["successful_questions"] += 1
+            diagnostics = row.get("retrieval_diagnostics") if isinstance(row.get("retrieval_diagnostics"), dict) else {}
+            dense_count = int(diagnostics.get("dense_candidate_count", diagnostics.get("es_hybrid_dense_candidates", 0)) or 0)
+            bm25_count = int(diagnostics.get("bm25_candidate_count", diagnostics.get("es_hybrid_bm25_candidates", 0)) or 0)
+            fused_count = int(diagnostics.get("fused_candidate_count", diagnostics.get("es_hybrid_fused_candidates", 0)) or 0)
+            reranked_count = int(diagnostics.get("reranked_candidate_count", diagnostics.get("reranker_output_count", 0)) or 0)
+            summary["dense_candidates_total"] += dense_count
+            summary["bm25_candidates_total"] += bm25_count
+            summary["fused_candidates_total"] += fused_count
+            summary["reranked_candidates_total"] += reranked_count
+            if dense_count > 0 and bm25_count > 0 and fused_count > 0:
+                summary["hybrid_evidence_present"] = True
+            if diagnostics.get("reranker_applied") is True and reranked_count > 0:
+                summary["reranking_evidence_present"] = True
+            if cfg.retrieval.retriever_type == "elasticsearch_hybrid_rrf":
+                if diagnostics.get("retrieval_scope") not in (None, "global"):
+                    summary["global_retrieval_only"] = False
+                if diagnostics.get("category_filter_applied") is True:
+                    summary["global_retrieval_only"] = False
+            if cfg.retrieval.retriever_type in ADAPTIVE_CATEGORY_AWARE_RETRIEVER_TYPES:
+                if diagnostics.get("routing_decision") not in {"accepted", "rejected"}:
+                    summary["rows_missing_routing_diagnostics"] += 1
+                    continue
+                summary["rows_with_routing_diagnostics"] += 1
+                fallback_used = diagnostics.get("fallback_used") is True or diagnostics.get("category_fallback_used") is True
+                final_mode = str(diagnostics.get("final_retrieval_mode") or diagnostics.get("retrieval_scope") or "")
+                if final_mode == "category" and not fallback_used:
+                    summary["category_route_count"] += 1
+                    if diagnostics.get("category_filter_applied_dense") is not True or diagnostics.get("category_filter_applied_bm25") is not True:
+                        raise RuntimeError("R01 category route lacks dense/BM25 category-filter evidence.")
+                elif final_mode == "global" or fallback_used:
+                    summary["global_route_count"] += 1
+                    if fallback_used:
+                        summary["fallback_route_count"] += 1
+    if cfg.retrieval.retriever_type in ADAPTIVE_CATEGORY_AWARE_RETRIEVER_TYPES:
+        routed = summary["rows_with_routing_diagnostics"]
+        if routed != summary["successful_questions"]:
+            summary["routing_reconciliation_status"] = "FAIL"
+            raise RuntimeError("R01 successful rows are missing routing diagnostics.")
+        if summary["category_route_count"] + summary["global_route_count"] != routed:
+            summary["routing_reconciliation_status"] = "FAIL"
+            raise RuntimeError("R01 route counts do not reconcile with successful rows.")
+        summary["routing_reconciliation_status"] = "PASS"
     return summary
 
 

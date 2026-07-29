@@ -146,6 +146,16 @@ class RuntimeConfig(StrictEvalConfigModel):
     save_csv: bool = True
 
 
+class SourceValidationConfig(StrictEvalConfigModel):
+    expected_experiment_id: str | None = None
+    expected_retriever_type: str | None = None
+    expected_orchestration_enabled: bool | None = None
+    require_hybrid_diagnostics: bool = False
+    require_reranker_diagnostics: bool = False
+    require_routing_diagnostics: bool = False
+    require_routing_reconciliation: bool = False
+
+
 class EvalConfig(StrictEvalConfigModel):
     evaluation: EvaluationConfig
     inputs: InputsConfig
@@ -155,6 +165,7 @@ class EvalConfig(StrictEvalConfigModel):
     embedding_similarity: EmbeddingSimilarityConfig = EmbeddingSimilarityConfig()
     bert_score: BertScoreConfig = BertScoreConfig()
     runtime: RuntimeConfig = RuntimeConfig()
+    source_validation: SourceValidationConfig | None = None
 
     @classmethod
     def from_yaml(cls, path: str) -> "EvalConfig":

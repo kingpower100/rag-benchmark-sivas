@@ -101,6 +101,16 @@ class P3RuntimeConfig(StrictP3ConfigModel):
     save_raw_outputs: bool = True
 
 
+class P3SourceValidationConfig(StrictP3ConfigModel):
+    expected_experiment_id: str | None = None
+    expected_retriever_type: str | None = None
+    expected_orchestration_enabled: bool | None = None
+    require_hybrid_diagnostics: bool = False
+    require_reranker_diagnostics: bool = False
+    require_routing_diagnostics: bool = False
+    require_routing_reconciliation: bool = False
+
+
 class Pipeline3Config(StrictP3ConfigModel):
     pipeline3: P3RunConfig
     inputs: P3InputsConfig
@@ -108,6 +118,7 @@ class Pipeline3Config(StrictP3ConfigModel):
     ragas: P3RagasConfig = Field(default_factory=P3RagasConfig)
     llm_judge: P3LLMJudgeConfig = Field(default_factory=P3LLMJudgeConfig)
     runtime: P3RuntimeConfig = Field(default_factory=P3RuntimeConfig)
+    source_validation: P3SourceValidationConfig | None = None
 
     @classmethod
     def from_yaml(cls, path: str) -> "Pipeline3Config":

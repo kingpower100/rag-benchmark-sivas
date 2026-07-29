@@ -64,6 +64,11 @@ class ElasticsearchBM25Retriever(BaseRetriever):
         self, question: str, top_k: int, category: str, category_field: str
     ) -> list[RetrievalItem]:
         """BM25 retrieval scoped to a single category via an Elasticsearch term filter."""
+        if not hasattr(self.client, "search"):
+            raise RuntimeError(
+                "Category-scoped Elasticsearch BM25 retrieval requires filtered "
+                "Elasticsearch search support; refusing unfiltered fallback."
+            )
         try:
             response = self.client.search(
                 index=self.index_name,
@@ -80,7 +85,20 @@ class ElasticsearchBM25Retriever(BaseRetriever):
                 f"Elasticsearch BM25 category-filtered search failed for index '{self.index_name}' at {self.host}: {ex}"
             ) from ex
         hits = response.get("hits", {}).get("hits", [])
-        return [self._hit_to_item(hit) for hit in hits]
+        rows = [self._hit_to_item(hit) for hit in hits]
+        self.last_bm25_candidates = rows
+        self.last_retrieval_diagnostics = {
+            "backend": "elasticsearch_bm25",
+            "index_name": self.index_name,
+            "host": self.host,
+            "analyzer": self.analyzer,
+            "category_filter_applied_bm25": True,
+            "category_filter_field": category_field,
+            "detected_category": category,
+            "hits_count": len(hits),
+            "top_k": top_k,
+        }
+        return rows
 
     def extract_query_metadata(self, question: str):
         from src.pipeline1.retrieval.metadata import extract_query_metadata

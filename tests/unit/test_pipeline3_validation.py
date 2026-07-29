@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import pytest
 
+from src.evaluation.source_validation import validate_pipeline1_source
+from src.pipeline3.schemas.pipeline3_config_schema import P3SourceValidationConfig
 from src.pipeline3.stages.validation_stage import (
     ValidationError,
     _extract_context_texts,
@@ -32,6 +34,59 @@ def _make_questions_row(question_id="q1"):
     return {"question_id": question_id, "question": "What is the price?"}
 
 
+def _source_manifest(experiment_id: str, retriever_type: str, orchestration_enabled: bool) -> dict:
+    return {
+        "run_id": experiment_id,
+        "run_status": "PASS",
+        "expected_questions": 1,
+        "successful_questions": 1,
+        "failed_questions": 0,
+        "orchestration_enabled": orchestration_enabled,
+        "models": {"retriever_type": retriever_type},
+        "config": {"retrieval": {"retriever_type": retriever_type, "top_k": 5}},
+        "category_routing_validation": {
+            "category_route_count": 1 if retriever_type == "adaptive_category_aware_hybrid_rrf" else 0,
+            "global_route_count": 0 if retriever_type == "adaptive_category_aware_hybrid_rrf" else 1,
+            "fallback_count": 0,
+        },
+    }
+
+
+def _source_row(experiment_id: str, retriever_type: str, *, routing: bool, scope: str = "category") -> dict:
+    diagnostics = {
+        "retriever_type": retriever_type,
+        "retrieval_mode": retriever_type,
+        "retrieval_scope": scope,
+        "dense_candidate_count": 5,
+        "bm25_candidate_count": 5,
+        "fused_candidate_count": 6,
+        "reranked_candidate_count": 5,
+        "final_context_count": 5,
+        "top_k": 5,
+        "reranker_applied": True,
+        "category_filter_applied": scope == "category",
+        "category_filter_applied_dense": scope == "category",
+        "category_filter_applied_bm25": scope == "category",
+    }
+    if routing:
+        diagnostics.update(
+            {
+                "routing_decision": "accepted",
+                "final_retrieval_mode": scope,
+                "fallback_used": False,
+                "category_fallback_used": False,
+            }
+        )
+    return {
+        "question_id": "q1",
+        "experiment_id": experiment_id,
+        "retriever_type": retriever_type,
+        "retrieval_mode": retriever_type,
+        "reranker_applied": True,
+        "retrieval_diagnostics": diagnostics,
+    }
+
+
 def test_valid_inputs_pass():
     report = validate_inputs(
         [_make_rag_row()],
@@ -40,6 +95,80 @@ def test_valid_inputs_pass():
     )
     assert report.passed is True
     assert len(report.errors) == 0
+
+
+def test_pipeline3_source_validation_rejects_wrong_r01_retriever(tmp_path):
+    with pytest.raises(ValueError, match="manifest retriever_type"):
+        validate_pipeline1_source(
+            results_path=tmp_path / "results.jsonl",
+            manifest=_source_manifest("R01", "elasticsearch_hybrid_rrf", True),
+            rows=[_source_row("R01", "elasticsearch_hybrid_rrf", routing=True)],
+            source_validation=P3SourceValidationConfig(
+                expected_experiment_id="R01",
+                expected_retriever_type="adaptive_category_aware_hybrid_rrf",
+                expected_orchestration_enabled=True,
+                require_hybrid_diagnostics=True,
+                require_reranker_diagnostics=True,
+                require_routing_diagnostics=True,
+                require_routing_reconciliation=True,
+            ),
+            pipeline_name="Official Pipeline 3",
+        )
+
+
+def test_pipeline3_source_validation_rejects_invalid_routing_manifest(tmp_path):
+    manifest = _source_manifest("R01", "adaptive_category_aware_hybrid_rrf", True)
+    manifest["category_routing_validation"]["category_route_count"] = 0
+    with pytest.raises(ValueError, match="routing manifest counts"):
+        validate_pipeline1_source(
+            results_path=tmp_path / "results.jsonl",
+            manifest=manifest,
+            rows=[_source_row("R01", "adaptive_category_aware_hybrid_rrf", routing=True)],
+            source_validation=P3SourceValidationConfig(
+                expected_experiment_id="R01",
+                expected_retriever_type="adaptive_category_aware_hybrid_rrf",
+                expected_orchestration_enabled=True,
+                require_hybrid_diagnostics=True,
+                require_reranker_diagnostics=True,
+                require_routing_diagnostics=True,
+                require_routing_reconciliation=True,
+            ),
+            pipeline_name="Official Pipeline 3",
+        )
+
+
+def test_pipeline3_source_validation_accepts_valid_r00(tmp_path):
+    validate_pipeline1_source(
+        results_path=tmp_path / "results.jsonl",
+        manifest=_source_manifest("R00", "elasticsearch_hybrid_rrf", False),
+        rows=[_source_row("R00", "elasticsearch_hybrid_rrf", routing=False, scope="global")],
+        source_validation=P3SourceValidationConfig(
+            expected_experiment_id="R00",
+            expected_retriever_type="elasticsearch_hybrid_rrf",
+            expected_orchestration_enabled=False,
+            require_hybrid_diagnostics=True,
+            require_reranker_diagnostics=True,
+        ),
+        pipeline_name="Official Pipeline 3",
+    )
+
+
+def test_pipeline3_source_validation_accepts_valid_r01(tmp_path):
+    validate_pipeline1_source(
+        results_path=tmp_path / "results.jsonl",
+        manifest=_source_manifest("R01", "adaptive_category_aware_hybrid_rrf", True),
+        rows=[_source_row("R01", "adaptive_category_aware_hybrid_rrf", routing=True)],
+        source_validation=P3SourceValidationConfig(
+            expected_experiment_id="R01",
+            expected_retriever_type="adaptive_category_aware_hybrid_rrf",
+            expected_orchestration_enabled=True,
+            require_hybrid_diagnostics=True,
+            require_reranker_diagnostics=True,
+            require_routing_diagnostics=True,
+            require_routing_reconciliation=True,
+        ),
+        pipeline_name="Official Pipeline 3",
+    )
 
 
 def test_empty_rag_rows_raises():

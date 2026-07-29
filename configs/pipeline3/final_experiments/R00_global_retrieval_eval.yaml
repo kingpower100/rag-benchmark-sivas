@@ -5,3 +5,12 @@ pipeline3:
 
 inputs:
   pipeline1_results_path: "data/runs/pipeline1/R00/results.jsonl"
+
+source_validation:
+  expected_experiment_id: "R00"
+  expected_retriever_type: "elasticsearch_hybrid_rrf"
+  expected_orchestration_enabled: false
+  require_hybrid_diagnostics: true
+  require_reranker_diagnostics: true
+  require_routing_diagnostics: false
+  require_routing_reconciliation: false
