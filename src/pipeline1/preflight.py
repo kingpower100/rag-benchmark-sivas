@@ -77,6 +77,11 @@ def run_preflight_checks(cfg, base_dir: Path | None = None) -> list[str]:
         question_field = "frage" if cfg.data.dataset_schema == "sivas" else cfg.data.question_field
         errors.extend(_validate_questions_file(questions_path, cfg.data.question_id_field, question_field))
         errors.extend(_validate_safe_query_file(questions_path, cfg.data.allow_unsafe_query_fields))
+    if cfg.generation.provider == "openai" and not os.environ.get("OPENAI_API_KEY"):
+        errors.append(
+            "generation.provider='openai' requires OPENAI_API_KEY to be set. "
+            "Export it before starting: export OPENAI_API_KEY=\"YOUR_API_KEY\""
+        )
     required_ollama_models = set()
     if cfg.generation.provider == "ollama":
         required_ollama_models.add(cfg.generation.model_name)

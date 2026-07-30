@@ -1,0 +1,38 @@
+extends: "R00_global_retrieval.yaml"
+
+# ============================================================
+# G00 — Generation Benchmark Baseline
+# ============================================================
+# Generation benchmark experiment — G-series.
+# Inherited stack (via R00 → A_final → A04-K10 → A03 → A02
+#                  → A00 → E03 → phase3_embedding_base → C02
+#                  → C00 → E00-G → base.yaml):
+#
+#   Chunking   : C02 sentence / 1024 tokens / 400 overlap
+#   Embedding  : E03 mistral-embed (1024 dim, normalize=true)
+#   Backend    : V02-class Elasticsearch script_score cosine
+#   Algorithm  : A02 Hybrid RRF (dense cosine + BM25 via RRF)
+#   Reranker   : A03 BAAI/bge-reranker-v2-m3 (cuda, rerank_top_k=20)
+#   Routing    : R00 global (no category restriction)
+#   top_k      : 5
+#   fetch_k    : 20
+#
+# Independent variable: generation model.
+# Generator   : Ollama — qwen2.5:7b-instruct  (BASELINE)
+#
+# G00 is operationally identical to R00.
+# It serves as the baseline for the G-series generation comparison.
+# The model (qwen2.5:7b-instruct) is already the default inherited
+# from the E00-G anchor through the full config chain.
+#
+# Dense index : sivas_phase4_a00_elasticsearch_dense_mistral_embed
+# BM25 index  : sivas_phase4_a01_bm25_c02_chunks
+#
+# Research question:
+#   What is the end-to-end RAG performance of the fully optimised
+#   R00 global Hybrid RRF pipeline with Qwen2.5-7B-Instruct as the
+#   generation model?
+# ============================================================
+
+experiment:
+  experiment_id: "G00"

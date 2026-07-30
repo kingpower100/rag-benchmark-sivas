@@ -25,7 +25,7 @@ extends: "A_final.yaml"
 # Reranker    : BAAI/bge-reranker-v2-m3 (cuda, rerank_top_k=20)
 #
 # R00 is the global-retrieval control arm of the R-series.
-# Only top_k changes from A_final; the complete retrieval and
+# Only top_k changes from A_final; the complete retrieval and*
 # generation pipeline is otherwise unchanged.
 #
 # Research question (control arm):

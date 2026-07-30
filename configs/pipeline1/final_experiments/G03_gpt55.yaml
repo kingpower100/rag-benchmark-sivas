@@ -1,0 +1,55 @@
+extends: "R00_global_retrieval.yaml"
+
+# ============================================================
+# G03 — Generation Benchmark: GPT-5.5
+# ============================================================
+# Generation benchmark experiment — G-series.
+# Inherited stack (via R00 → A_final → A04-K10 → A03 → A02
+#                  → A00 → E03 → phase3_embedding_base → C02
+#                  → C00 → E00-G → base.yaml):
+#
+#   Chunking   : C02 sentence / 1024 tokens / 400 overlap
+#   Embedding  : E03 mistral-embed (1024 dim, normalize=true)
+#   Backend    : V02-class Elasticsearch script_score cosine
+#   Algorithm  : A02 Hybrid RRF (dense cosine + BM25 via RRF)
+#   Reranker   : A03 BAAI/bge-reranker-v2-m3 (cuda, rerank_top_k=20)
+#   Routing    : R00 global (no category restriction)
+#   top_k      : 5
+#   fetch_k    : 20
+#
+# Independent variable: generation model.
+# Generator   : OpenAI API — gpt-5.5
+#
+# All retrieval, reranking, prompt, context, and decoding settings
+# are identical to G00 and G01. Only the generation provider and
+# model change; this is the only legitimate provider-level difference
+# in the G-series (connection fields are necessarily provider-specific,
+# but the scientific variable remains the generation model).
+#
+# Authentication: OPENAI_API_KEY environment variable (never stored here).
+# Endpoint      : https://api.openai.com/v1/chat/completions
+#
+# Dense index : sivas_phase4_a00_elasticsearch_dense_mistral_embed
+# BM25 index  : sivas_phase4_a01_bm25_c02_chunks
+#
+# Research question:
+#   Does replacing Qwen2.5-7B-Instruct with GPT-5.5 (OpenAI API)
+#   improve end-to-end RAG performance when the retrieval pipeline,
+#   prompt, context, and decoding settings are held fixed?
+# ============================================================
+
+experiment:
+  experiment_id: "G03"
+
+generation:
+  provider: "openai"
+  model_name: "gpt-5.5"
+  # base_url is not used by the OpenAI generator (which always calls
+  # https://api.openai.com/v1/chat/completions directly).
+  # Recorded here so the run manifest shows the correct API origin.
+  base_url: "https://api.openai.com/v1"
+  # temperature, max_tokens, timeout_s, prompt_path, and all context
+  # budget settings are identical to G00/G01 — inherited from E00-G.
+
+# Update pricing once GPT-5.5 rates are published.
+# Inherited telemetry.estimate_cost=true and pricing=0.0 from E00-G.

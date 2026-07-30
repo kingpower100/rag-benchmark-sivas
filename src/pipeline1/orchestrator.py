@@ -421,7 +421,8 @@ def run_pipeline(config_path: str) -> Path:
         run_writer_stage.close()
 
     resolved_config = cfg.model_dump()
-    resolved_config["generation"]["base_url"] = os.getenv("OLLAMA_BASE_URL", cfg.generation.base_url)
+    if cfg.generation.provider == "ollama":
+        resolved_config["generation"]["base_url"] = os.getenv("OLLAMA_BASE_URL", cfg.generation.base_url)
     end_time = time.time()
     output_counts = RunWriterStage.output_row_counts(run_dir)
     failed_questions = len(failed_question_ids)

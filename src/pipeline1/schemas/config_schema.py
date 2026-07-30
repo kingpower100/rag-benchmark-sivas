@@ -364,7 +364,7 @@ class OrchestrationConfig(StrictConfigModel):
 
 
 class GenerationConfig(StrictConfigModel):
-    provider: Literal["ollama", "mistral"]
+    provider: Literal["ollama", "mistral", "openai"]
     model_name: str
     base_url: str = "http://localhost:11434"
     temperature: float = 0.0

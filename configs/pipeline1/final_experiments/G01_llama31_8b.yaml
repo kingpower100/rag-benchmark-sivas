@@ -1,0 +1,39 @@
+extends: "R00_global_retrieval.yaml"
+
+# ============================================================
+# G01 — Generation Benchmark: Llama 3.1-8B-Instruct
+# ============================================================
+# Generation benchmark experiment — G-series.
+# Inherited stack (via R00 → A_final → A04-K10 → A03 → A02
+#                  → A00 → E03 → phase3_embedding_base → C02
+#                  → C00 → E00-G → base.yaml):
+#
+#   Chunking   : C02 sentence / 1024 tokens / 400 overlap
+#   Embedding  : E03 mistral-embed (1024 dim, normalize=true)
+#   Backend    : V02-class Elasticsearch script_score cosine
+#   Algorithm  : A02 Hybrid RRF (dense cosine + BM25 via RRF)
+#   Reranker   : A03 BAAI/bge-reranker-v2-m3 (cuda, rerank_top_k=20)
+#   Routing    : R00 global (no category restriction)
+#   top_k      : 5
+#   fetch_k    : 20
+#
+# Independent variable: generation model.
+# Generator   : Ollama — llama3.1:8b-instruct
+#
+# All retrieval, reranking, prompt, context, and decoding settings
+# are identical to G00. Only the generation model changes.
+#
+# Dense index : sivas_phase4_a00_elasticsearch_dense_mistral_embed
+# BM25 index  : sivas_phase4_a01_bm25_c02_chunks
+#
+# Research question:
+#   Does replacing Qwen2.5-7B-Instruct with Llama 3.1-8B-Instruct
+#   improve end-to-end RAG performance when the retrieval pipeline
+#   and all other settings are held fixed?
+# ============================================================
+
+experiment:
+  experiment_id: "G01"
+
+generation:
+  model_name: "llama3.1:8b-instruct"
