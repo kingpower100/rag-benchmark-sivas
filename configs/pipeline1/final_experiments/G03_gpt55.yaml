@@ -52,10 +52,6 @@ generation:
   base_url: "https://api.openai.com/v1"
   # temperature, max_tokens, timeout_s, prompt_path, and all context
   # budget settings are identical to the G-series baseline - inherited from E00-G.
-  # GPT-5.5 reasoning_effort supports none, low, medium, high, and xhigh.
-  # Use the lowest supported effort so the shared 512-token completion budget
-  # is reserved for visible answer tokens as much as the API permits.
-  reasoning_effort: "none"
 
 # Update pricing once GPT-5.5 rates are published.
 # Inherited telemetry.estimate_cost=true and pricing=0.0 from E00-G.

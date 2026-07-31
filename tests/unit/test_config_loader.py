@@ -444,17 +444,23 @@ def test_reasoning_effort_rejected_for_unsupported_openai_model_family():
         PipelineConfig.model_validate(payload)
 
 
-def test_g_series_reasoning_effort_only_changes_g03_and_max_tokens_stay_512():
+def test_g_series_reasoning_effort_unset_and_repair_config_is_q023_only_override():
     g00 = PipelineConfig.from_yaml("configs/pipeline1/final_experiments/G00_qwen25_7b.yaml")
     g01 = PipelineConfig.from_yaml("configs/pipeline1/final_experiments/G01_llama31_8b.yaml")
     g02 = PipelineConfig.from_yaml("configs/pipeline1/final_experiments/G02_mistral_small.yaml")
     g03 = PipelineConfig.from_yaml("configs/pipeline1/final_experiments/G03_gpt55.yaml")
+    repair = PipelineConfig.from_yaml("configs/pipeline1/final_experiments/G03_Q023_repair.yaml")
 
     assert [cfg.generation.max_tokens for cfg in (g00, g01, g02, g03)] == [512, 512, 512, 512]
-    assert [cfg.generation.reasoning_effort for cfg in (g00, g01, g02)] == [None, None, None]
-    assert g03.generation.reasoning_effort == "none"
+    assert [cfg.generation.reasoning_effort for cfg in (g00, g01, g02, g03)] == [None, None, None, None]
     assert g03.generation.provider == "openai"
     assert g03.generation.model_name == "gpt-5.5"
+    assert repair.experiment.experiment_id == "G03_Q023_repair"
+    assert repair.data.questions_path == "data/repair/questions_Q023_only.jsonl"
+    assert repair.generation.reasoning_effort == "none"
+    assert repair.generation.max_tokens == 512
+    assert repair.generation.provider == g03.generation.provider
+    assert repair.generation.model_name == g03.generation.model_name
 
 
 @pytest.mark.parametrize("model_name", ["mistral-small", "qwen2.5:7b", "llama3.1:8b"])

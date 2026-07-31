@@ -1,0 +1,18 @@
+extends: "G03_gpt55.yaml"
+
+# Targeted one-question repair for G03/Q023.
+# This is intentionally a separate experiment ID so normal resume compatibility
+# checks for the official G03 run are not bypassed or weakened.
+
+experiment:
+  experiment_id: "G03_Q023_repair"
+
+data:
+  questions_path: "data/repair/questions_Q023_only.jsonl"
+
+generation:
+  reasoning_effort: "none"
+
+runtime:
+  resume: false
+  overwrite: false
