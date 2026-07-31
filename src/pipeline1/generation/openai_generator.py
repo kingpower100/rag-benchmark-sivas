@@ -70,12 +70,15 @@ class OpenAIGenerator(BaseGenerator):
             "Authorization": f"Bearer {self._api_key}",
             "Content-Type": "application/json",
         }
-        payload = {
-            "model": self.model_name,
-            "messages": [{"role": "user", "content": prompt}],
-            "temperature": self.temperature,
-            "max_completion_tokens": self.max_tokens,
-        }
+        payload, temperature_diagnostics = self._build_payload(prompt)
+        logger.info(
+            "openai_request_temperature model=%s configured_temperature=%s "
+            "effective_api_temperature=%s temperature_omitted=%s",
+            self.model_name,
+            temperature_diagnostics["configured_temperature"],
+            temperature_diagnostics["effective_api_temperature"],
+            temperature_diagnostics["temperature_omitted"],
+        )
         response = requests.post(
             OPENAI_CHAT_URL,
             json=payload,
@@ -105,6 +108,26 @@ class OpenAIGenerator(BaseGenerator):
             input_tokens=int(usage.get("prompt_tokens") or count_tokens(prompt)),
             output_tokens=int(usage.get("completion_tokens") or count_tokens(answer)),
         )
+
+    def _build_payload(self, prompt: str) -> tuple[dict[str, Any], dict[str, Any]]:
+        payload: dict[str, Any] = {
+            "model": self.model_name,
+            "messages": [{"role": "user", "content": prompt}],
+            "max_completion_tokens": self.max_tokens,
+        }
+        configured_temperature = float(self.temperature)
+        temperature_omitted = False
+        effective_api_temperature = configured_temperature
+        if _supports_custom_temperature(self.model_name):
+            payload["temperature"] = configured_temperature
+        else:
+            temperature_omitted = True
+            effective_api_temperature = 1.0
+        return payload, {
+            "configured_temperature": configured_temperature,
+            "effective_api_temperature": effective_api_temperature,
+            "temperature_omitted": temperature_omitted,
+        }
 
     def _parse_json_response(self, response: requests.Response, request_id: str | None) -> dict[str, Any]:
         try:
@@ -157,3 +180,8 @@ class OpenAIGenerator(BaseGenerator):
             "OpenAI response message content has unsupported type "
             f"{type(content).__name__} for model={self.model_name} request_id={request_id}"
         )
+
+
+def _supports_custom_temperature(model_name: str) -> bool:
+    default_temperature_only_models = {"gpt-5.5"}
+    return model_name not in default_temperature_only_models

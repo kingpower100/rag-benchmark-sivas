@@ -50,9 +50,67 @@ def test_openai_payload_forwards_model_and_uses_max_completion_tokens(monkeypatc
     assert captured["payload"]["model"] == "gpt-5.5"
     assert captured["payload"]["max_completion_tokens"] == 512
     assert "max_tokens" not in captured["payload"]
+    assert "temperature" not in captured["payload"]
     assert captured["headers"]["Authorization"] == "Bearer secret-test-key"
     assert captured["headers"]["Content-Type"] == "application/json"
     assert captured["timeout"] == 180
+
+
+def test_gpt55_temperature_zero_is_omitted_and_traced(monkeypatch, caplog):
+    monkeypatch.setenv("OPENAI_API_KEY", "secret-test-key")
+    captured = {}
+
+    def fake_post(url, json, headers, timeout):
+        captured["payload"] = json
+        return _FakeResponse()
+
+    monkeypatch.setattr("requests.post", fake_post)
+
+    with caplog.at_level(logging.INFO, logger="src.pipeline1.generation.openai_generator"):
+        OpenAIGenerator("gpt-5.5", temperature=0.0).generate("Sensitive prompt")
+
+    assert captured["payload"]["model"] == "gpt-5.5"
+    assert "temperature" not in captured["payload"]
+    assert captured["payload"]["max_completion_tokens"] == 512
+    assert "configured_temperature=0.0" in caplog.text
+    assert "effective_api_temperature=1.0" in caplog.text
+    assert "temperature_omitted=True" in caplog.text
+    assert "secret-test-key" not in caplog.text
+    assert "Sensitive prompt" not in caplog.text
+
+
+def test_gpt55_temperature_one_does_not_send_unsupported_value(monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "secret-test-key")
+    captured = {}
+
+    def fake_post(url, json, headers, timeout):
+        captured["payload"] = json
+        return _FakeResponse()
+
+    monkeypatch.setattr("requests.post", fake_post)
+
+    OpenAIGenerator("gpt-5.5", temperature=1.0).generate("Prompt")
+
+    assert captured["payload"]["model"] == "gpt-5.5"
+    assert "temperature" not in captured["payload"] or captured["payload"]["temperature"] == 1.0
+    assert captured["payload"]["max_completion_tokens"] == 512
+
+
+def test_custom_temperature_supported_for_non_gpt55_models(monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "secret-test-key")
+    captured = {}
+
+    def fake_post(url, json, headers, timeout):
+        captured["payload"] = json
+        return _FakeResponse()
+
+    monkeypatch.setattr("requests.post", fake_post)
+
+    OpenAIGenerator("gpt-4.1", temperature=0.2).generate("Prompt")
+
+    assert captured["payload"]["model"] == "gpt-4.1"
+    assert captured["payload"]["temperature"] == 0.2
+    assert captured["payload"]["max_completion_tokens"] == 512
 
 
 def test_http_400_makes_exactly_one_request(monkeypatch):
