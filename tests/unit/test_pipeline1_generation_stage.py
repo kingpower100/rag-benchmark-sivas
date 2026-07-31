@@ -96,6 +96,22 @@ def test_generation_stage_failed_question_does_not_stop_remaining_rows(monkeypat
     assert second.error is None
 
 
+def test_openai_generation_failure_is_not_stage_retried_or_marked_success(monkeypatch):
+    monkeypatch.setattr("src.pipeline1.stages.generation_stage.time.sleep", lambda seconds: None)
+    cfg = _cfg(provider="openai", model_name="gpt-5.5")
+    generator = _FailingGenerator()
+
+    output = GenerationStage(cfg, _Retriever(), generator_factory=lambda config: generator).run(
+        StageInput({"retrieval_rows": [_retrieval_row()], "final_top_k": 1})
+    )
+
+    record = output.generation_rows[0].output_record
+    assert generator.calls == 1
+    assert record.generated_answer == ""
+    assert record.error == "boom"
+    assert record.token_usage == {"input_tokens": 0, "output_tokens": 0, "total_tokens": 0}
+
+
 def test_generation_stage_preserves_prompt_context_diagnostics():
     cfg = _cfg(max_context_chars=5)
     output = GenerationStage(cfg, _Retriever(), generator_factory=lambda config: _Generator("ok")).run(
@@ -180,7 +196,7 @@ def _retrieval_row(text="alpha", question_id="q1", question="What is the answer?
     )
 
 
-def _cfg(max_context_chars=24000):
+def _cfg(max_context_chars=24000, provider="ollama", model_name="fake"):
     return PipelineConfig.model_validate(
         {
             "experiment": {"experiment_id": "exp", "output_dir": "runs"},
@@ -191,8 +207,8 @@ def _cfg(max_context_chars=24000):
             "retrieval": {"retriever_type": "dense", "top_k": 1, "fetch_k": 1},
             "reranker": {"enabled": False},
             "generation": {
-                "provider": "ollama",
-                "model_name": "fake",
+                "provider": provider,
+                "model_name": model_name,
                 "system_prompt": "Use context.",
                 "max_context_chars": max_context_chars,
                 "max_chunk_chars": 8000,

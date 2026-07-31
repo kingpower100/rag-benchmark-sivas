@@ -1,0 +1,32 @@
+extends: "../base_eval.yaml"
+
+evaluation:
+  eval_run_id: "G00_qwen25_7b_eval"
+  strict_failure_threshold: true
+  max_generation_failure_rate: 0.0
+
+inputs:
+  pipeline1_results_path: "data/runs/pipeline1/G00/results.jsonl"
+  rag_outputs:
+    - "data/runs/pipeline1/G00/results.jsonl"
+
+source_validation:
+  expected_experiment_id: "G00"
+  expected_retriever_type: "elasticsearch_hybrid_rrf"
+  expected_orchestration_enabled: false
+  require_hybrid_diagnostics: true
+  require_reranker_diagnostics: true
+  require_routing_diagnostics: false
+  require_routing_reconciliation: false
+
+retrieval:
+  k: 5
+  ks: [1, 3, 5]
+
+retrieval_evaluation:
+  document_level:
+    enabled: true
+  chunk_level:
+    enabled: true
+    ground_truth_path: "data/ground_truth/chunk_level/C02_sentence1024_overlap400/gold_chunk_annotations_C02_sentence1024_overlap400.jsonl"
+    missing_question_policy: error

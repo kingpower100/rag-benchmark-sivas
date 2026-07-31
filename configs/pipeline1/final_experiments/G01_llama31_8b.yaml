@@ -1,12 +1,12 @@
 extends: "R00_global_retrieval.yaml"
 
 # ============================================================
-# G01 — Generation Benchmark: Llama 3.1-8B-Instruct
+# G01 - Generation Benchmark: Llama 3.1-8B
 # ============================================================
-# Generation benchmark experiment — G-series.
-# Inherited stack (via R00 → A_final → A04-K10 → A03 → A02
-#                  → A00 → E03 → phase3_embedding_base → C02
-#                  → C00 → E00-G → base.yaml):
+# Generation benchmark experiment - G-series.
+# Inherited stack (via R00 -> A_final -> A04-K10 -> A03 -> A02
+#                  -> A00 -> E03 -> phase3_embedding_base -> C02
+#                  -> C00 -> E00-G -> base.yaml):
 #
 #   Chunking   : C02 sentence / 1024 tokens / 400 overlap
 #   Embedding  : E03 mistral-embed (1024 dim, normalize=true)
@@ -18,16 +18,18 @@ extends: "R00_global_retrieval.yaml"
 #   fetch_k    : 20
 #
 # Independent variable: generation model.
-# Generator   : Ollama — llama3.1:8b-instruct
+# Generator   : Ollama - llama3.1:8b
 #
 # All retrieval, reranking, prompt, context, and decoding settings
 # are identical to G00. Only the generation model changes.
+# The ancestry contains A04-K10, but R00 overrides effective retrieval
+# depth to top_k=5 for all G-series experiments.
 #
 # Dense index : sivas_phase4_a00_elasticsearch_dense_mistral_embed
 # BM25 index  : sivas_phase4_a01_bm25_c02_chunks
 #
 # Research question:
-#   Does replacing Qwen2.5-7B-Instruct with Llama 3.1-8B-Instruct
+#   Does replacing Qwen2.5-7B-Instruct with Llama 3.1-8B
 #   improve end-to-end RAG performance when the retrieval pipeline
 #   and all other settings are held fixed?
 # ============================================================

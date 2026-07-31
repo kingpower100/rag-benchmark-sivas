@@ -91,10 +91,22 @@ official_experiment_mapping:
     pipeline1: "configs/pipeline1/final_experiments/C05_sivas_character2048_overlap0.yaml"
     pipeline2: "configs/pipeline2/final_experiments/C05_sivas_character2048_overlap0_eval.yaml"
     pipeline3: "configs/pipeline3/final_experiments/C05_sivas_character2048_overlap0_eval.yaml"
+  G00:
+    pipeline1: "configs/pipeline1/final_experiments/G00_qwen25_7b.yaml"
+    pipeline2: "configs/pipeline2/final_experiments/G00_qwen25_7b_eval.yaml"
+    pipeline3: "configs/pipeline3/final_experiments/G00_qwen25_7b_eval.yaml"
+  G01:
+    pipeline1: "configs/pipeline1/final_experiments/G01_llama31_8b.yaml"
+    pipeline2: "configs/pipeline2/final_experiments/G01_llama31_8b_eval.yaml"
+    pipeline3: "configs/pipeline3/final_experiments/G01_llama31_8b_eval.yaml"
   G02:
     pipeline1: "configs/pipeline1/final_experiments/G02_mistral_small.yaml"
     pipeline2: "configs/pipeline2/final_experiments/G02_mistral_small_eval.yaml"
     pipeline3: "configs/pipeline3/final_experiments/G02_mistral_small_eval.yaml"
+  G03:
+    pipeline1: "configs/pipeline1/final_experiments/G03_gpt55.yaml"
+    pipeline2: "configs/pipeline2/final_experiments/G03_gpt55_eval.yaml"
+    pipeline3: "configs/pipeline3/final_experiments/G03_gpt55_eval.yaml"
   E91:
     numeric_id: "91_sivas_fixed512_faiss_dense_mistralsmall_prompt_v0"
     pipeline1: "configs/pipeline1/experiments Orchestration LLM/91_sivas_fixed512_faiss_dense_mistralsmall_prompt_v0.yaml"

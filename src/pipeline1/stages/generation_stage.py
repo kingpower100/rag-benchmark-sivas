@@ -323,7 +323,8 @@ class GenerationStage(BaseStage):
 
     def _generate_with_retries(self, generator, prompt: str, question_id: str):
         last_error = None
-        for attempt in range(1, MAX_GENERATION_RETRIES + 1):
+        max_attempts = 1 if self.cfg.generation.provider == "openai" else MAX_GENERATION_RETRIES
+        for attempt in range(1, max_attempts + 1):
             try:
                 return generator.generate(prompt), None, attempt
             except Exception as ex:
@@ -333,7 +334,7 @@ class GenerationStage(BaseStage):
                         "row_generation_attempt_failed question_id=%s attempt=%s/%s error=%s",
                         question_id,
                         attempt,
-                        MAX_GENERATION_RETRIES,
+                        max_attempts,
                         last_error,
                         exc_info=True,
                     )
@@ -345,20 +346,20 @@ class GenerationStage(BaseStage):
                     diagnostics={
                         "error": last_error,
                         "attempt": attempt,
-                        "max_retries": MAX_GENERATION_RETRIES,
-                        "will_retry": attempt < MAX_GENERATION_RETRIES,
+                        "max_retries": max_attempts,
+                        "will_retry": attempt < max_attempts,
                     },
                 )
-                if attempt < MAX_GENERATION_RETRIES:
+                if attempt < max_attempts:
                     time.sleep(GENERATION_BACKOFF_BASE_SECONDS * (2 ** (attempt - 1)))
         self._write_event(
             stage="pipeline",
             event_type=EventType.PIPELINE_ERROR,
             message="Generation failed after retries.",
             question_id=question_id,
-            diagnostics={"error": last_error, "attempts": MAX_GENERATION_RETRIES},
+            diagnostics={"error": last_error, "attempts": max_attempts},
         )
-        return None, last_error, MAX_GENERATION_RETRIES
+        return None, last_error, max_attempts
 
 
 def build_citations(items: list) -> list[dict]:
