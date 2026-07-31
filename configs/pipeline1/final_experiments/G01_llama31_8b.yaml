@@ -36,4 +36,4 @@ experiment:
   experiment_id: "G01"
 
 generation:
-  model_name: "llama3.1:8b-instruct"
+  model_name: "llama3.1:8b"
