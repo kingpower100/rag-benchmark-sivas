@@ -91,6 +91,10 @@ official_experiment_mapping:
     pipeline1: "configs/pipeline1/final_experiments/C05_sivas_character2048_overlap0.yaml"
     pipeline2: "configs/pipeline2/final_experiments/C05_sivas_character2048_overlap0_eval.yaml"
     pipeline3: "configs/pipeline3/final_experiments/C05_sivas_character2048_overlap0_eval.yaml"
+  G02:
+    pipeline1: "configs/pipeline1/final_experiments/G02_mistral_small.yaml"
+    pipeline2: "configs/pipeline2/final_experiments/G02_mistral_small_eval.yaml"
+    pipeline3: "configs/pipeline3/final_experiments/G02_mistral_small_eval.yaml"
   E91:
     numeric_id: "91_sivas_fixed512_faiss_dense_mistralsmall_prompt_v0"
     pipeline1: "configs/pipeline1/experiments Orchestration LLM/91_sivas_fixed512_faiss_dense_mistralsmall_prompt_v0.yaml"
