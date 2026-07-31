@@ -47,6 +47,7 @@ class OpenAIGenerator(BaseGenerator):
         model_name: str,
         temperature: float = 0.0,
         max_tokens: int = 512,
+        reasoning_effort: str | None = None,
         timeout_s: int = 90,
     ) -> None:
         api_key = os.environ.get("OPENAI_API_KEY", "")
@@ -60,6 +61,7 @@ class OpenAIGenerator(BaseGenerator):
         self.model_name = model_name
         self.temperature = temperature
         self.max_tokens = max_tokens
+        self.reasoning_effort = reasoning_effort
         self.timeout_s = timeout_s
 
     def generate(self, prompt: str) -> GenerationResult:
@@ -162,6 +164,8 @@ class OpenAIGenerator(BaseGenerator):
             "messages": [{"role": "user", "content": prompt}],
             "max_completion_tokens": self.max_tokens,
         }
+        if self.reasoning_effort is not None:
+            payload["reasoning_effort"] = self.reasoning_effort
         configured_temperature = float(self.temperature)
         temperature_omitted = False
         effective_api_temperature = configured_temperature

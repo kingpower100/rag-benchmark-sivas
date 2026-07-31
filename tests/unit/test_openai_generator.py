@@ -56,6 +56,38 @@ def test_openai_payload_forwards_model_and_uses_max_completion_tokens(monkeypatc
     assert captured["timeout"] == 180
 
 
+def test_openai_payload_sends_reasoning_effort_when_configured(monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "secret-test-key")
+    captured = {}
+
+    def fake_post(url, json, headers, timeout):
+        captured["payload"] = json
+        return _FakeResponse()
+
+    monkeypatch.setattr("requests.post", fake_post)
+
+    OpenAIGenerator("gpt-5.5", max_tokens=512, reasoning_effort="none").generate("Prompt")
+
+    assert captured["payload"]["model"] == "gpt-5.5"
+    assert captured["payload"]["max_completion_tokens"] == 512
+    assert captured["payload"]["reasoning_effort"] == "none"
+
+
+def test_openai_payload_omits_reasoning_effort_when_unset(monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "secret-test-key")
+    captured = {}
+
+    def fake_post(url, json, headers, timeout):
+        captured["payload"] = json
+        return _FakeResponse()
+
+    monkeypatch.setattr("requests.post", fake_post)
+
+    OpenAIGenerator("gpt-5.5").generate("Prompt")
+
+    assert "reasoning_effort" not in captured["payload"]
+
+
 def test_gpt55_temperature_zero_is_omitted_and_traced(monkeypatch, caplog):
     monkeypatch.setenv("OPENAI_API_KEY", "secret-test-key")
     captured = {}
@@ -266,6 +298,19 @@ def test_empty_content_raises_runtime_error(monkeypatch):
 
     with pytest.raises(RuntimeError, match="empty generated answer"):
         OpenAIGenerator("gpt-4.1").generate("Prompt")
+
+
+def test_empty_length_response_still_raises_runtime_error(monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "secret-test-key")
+    monkeypatch.setattr(
+        "requests.post",
+        lambda url, json, headers, timeout: _FakeResponse(
+            payload={"choices": [{"finish_reason": "length", "message": {"content": ""}}]}
+        ),
+    )
+
+    with pytest.raises(RuntimeError, match="empty generated answer.*finish_reason='length'"):
+        OpenAIGenerator("gpt-5.5", max_tokens=512, reasoning_effort="none").generate("Prompt")
 
 
 def test_whitespace_only_content_raises_runtime_error(monkeypatch):

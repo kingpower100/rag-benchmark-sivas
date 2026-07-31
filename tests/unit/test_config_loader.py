@@ -377,6 +377,86 @@ def test_pipeline1_unknown_config_fields_fail():
         PipelineConfig.model_validate(payload)
 
 
+def test_openai_reasoning_effort_none_is_accepted_for_gpt55():
+    payload = _minimal_pipeline1_payload("mistral-small")
+    payload["generation"] = {
+        "provider": "openai",
+        "model_name": "gpt-5.5",
+        "system_prompt": "Use context.",
+        "reasoning_effort": "none",
+    }
+
+    cfg = PipelineConfig.model_validate(payload)
+
+    assert cfg.generation.reasoning_effort == "none"
+
+
+def test_openai_reasoning_effort_minimal_is_rejected_for_gpt55():
+    payload = _minimal_pipeline1_payload("mistral-small")
+    payload["generation"] = {
+        "provider": "openai",
+        "model_name": "gpt-5.5",
+        "system_prompt": "Use context.",
+        "reasoning_effort": "minimal",
+    }
+
+    with pytest.raises(ValidationError, match="not supported.*gpt-5.5"):
+        PipelineConfig.model_validate(payload)
+
+
+@pytest.mark.parametrize("provider", ["ollama", "mistral"])
+def test_reasoning_effort_rejected_for_non_openai_providers(provider):
+    payload = _minimal_pipeline1_payload("mistral-small")
+    payload["generation"] = {
+        "provider": provider,
+        "model_name": "fake",
+        "system_prompt": "Use context.",
+        "reasoning_effort": "low",
+    }
+
+    with pytest.raises(ValidationError, match="only supported for provider='openai'"):
+        PipelineConfig.model_validate(payload)
+
+
+def test_unsupported_reasoning_effort_value_fails_validation():
+    payload = _minimal_pipeline1_payload("mistral-small")
+    payload["generation"] = {
+        "provider": "openai",
+        "model_name": "gpt-5.5",
+        "system_prompt": "Use context.",
+        "reasoning_effort": "max",
+    }
+
+    with pytest.raises(ValidationError, match="reasoning_effort"):
+        PipelineConfig.model_validate(payload)
+
+
+def test_reasoning_effort_rejected_for_unsupported_openai_model_family():
+    payload = _minimal_pipeline1_payload("mistral-small")
+    payload["generation"] = {
+        "provider": "openai",
+        "model_name": "gpt-4.1",
+        "system_prompt": "Use context.",
+        "reasoning_effort": "low",
+    }
+
+    with pytest.raises(ValidationError, match="does not support for reasoning controls"):
+        PipelineConfig.model_validate(payload)
+
+
+def test_g_series_reasoning_effort_only_changes_g03_and_max_tokens_stay_512():
+    g00 = PipelineConfig.from_yaml("configs/pipeline1/final_experiments/G00_qwen25_7b.yaml")
+    g01 = PipelineConfig.from_yaml("configs/pipeline1/final_experiments/G01_llama31_8b.yaml")
+    g02 = PipelineConfig.from_yaml("configs/pipeline1/final_experiments/G02_mistral_small.yaml")
+    g03 = PipelineConfig.from_yaml("configs/pipeline1/final_experiments/G03_gpt55.yaml")
+
+    assert [cfg.generation.max_tokens for cfg in (g00, g01, g02, g03)] == [512, 512, 512, 512]
+    assert [cfg.generation.reasoning_effort for cfg in (g00, g01, g02)] == [None, None, None]
+    assert g03.generation.reasoning_effort == "none"
+    assert g03.generation.provider == "openai"
+    assert g03.generation.model_name == "gpt-5.5"
+
+
 @pytest.mark.parametrize("model_name", ["mistral-small", "qwen2.5:7b", "llama3.1:8b"])
 def test_pipeline1_orchestration_model_allowlist_accepts_phase2_models(model_name):
     cfg = PipelineConfig.model_validate(_minimal_pipeline1_payload(model_name))

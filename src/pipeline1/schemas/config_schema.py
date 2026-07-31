@@ -369,6 +369,7 @@ class GenerationConfig(StrictConfigModel):
     base_url: str = "http://localhost:11434"
     temperature: float = 0.0
     max_tokens: int = Field(default=512, gt=0)
+    reasoning_effort: Optional[Literal["none", "minimal", "low", "medium", "high", "xhigh"]] = None
     timeout_s: int = Field(default=90, gt=0)
     system_prompt: Optional[str] = None
     prompt_path: Optional[str] = None
@@ -384,6 +385,7 @@ class GenerationConfig(StrictConfigModel):
 
     @model_validator(mode="after")
     def require_prompt_source(self) -> "GenerationConfig":
+        self._validate_reasoning_effort()
         if self.prompt_path is not None and self.system_prompt is None:
             resolved = _resolve_project_path(self.prompt_path)
             if not resolved.is_file():
@@ -395,6 +397,27 @@ class GenerationConfig(StrictConfigModel):
         if self.prompt_path is None and not (self.system_prompt or "").strip():
             raise ValueError("generation requires either system_prompt or prompt_path.")
         return self
+
+    def _validate_reasoning_effort(self) -> None:
+        if self.reasoning_effort is None:
+            return
+        if self.provider != "openai":
+            raise ValueError(
+                "generation.reasoning_effort is only supported for provider='openai'. "
+                f"Got provider={self.provider!r}."
+            )
+        allowed = _openai_reasoning_effort_values(self.model_name)
+        if not allowed:
+            raise ValueError(
+                "generation.reasoning_effort is configured for an OpenAI model family "
+                f"that this benchmark does not support for reasoning controls: {self.model_name!r}."
+            )
+        if self.reasoning_effort not in allowed:
+            allowed_values = ", ".join(sorted(allowed))
+            raise ValueError(
+                f"generation.reasoning_effort={self.reasoning_effort!r} is not supported "
+                f"for model_name={self.model_name!r}. Supported values: {allowed_values}."
+            )
 
     @model_validator(mode="before")
     @classmethod
@@ -413,6 +436,24 @@ def _resolve_project_path(path: str) -> Path:
         return candidate.resolve()
     project_root = Path(__file__).resolve().parents[3]
     return (project_root / candidate).resolve()
+
+
+def _openai_reasoning_effort_values(model_name: str) -> set[str]:
+    if _matches_model_family(model_name, "gpt-5.5"):
+        return {"none", "low", "medium", "high", "xhigh"}
+    if _matches_model_family(model_name, "gpt-5.1"):
+        return {"none", "low", "medium", "high"}
+    if model_name == "gpt-5" or model_name.startswith("gpt-5-"):
+        return {"minimal", "low", "medium", "high"}
+    if _matches_model_family(model_name, "o1") or _matches_model_family(model_name, "o3"):
+        return {"low", "medium", "high"}
+    if _matches_model_family(model_name, "o4-mini"):
+        return {"low", "medium", "high"}
+    return set()
+
+
+def _matches_model_family(model_name: str, family: str) -> bool:
+    return model_name == family or model_name.startswith(family + "-")
 
 
 def _validate_tiktoken_encoding(tokenizer_name: str) -> None:

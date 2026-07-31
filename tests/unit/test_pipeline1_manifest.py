@@ -337,6 +337,79 @@ runtime:
     assert manifest["models"]["embedding_client_library"] == "requests/test"
 
 
+def test_pipeline1_manifest_records_openai_reasoning_effort_without_secret(tmp_path, monkeypatch):
+    project_root = tmp_path
+    data_dir = project_root / "data" / "raw"
+    data_dir.mkdir(parents=True)
+    (data_dir / "kb_documents_fixed.jsonl").write_text(
+        '{"doc_key":"doc-1","doc_name":"sivas_1.md","text":"alpha","kategorie":"ERP"}\n',
+        encoding="utf-8",
+    )
+    (data_dir / "questions_fixed.jsonl").write_text('{"question_id":"q1","frage":"Q?"}\n', encoding="utf-8")
+    cfg_path = project_root / "config.yaml"
+    cfg_path.write_text(
+        """
+experiment:
+  experiment_id: "test_openai_reasoning_exp"
+  random_seed: 42
+  output_dir: "runs"
+data:
+  dataset_schema: "sivas"
+  documents_path: "data/raw/kb_documents_fixed.jsonl"
+  questions_path: "data/raw/questions_fixed.jsonl"
+chunking:
+  strategy: "fixed_word"
+  chunk_size: 10
+  chunk_overlap: 0
+embedding:
+  provider: "sentence_transformers"
+  model_name: "fake"
+  normalize_embeddings: true
+  batch_size: 2
+  device: "cpu"
+index:
+  type: "faiss"
+  metric: "cosine"
+  dense_dim: 2
+retrieval:
+  retriever_type: "dense"
+  top_k: 1
+  fetch_k: 1
+reranker:
+  enabled: false
+generation:
+  provider: "openai"
+  model_name: "gpt-5.5"
+  max_tokens: 512
+  reasoning_effort: "none"
+  system_prompt: "Use context."
+telemetry:
+  estimate_cost: false
+runtime:
+  save_csv: false
+  log_level: "INFO"
+  resume: false
+  overwrite: true
+""",
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("OPENAI_API_KEY", "secret-test-key")
+    monkeypatch.setattr("src.pipeline1.orchestrator._project_root", lambda: project_root)
+    monkeypatch.setattr("src.pipeline1.orchestrator.build_embedder", lambda config: _FakeEmbedder())
+    monkeypatch.setattr("src.pipeline1.orchestrator.build_index", lambda config: _FakeIndex())
+    monkeypatch.setattr("src.pipeline1.orchestrator.build_generator", lambda config: _FakeGenerator())
+
+    run_dir = run_pipeline(str(cfg_path))
+
+    manifest_text = (run_dir / "run_manifest.json").read_text(encoding="utf-8")
+    manifest = json.loads(manifest_text)
+    assert manifest["resolved_config"]["generation"]["reasoning_effort"] == "none"
+    assert manifest["resolved_config"]["generation"]["max_tokens"] == 512
+    assert manifest["models"]["generator_provider"] == "openai"
+    assert manifest["models"]["generator_model"] == "gpt-5.5"
+    assert "secret-test-key" not in manifest_text
+
+
 def test_official_pipeline1_question_failure_marks_run_fail(tmp_path, monkeypatch):
     project_root = tmp_path
     data_dir = project_root / "data" / "raw"

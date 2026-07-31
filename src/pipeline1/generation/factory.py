@@ -19,6 +19,7 @@ def build_generator(config):
             model_name=config.model_name,
             temperature=config.temperature,
             max_tokens=config.max_tokens,
+            reasoning_effort=config.reasoning_effort,
             timeout_s=config.timeout_s,
         )
     return OllamaGenerator(
