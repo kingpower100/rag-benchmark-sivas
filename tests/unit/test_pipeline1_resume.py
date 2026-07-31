@@ -2,6 +2,7 @@ import json
 
 import pytest
 
+from src.pipeline1.io.result_writer import ResultWriter
 from src.pipeline1.orchestrator import _prepare_run_dir, _validate_resume_compatible
 
 
@@ -84,3 +85,130 @@ def test_overwrite_true_allows_clean_rerun(tmp_path):
 def test_resume_false_existing_dir_fails_without_overwrite(tmp_path):
     with pytest.raises(FileExistsError):
         _prepare_run_dir(tmp_path, resume=False, overwrite=False)
+
+
+# ── ResultWriter.load_existing_question_ids — validity-aware resume ───────────
+
+def _write_jsonl(path, rows):
+    path.write_text("\n".join(json.dumps(r) for r in rows) + "\n", encoding="utf-8")
+
+
+def test_resume_skips_valid_rows(tmp_path):
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    _write_jsonl(
+        run_dir / "results.jsonl",
+        [
+            {"question_id": "q1", "answer": "Good answer", "error": None},
+            {"question_id": "q2", "answer": "Another answer", "error": None},
+        ],
+    )
+    writer = ResultWriter(run_dir)
+    ids = writer.load_existing_question_ids()
+    assert ids == {"q1", "q2"}
+
+
+def test_resume_reruns_empty_answer_rows(tmp_path):
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    _write_jsonl(
+        run_dir / "results.jsonl",
+        [
+            {"question_id": "q1", "answer": "Good answer", "error": None},
+            # empty answer, no error — the G03 failure pattern
+            {"question_id": "q2", "answer": "", "error": None},
+        ],
+    )
+    writer = ResultWriter(run_dir)
+    ids = writer.load_existing_question_ids()
+    assert "q1" in ids
+    assert "q2" not in ids
+
+
+def test_resume_reruns_whitespace_answer_rows(tmp_path):
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    _write_jsonl(
+        run_dir / "results.jsonl",
+        [{"question_id": "q1", "answer": "   \n\t  ", "error": None}],
+    )
+    writer = ResultWriter(run_dir)
+    ids = writer.load_existing_question_ids()
+    assert "q1" not in ids
+
+
+def test_resume_reruns_error_rows(tmp_path):
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    _write_jsonl(
+        run_dir / "results.jsonl",
+        [
+            {"question_id": "q1", "answer": "Good", "error": None},
+            {"question_id": "q2", "answer": "", "error": "OpenAI returned an empty generated answer"},
+        ],
+    )
+    writer = ResultWriter(run_dir)
+    ids = writer.load_existing_question_ids()
+    assert "q1" in ids
+    assert "q2" not in ids
+
+
+def test_resume_reruns_missing_answer_rows(tmp_path):
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    _write_jsonl(
+        run_dir / "results.jsonl",
+        [{"question_id": "q1", "error": None}],  # no "answer" key
+    )
+    writer = ResultWriter(run_dir)
+    ids = writer.load_existing_question_ids()
+    assert "q1" not in ids
+
+
+def test_resume_uses_generated_answer_alias(tmp_path):
+    """Rows written before the 'answer' key was canonicalised use generated_answer."""
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    _write_jsonl(
+        run_dir / "results.jsonl",
+        [{"question_id": "q1", "generated_answer": "A valid answer", "error": None}],
+    )
+    writer = ResultWriter(run_dir)
+    ids = writer.load_existing_question_ids()
+    assert "q1" in ids
+
+
+def test_resume_no_duplicate_question_ids(tmp_path):
+    """If by some chance the same ID appears twice (once valid, once not), it is
+    counted only once — valid."""
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    _write_jsonl(
+        run_dir / "results.jsonl",
+        [
+            {"question_id": "q1", "answer": "", "error": None},
+            {"question_id": "q1", "answer": "Valid answer", "error": None},
+        ],
+    )
+    writer = ResultWriter(run_dir)
+    ids = writer.load_existing_question_ids()
+    # The second (valid) row makes q1 eligible to skip.
+    assert "q1" in ids
+    assert len(ids) == 1
+
+
+def test_resume_empty_file_returns_empty_set(tmp_path):
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    (run_dir / "results.jsonl").write_text("", encoding="utf-8")
+    writer = ResultWriter(run_dir)
+    ids = writer.load_existing_question_ids()
+    assert ids == set()
+
+
+def test_resume_missing_file_returns_empty_set(tmp_path):
+    run_dir = tmp_path / "run"
+    run_dir.mkdir()
+    writer = ResultWriter(run_dir)
+    ids = writer.load_existing_question_ids()
+    assert ids == set()

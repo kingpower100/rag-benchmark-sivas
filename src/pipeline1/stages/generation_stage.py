@@ -170,10 +170,22 @@ class GenerationStage(BaseStage):
             answer = ""
             input_tokens = 0
             output_tokens = 0
+            completion_diagnostics: dict = {}
         else:
             answer = generation.answer
             input_tokens = generation.input_tokens
             output_tokens = generation.output_tokens
+            completion_diagnostics = generation.completion_diagnostics or {}
+            # Provider-agnostic contract: a successful generation must produce
+            # non-empty, non-whitespace text.  If the generator returned an
+            # empty answer without raising (e.g. Ollama returning ""), treat
+            # it the same as a generation failure so it is surfaced as an error
+            # row and eligible for resume re-run.
+            if not (answer and answer.strip()):
+                error = error or "Generator returned an empty answer"
+                answer = ""
+                input_tokens = 0
+                output_tokens = 0
         generation_time_ms = (time.perf_counter() - generation_start) * 1000
         self._write_event(
             stage="generation",
@@ -307,6 +319,7 @@ class GenerationStage(BaseStage):
             generation_context_ids=generation_context_ids,
             parent_context_diagnostics=retrieval_row.parent_context_diagnostics if parent_context_enabled else {},
             parent_context_enabled=parent_context_enabled,
+            completion_diagnostics=completion_diagnostics,
             error=error,
         )
         return GenerationRow(

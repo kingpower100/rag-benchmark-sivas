@@ -92,6 +92,9 @@ class OutputRecord(BaseModel):
     generation_context_ids: list[str] = Field(default_factory=list)
     parent_context_diagnostics: dict = Field(default_factory=dict)
     parent_context_enabled: bool = False
+    # Provider-specific generation diagnostics (finish_reason, reasoning_tokens, …).
+    # Populated by OpenAI generator; None / {} for Ollama and Mistral.
+    completion_diagnostics: dict = Field(default_factory=dict)
     error: Optional[str] = None
 
     def to_export_record(self) -> dict:
@@ -186,6 +189,7 @@ class OutputRecord(BaseModel):
             "generation_context_ids": self.generation_context_ids,
             "parent_context_diagnostics": self.parent_context_diagnostics,
             "parent_context_enabled": self.parent_context_enabled,
+            "completion_diagnostics": self.completion_diagnostics,
         }
 
     @model_validator(mode="after")

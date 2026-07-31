@@ -375,6 +375,10 @@ def run_pipeline(config_path: str) -> Path:
                 ).run(StageInput({"retrieval_rows": parent_context_output.retrieval_rows, "final_top_k": final_top_k}))
                 generation_row = generation_output.generation_rows[0]
                 record = generation_row.output_record
+                # A record that contains an error or an empty/whitespace answer is
+                # a failure even though no exception escaped the generation stage.
+                if record.error or not (record.generated_answer and record.generated_answer.strip()):
+                    failed_question_ids.append(str(query.question_id))
             except Exception as ex:
                 logger.exception("checkpoint_row_failed question_id=%s row=%s/%s", query.question_id, row_index, len(pending_queries))
                 failed_question_ids.append(str(query.question_id))
@@ -420,17 +424,25 @@ def run_pipeline(config_path: str) -> Path:
     finally:
         run_writer_stage.close()
 
+    # Reconcile before any downstream code reads result files for manifests or
+    # validation. Resume can append valid replacements after invalid historical
+    # rows; fresh runs can also produce fallback error rows. Official artifacts
+    # are canonical valid rows only, one per question_id.
+    reconciled_rows = writer.reconcile_outputs() if writer is not None else []
+    logger.info("result_reconciliation final_row_count=%s", len(reconciled_rows))
+
     resolved_config = cfg.model_dump()
     if cfg.generation.provider == "ollama":
         resolved_config["generation"]["base_url"] = os.getenv("OLLAMA_BASE_URL", cfg.generation.base_url)
     end_time = time.time()
     output_counts = RunWriterStage.output_row_counts(run_dir)
-    failed_questions = len(failed_question_ids)
-    completed_before_run = len(existing_ids) - written
-    successful_questions = max(0, completed_before_run + attempted - failed_questions)
-    expected_questions = len(queries)
-    processed_questions = completed_before_run + attempted
-    run_status = "PASS" if failed_questions == 0 and processed_questions == expected_questions else "FAIL"
+    reconciled_stats = _reconciled_result_stats(queries, reconciled_rows)
+    expected_questions = reconciled_stats["expected_questions"]
+    processed_questions = reconciled_stats["processed_questions"]
+    successful_questions = reconciled_stats["successful_questions"]
+    failed_questions = reconciled_stats["failed_questions"]
+    run_status = reconciled_stats["run_status"]
+    failed_question_ids = sorted(set(failed_question_ids) | set(reconciled_stats["missing_question_ids"]))
     performance_metrics = _performance_metrics(
         cfg=cfg,
         run_dir=run_dir,
@@ -1076,6 +1088,31 @@ def _output_row_counts(run_dir: Path) -> dict[str, int | None]:
             row_count = sum(1 for line in f if line.strip())
         counts[name] = max(0, row_count - 1) if name.endswith(".csv") and row_count else row_count
     return counts
+
+
+def _reconciled_result_stats(queries: list, rows: list[dict]) -> dict:
+    expected_ids = [str(query.question_id) for query in queries]
+    row_ids = [str(row.get("question_id")) for row in rows]
+    row_id_set = set(row_ids)
+    missing_ids = [question_id for question_id in expected_ids if question_id not in row_id_set]
+    duplicate_ids = sorted({question_id for question_id in row_ids if row_ids.count(question_id) > 1})
+    expected_questions = len(expected_ids)
+    successful_questions = len(row_ids)
+    failed_questions = len(missing_ids) + len(duplicate_ids)
+    run_status = (
+        "PASS"
+        if successful_questions == expected_questions and failed_questions == 0 and row_ids == expected_ids
+        else "FAIL"
+    )
+    return {
+        "expected_questions": expected_questions,
+        "processed_questions": successful_questions,
+        "successful_questions": successful_questions,
+        "failed_questions": failed_questions,
+        "run_status": run_status,
+        "missing_question_ids": missing_ids,
+        "duplicate_question_ids": duplicate_ids,
+    }
 
 
 def _git_commit(project_root: Path) -> str | None:

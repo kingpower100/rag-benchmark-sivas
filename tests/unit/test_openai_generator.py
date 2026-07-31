@@ -251,3 +251,245 @@ def test_valid_response_returns_answer_text(monkeypatch):
     assert result.answer == "final answer"
     assert result.input_tokens == 10
     assert result.output_tokens == 4
+
+
+# ── Empty-answer rejection ────────────────────────────────────────────────────
+
+def test_empty_content_raises_runtime_error(monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "secret-test-key")
+    monkeypatch.setattr(
+        "requests.post",
+        lambda url, json, headers, timeout: _FakeResponse(
+            payload={"choices": [{"message": {"content": ""}}]}
+        ),
+    )
+
+    with pytest.raises(RuntimeError, match="empty generated answer"):
+        OpenAIGenerator("gpt-4.1").generate("Prompt")
+
+
+def test_whitespace_only_content_raises_runtime_error(monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "secret-test-key")
+    monkeypatch.setattr(
+        "requests.post",
+        lambda url, json, headers, timeout: _FakeResponse(
+            payload={"choices": [{"message": {"content": "   \n\t  "}}]}
+        ),
+    )
+
+    with pytest.raises(RuntimeError, match="empty generated answer"):
+        OpenAIGenerator("gpt-4.1").generate("Prompt")
+
+
+def test_unknown_text_is_not_treated_as_empty(monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "secret-test-key")
+    monkeypatch.setattr(
+        "requests.post",
+        lambda url, json, headers, timeout: _FakeResponse(
+            payload={
+                "choices": [{"message": {"content": "UNKNOWN"}}],
+                "usage": {"prompt_tokens": 5, "completion_tokens": 1},
+            }
+        ),
+    )
+
+    result = OpenAIGenerator("gpt-4.1").generate("Prompt")
+    assert result.answer == "UNKNOWN"
+
+
+def test_content_filter_finish_reason_raises(monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "secret-test-key")
+    monkeypatch.setattr(
+        "requests.post",
+        lambda url, json, headers, timeout: _FakeResponse(
+            payload={"choices": [{"finish_reason": "content_filter", "message": {"content": None}}]}
+        ),
+    )
+
+    with pytest.raises(RuntimeError, match="content filter"):
+        OpenAIGenerator("gpt-4.1").generate("Prompt")
+
+
+def test_null_content_raises_descriptive_error(monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "secret-test-key")
+    monkeypatch.setattr(
+        "requests.post",
+        lambda url, json, headers, timeout: _FakeResponse(
+            payload={"choices": [{"message": {"content": None}}]}
+        ),
+    )
+
+    with pytest.raises(RuntimeError, match="content is null"):
+        OpenAIGenerator("gpt-4.1").generate("Prompt")
+
+
+# ── Completion diagnostics ────────────────────────────────────────────────────
+
+def test_finish_reason_is_recorded_in_completion_diagnostics(monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "secret-test-key")
+    monkeypatch.setattr(
+        "requests.post",
+        lambda url, json, headers, timeout: _FakeResponse(
+            payload={
+                "choices": [{"finish_reason": "stop", "message": {"content": "ok"}}],
+                "usage": {"prompt_tokens": 5, "completion_tokens": 1, "total_tokens": 6},
+            }
+        ),
+    )
+
+    result = OpenAIGenerator("gpt-4.1").generate("Prompt")
+    diag = result.completion_diagnostics
+    assert diag is not None
+    assert diag["finish_reason"] == "stop"
+    assert diag["prompt_tokens"] == 5
+    assert diag["completion_tokens"] == 1
+    assert diag["total_tokens"] == 6
+    assert diag["reasoning_tokens"] is None
+
+
+def test_reasoning_tokens_recorded_when_present(monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "secret-test-key")
+    monkeypatch.setattr(
+        "requests.post",
+        lambda url, json, headers, timeout: _FakeResponse(
+            payload={
+                "choices": [{"finish_reason": "stop", "message": {"content": "answer"}}],
+                "usage": {
+                    "prompt_tokens": 10,
+                    "completion_tokens": 20,
+                    "total_tokens": 30,
+                    "completion_tokens_details": {"reasoning_tokens": 8},
+                },
+            }
+        ),
+    )
+
+    result = OpenAIGenerator("gpt-4.1").generate("Prompt")
+    assert result.completion_diagnostics["reasoning_tokens"] == 8
+
+
+def test_reasoning_tokens_none_when_absent(monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "secret-test-key")
+    monkeypatch.setattr(
+        "requests.post",
+        lambda url, json, headers, timeout: _FakeResponse(
+            payload={
+                "choices": [{"finish_reason": "stop", "message": {"content": "answer"}}],
+                "usage": {"prompt_tokens": 5, "completion_tokens": 2, "total_tokens": 7},
+            }
+        ),
+    )
+
+    result = OpenAIGenerator("gpt-4.1").generate("Prompt")
+    assert result.completion_diagnostics["reasoning_tokens"] is None
+
+
+def test_length_finish_reason_logs_warning_and_keeps_answer(monkeypatch, caplog):
+    monkeypatch.setenv("OPENAI_API_KEY", "secret-test-key")
+    monkeypatch.setattr(
+        "requests.post",
+        lambda url, json, headers, timeout: _FakeResponse(
+            payload={
+                "choices": [{"finish_reason": "length", "message": {"content": "partial answer"}}],
+                "usage": {"prompt_tokens": 5, "completion_tokens": 512},
+            }
+        ),
+    )
+
+    with caplog.at_level(logging.WARNING, logger="src.pipeline1.generation.openai_generator"):
+        result = OpenAIGenerator("gpt-4.1", max_tokens=512).generate("Prompt")
+
+    assert result.answer == "partial answer"
+    assert result.completion_diagnostics["finish_reason"] == "length"
+    assert "truncated" in caplog.text.lower() or "cut short" in caplog.text.lower()
+
+
+def test_network_error_is_retried(monkeypatch):
+    monkeypatch.setenv("OPENAI_API_KEY", "secret-test-key")
+    monkeypatch.setattr("src.pipeline1.generation.openai_generator.time.sleep", lambda s: None)
+    calls = []
+
+    def fake_post(url, json, headers, timeout):
+        calls.append(1)
+        if len(calls) < 3:
+            raise requests.ConnectionError("refused")
+        return _FakeResponse(
+            payload={
+                "choices": [{"finish_reason": "stop", "message": {"content": "recovered"}}],
+                "usage": {"prompt_tokens": 3, "completion_tokens": 1},
+            }
+        )
+
+    monkeypatch.setattr("requests.post", fake_post)
+
+    result = OpenAIGenerator("gpt-4.1").generate("Prompt")
+    assert result.answer == "recovered"
+    assert len(calls) == 3
+
+
+# ── Temperature family hardening ──────────────────────────────────────────────
+
+@pytest.mark.parametrize("model_name", [
+    "gpt-5.5",
+    "gpt-5.5-turbo",
+    "gpt-5.5-preview-2025-01",
+])
+def test_gpt55_family_omits_temperature(monkeypatch, model_name):
+    monkeypatch.setenv("OPENAI_API_KEY", "secret-test-key")
+    captured = {}
+    monkeypatch.setattr("requests.post", lambda url, json, headers, timeout: (captured.update(payload=json) or _FakeResponse()))
+    OpenAIGenerator(model_name).generate("Prompt")
+    assert "temperature" not in captured["payload"], f"temperature must not be sent for {model_name}"
+
+
+@pytest.mark.parametrize("model_name", [
+    "o1",
+    "o1-mini",
+    "o1-preview",
+    "o1-2024-12-17",
+])
+def test_o1_family_omits_temperature(monkeypatch, model_name):
+    monkeypatch.setenv("OPENAI_API_KEY", "secret-test-key")
+    captured = {}
+    monkeypatch.setattr("requests.post", lambda url, json, headers, timeout: (captured.update(payload=json) or _FakeResponse()))
+    OpenAIGenerator(model_name).generate("Prompt")
+    assert "temperature" not in captured["payload"], f"temperature must not be sent for {model_name}"
+
+
+@pytest.mark.parametrize("model_name", [
+    "o3",
+    "o3-mini",
+    "o3-mini-2025-01-31",
+])
+def test_o3_family_omits_temperature(monkeypatch, model_name):
+    monkeypatch.setenv("OPENAI_API_KEY", "secret-test-key")
+    captured = {}
+    monkeypatch.setattr("requests.post", lambda url, json, headers, timeout: (captured.update(payload=json) or _FakeResponse()))
+    OpenAIGenerator(model_name).generate("Prompt")
+    assert "temperature" not in captured["payload"], f"temperature must not be sent for {model_name}"
+
+
+@pytest.mark.parametrize("model_name", [
+    "o4-mini",
+    "o4-mini-2025-04-16",
+])
+def test_o4_mini_family_omits_temperature(monkeypatch, model_name):
+    monkeypatch.setenv("OPENAI_API_KEY", "secret-test-key")
+    captured = {}
+    monkeypatch.setattr("requests.post", lambda url, json, headers, timeout: (captured.update(payload=json) or _FakeResponse()))
+    OpenAIGenerator(model_name).generate("Prompt")
+    assert "temperature" not in captured["payload"], f"temperature must not be sent for {model_name}"
+
+
+@pytest.mark.parametrize("model_name", [
+    "gpt-4o",
+    "gpt-4.1",
+    "gpt-4o-mini",
+    "gpt-3.5-turbo",
+])
+def test_standard_models_send_temperature(monkeypatch, model_name):
+    monkeypatch.setenv("OPENAI_API_KEY", "secret-test-key")
+    captured = {}
+    monkeypatch.setattr("requests.post", lambda url, json, headers, timeout: (captured.update(payload=json) or _FakeResponse()))
+    OpenAIGenerator(model_name, temperature=0.2).generate("Prompt")
+    assert captured["payload"].get("temperature") == 0.2, f"{model_name} should send temperature"

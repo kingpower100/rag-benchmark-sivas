@@ -196,6 +196,77 @@ def _retrieval_row(text="alpha", question_id="q1", question="What is the answer?
     )
 
 
+def test_generation_stage_empty_answer_is_treated_as_error():
+    """A generator that returns GenerationResult(answer='') must produce an error row."""
+    cfg = _cfg()
+    output = GenerationStage(cfg, _Retriever(), generator_factory=lambda config: _EmptyAnswerGenerator()).run(
+        StageInput({"retrieval_rows": [_retrieval_row()], "final_top_k": 1})
+    )
+
+    record = output.generation_rows[0].output_record
+    assert record.generated_answer == ""
+    assert record.error is not None
+    assert "empty" in record.error.lower()
+    assert record.input_tokens == 0
+    assert record.output_tokens == 0
+    assert record.total_tokens == 0
+
+
+def test_generation_stage_whitespace_answer_is_treated_as_error():
+    """Whitespace-only answers must also be rejected."""
+    cfg = _cfg()
+    output = GenerationStage(cfg, _Retriever(), generator_factory=lambda config: _WhitespaceAnswerGenerator()).run(
+        StageInput({"retrieval_rows": [_retrieval_row()], "final_top_k": 1})
+    )
+
+    record = output.generation_rows[0].output_record
+    assert record.generated_answer == ""
+    assert record.error is not None
+
+
+def test_generation_stage_completion_diagnostics_propagated():
+    """completion_diagnostics from GenerationResult must appear on the output record."""
+    cfg = _cfg(provider="openai", model_name="gpt-4.1")
+    diag = {"finish_reason": "stop", "completion_tokens": 5, "prompt_tokens": 10,
+            "total_tokens": 15, "reasoning_tokens": None}
+    output = GenerationStage(
+        cfg, _Retriever(),
+        generator_factory=lambda config: _DiagnosticsGenerator(diag),
+    ).run(StageInput({"retrieval_rows": [_retrieval_row()], "final_top_k": 1}))
+
+    record = output.generation_rows[0].output_record
+    assert record.completion_diagnostics == diag
+
+
+def test_generation_stage_completion_diagnostics_empty_when_not_provided():
+    """Ollama/Mistral generators that do not supply diagnostics produce an empty dict."""
+    cfg = _cfg()
+    output = GenerationStage(cfg, _Retriever(), generator_factory=lambda config: _Generator("ok")).run(
+        StageInput({"retrieval_rows": [_retrieval_row()], "final_top_k": 1})
+    )
+
+    record = output.generation_rows[0].output_record
+    assert record.completion_diagnostics == {}
+
+
+class _EmptyAnswerGenerator:
+    def generate(self, prompt):
+        return GenerationResult(answer="", input_tokens=5, output_tokens=0)
+
+
+class _WhitespaceAnswerGenerator:
+    def generate(self, prompt):
+        return GenerationResult(answer="   \n  ", input_tokens=5, output_tokens=0)
+
+
+class _DiagnosticsGenerator:
+    def __init__(self, diag):
+        self._diag = diag
+
+    def generate(self, prompt):
+        return GenerationResult(answer="ok", input_tokens=10, output_tokens=5, completion_diagnostics=self._diag)
+
+
 def _cfg(max_context_chars=24000, provider="ollama", model_name="fake"):
     return PipelineConfig.model_validate(
         {
