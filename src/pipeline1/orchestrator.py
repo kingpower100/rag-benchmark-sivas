@@ -1455,13 +1455,27 @@ def _retrieval_evidence_manifest(cfg: PipelineConfig, run_dir: Path) -> dict:
                 final_mode = str(diagnostics.get("final_retrieval_mode") or diagnostics.get("retrieval_scope") or "")
                 if final_mode == "category" and not fallback_used:
                     summary["category_route_count"] += 1
-                    is_hybrid = cfg.retrieval.retriever_type == "adaptive_category_aware_hybrid_rrf"
+                    is_hybrid = (
+                        cfg.retrieval.retriever_type
+                        == "adaptive_category_aware_hybrid_rrf"
+                    )
                     if is_hybrid:
-                        if diagnostics.get("category_filter_applied_dense") is not True or diagnostics.get("category_filter_applied_bm25") is not True:
-                            raise RuntimeError("R01 category route lacks dense/BM25 category-filter evidence.")
+                        dense_filter_applied = (
+                            diagnostics.get("category_filter_applied_dense") is True
+                        )
+                        bm25_filter_applied = (
+                            diagnostics.get("category_filter_applied_bm25") is True
+                        )
+                        if not dense_filter_applied or not bm25_filter_applied:
+                            raise RuntimeError(
+                                "R01 Hybrid category route lacks dense/BM25 "
+                                "category-filter evidence."
+                            )
                     else:
                         if diagnostics.get("category_filter_applied") is not True:
-                            raise RuntimeError("R01 category route lacks category-filter evidence.")
+                            raise RuntimeError(
+                                "R01 dense category route lacks category-filter evidence."
+                            )
                 elif final_mode == "global" or fallback_used:
                     summary["global_route_count"] += 1
                     if fallback_used:
