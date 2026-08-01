@@ -30,12 +30,30 @@ def validate_pipeline1_source(
     expected_experiment_id = getattr(source_validation, "expected_experiment_id", None)
     expected_retriever_type = getattr(source_validation, "expected_retriever_type", None)
     expected_orchestration_enabled = getattr(source_validation, "expected_orchestration_enabled", None)
+    expected_generator_provider = getattr(source_validation, "expected_generator_provider", None)
+    expected_generator_model = getattr(source_validation, "expected_generator_model", None)
+    expected_top_k = getattr(source_validation, "expected_top_k", None)
+    expected_fetch_k = getattr(source_validation, "expected_fetch_k", None)
+    expected_reranker_enabled = getattr(source_validation, "expected_reranker_enabled", None)
+    expected_fallback_to_global = getattr(source_validation, "expected_fallback_to_global", None)
     require_hybrid = bool(getattr(source_validation, "require_hybrid_diagnostics", False))
     require_reranker = bool(getattr(source_validation, "require_reranker_diagnostics", False))
     require_routing = bool(getattr(source_validation, "require_routing_diagnostics", False))
     require_reconciliation = bool(getattr(source_validation, "require_routing_reconciliation", False))
 
     _validate_manifest_pass(manifest, results_path, pipeline_name)
+    if expected_generator_provider:
+        _require_equal(_manifest_generator_provider(manifest), expected_generator_provider, "manifest generator_provider", pipeline_name)
+    if expected_generator_model:
+        _require_equal(_manifest_generator_model(manifest), expected_generator_model, "manifest generator_model", pipeline_name)
+    if expected_top_k is not None:
+        _require_equal(_manifest_top_k(manifest), expected_top_k, "manifest retrieval.top_k", pipeline_name)
+    if expected_fetch_k is not None:
+        _require_equal(_manifest_fetch_k(manifest), expected_fetch_k, "manifest retrieval.fetch_k", pipeline_name)
+    if expected_reranker_enabled is not None:
+        _require_equal(_manifest_reranker_enabled(manifest), expected_reranker_enabled, "manifest reranker_enabled", pipeline_name)
+    if expected_fallback_to_global is not None:
+        _require_equal(_manifest_fallback_to_global(manifest), expected_fallback_to_global, "manifest retrieval.fallback_to_global", pipeline_name)
     if not rows:
         raise ValueError(f"{pipeline_name} source validation failed: Pipeline 1 results contain zero rows.")
     if expected_experiment_id:
@@ -213,6 +231,45 @@ def _manifest_successful_questions(manifest: dict[str, Any], default: int) -> in
 def _manifest_top_k(manifest: dict[str, Any]) -> int | None:
     value = manifest.get("config", {}).get("retrieval", {}).get("top_k")
     return None if value is None else int(value)
+
+
+def _manifest_generator_provider(manifest: dict[str, Any]) -> str | None:
+    return (
+        manifest.get("models", {}).get("generator_provider")
+        or manifest.get("resolved_config", {}).get("generation", {}).get("provider")
+    )
+
+
+def _manifest_generator_model(manifest: dict[str, Any]) -> str | None:
+    return (
+        manifest.get("models", {}).get("generator_model")
+        or manifest.get("resolved_config", {}).get("generation", {}).get("model_name")
+    )
+
+
+def _manifest_fetch_k(manifest: dict[str, Any]) -> int | None:
+    value = (
+        manifest.get("config", {}).get("retrieval", {}).get("fetch_k")
+        or manifest.get("resolved_config", {}).get("retrieval", {}).get("fetch_k")
+    )
+    return None if value is None else int(value)
+
+
+def _manifest_reranker_enabled(manifest: dict[str, Any]) -> bool | None:
+    value = manifest.get("models", {}).get("reranker_enabled")
+    if value is None:
+        value = manifest.get("config", {}).get("reranker", {}).get("enabled")
+    if value is None:
+        value = manifest.get("resolved_config", {}).get("reranker", {}).get("enabled")
+    return None if value is None else bool(value)
+
+
+def _manifest_fallback_to_global(manifest: dict[str, Any]) -> bool | None:
+    value = (
+        manifest.get("config", {}).get("retrieval", {}).get("fallback_to_global")
+        or manifest.get("resolved_config", {}).get("retrieval", {}).get("fallback_to_global")
+    )
+    return None if value is None else bool(value)
 
 
 def _require_equal(observed: Any, expected: Any, label: str, pipeline_name: str) -> None:

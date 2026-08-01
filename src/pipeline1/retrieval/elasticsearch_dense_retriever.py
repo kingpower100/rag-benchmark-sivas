@@ -138,12 +138,16 @@ class ElasticsearchDenseRetriever(BaseRetriever):
     ) -> list[RetrievalItem]:
         """Dense retrieval scoped to a single category via an Elasticsearch term filter."""
         candidate_k = max(top_k, self.fetch_k)
-        query_vec = self.embedder.encode_query(question)
         if not hasattr(self.index, "search_hits_filtered"):
             raise RuntimeError(
                 "Category-scoped Elasticsearch dense retrieval requires filtered "
                 "search support; refusing unfiltered fallback."
             )
+        self.logger.info(
+            "ElasticsearchDense retrieve_with_category: category=%r field=%r candidate_k=%s",
+            category, category_field, candidate_k,
+        )
+        query_vec = self.embedder.encode_query(question)
         hits = self.index.search_hits_filtered(
             query_vec, candidate_k, f"metadata.{category_field}", category
         )
@@ -158,6 +162,10 @@ class ElasticsearchDenseRetriever(BaseRetriever):
             "hits_count": len(items),
             "top_k": top_k,
         }
+        self.logger.info(
+            "ElasticsearchDense retrieve_with_category done: hits=%s category_filter_applied_dense=True",
+            len(items),
+        )
         return items
 
     def extract_query_metadata(self, question: str):

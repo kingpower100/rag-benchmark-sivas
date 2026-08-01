@@ -1,0 +1,102 @@
+extends: "R01_adaptive_category_aware.yaml"
+
+# ============================================================
+# F00 — Final Production System
+# ============================================================
+# Final integrated RAG system combining every benchmark winner
+# and the adaptive routing strategy validated in the B00 audit.
+#
+# Inheritance chain (innermost → outermost):
+#   F00_final_system.yaml
+#     → R01_adaptive_category_aware.yaml
+#       → A_final.yaml
+#         → A04-K10_top10.yaml
+#           → A03_reranker.yaml
+#             → A02_elasticsearch_hybrid_rrf.yaml
+#               → A00_elasticsearch_dense.yaml
+#                 → E03_mistral_api_embedding.yaml
+#                   → ../phase3_embedding_base.yaml
+#                     → final_experiments/C02_sentence1024.yaml
+#                       → C00_sentence512_baseline.yaml
+#                         → E00-G_global_dense_baseline.yaml
+#
+# Selected components (one winner per benchmark phase):
+#   Chunking   : C02 — sentence / 1024 tokens / 400 token overlap
+#   Embedding  : E03 — mistral-embed (1024 dim, normalize=true)
+#   Backend    : V02-class Elasticsearch script_score cosine
+#   Algorithm  : A02 Hybrid RRF (dense cosine + BM25 via RRF, rrf_k=60)
+#   Reranker   : A03 — BAAI/bge-reranker-v2-m3 (cuda, rerank_top_k=20)
+#   Routing    : R01 — adaptive category-aware with validated global fallback
+#   Generator  : GPT-5.5 (OpenAI API) — same implementation as G03
+#
+# Retrieval depth (identical to B00 for controlled comparison):
+#   top_k  : 5
+#   fetch_k: 20
+#
+# Runtime flow per question:
+#   1. Orchestration LLM (Ollama llama3.1:8b, prompt V4)
+#      predicts the document category and cleans the question.
+#   2. A global Hybrid RRF probe (probe_fetch_k=20) retrieves
+#      candidates across the full Elasticsearch index.
+#   3. Routing validation checks three thresholds:
+#        category_share   >= 0.60
+#        category_count   >= 3
+#        support_margin   >= 2
+#   4a. Thresholds satisfied → Hybrid RRF restricted to the
+#       predicted category (dense script_score + BM25 term filter).
+#   4b. Thresholds not satisfied → global Hybrid RRF fallback
+#       (same algorithm, no category restriction).
+#   5. Cross-encoder reranker (bge-reranker-v2-m3 on GPU) applied
+#      to all 20 retrieved candidates.
+#   6. Top-5 reranked results sent to GPT-5.5 for answer generation.
+#
+# Dense Elasticsearch index  : sivas_phase4_a00_elasticsearch_dense_mistral_embed
+# BM25  Elasticsearch index  : sivas_phase4_a01_bm25_c02_chunks
+# (Both indexes were built during A00/A01 experiments; F00 reuses them.)
+#
+# Authentication (must be set before running):
+#   OPENAI_API_KEY   — GPT-5.5 generation (fails preflight if absent)
+#   MISTRAL_API_KEY  — mistral-embed embedding (loaded by EmbeddingStage)
+#
+# Comparison target: B00_sivas_pgvector_reference
+#   B00 uses pgvector + adaptive dense retrieval with mistral-embed.
+#   F00 uses Elasticsearch + adaptive Hybrid RRF with the same embedding.
+#   top_k and fetch_k are intentionally identical to measure architecture
+#   improvements, not retrieval depth effects.
+#
+# GPT-5.5 implementation notes:
+#   Temperature is omitted in the API payload for gpt-5.5 (handled by
+#   OpenAIGenerator._build_payload; see _NO_CUSTOM_TEMPERATURE_PREFIXES).
+#   Retries: 3 attempts with exponential back-off (1s, 2s base).
+#   Checkpointing: one row written per question; resume=true means a
+#   second execution skips all already-completed questions without making
+#   any additional GPT API calls.
+# ============================================================
+
+experiment:
+  experiment_id: "F00"
+
+# Generation: switch from the inherited Qwen2.5 Ollama model to GPT-5.5.
+# All other generation settings (max_tokens, timeout_s, prompt_path,
+# context budget, truncation strategy) are inherited unchanged from E00-G.
+# Authentication is read from OPENAI_API_KEY (never stored here).
+generation:
+  provider: "openai"
+  model_name: "gpt-5.5"
+  # base_url is informational — OpenAIGenerator always calls
+  # https://api.openai.com/v1/chat/completions directly.
+  base_url: "https://api.openai.com/v1"
+  # temperature is omitted from the OpenAI API payload for gpt-5.5
+  # (model rejects the parameter); 0.0 is recorded for manifest accuracy.
+  temperature: 0.0
+
+# Monetary cost estimation is disabled because GPT-5.5 pricing has not been
+# officially published. Token counts (input_tokens, output_tokens, total_tokens)
+# are recorded normally in every output row and in the run manifest.
+# Update pricing.input_per_1k_tokens_usd / output_per_1k_tokens_usd and
+# re-enable estimate_cost once rates are confirmed.
+telemetry:
+  estimate_cost: false
+  pricing:
+    input_per_1k_tokens_usd: 0.0
+    output_per_1k_tokens_usd: 0.0

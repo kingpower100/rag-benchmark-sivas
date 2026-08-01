@@ -105,6 +105,12 @@ class P3SourceValidationConfig(StrictP3ConfigModel):
     expected_experiment_id: str | None = None
     expected_retriever_type: str | None = None
     expected_orchestration_enabled: bool | None = None
+    expected_generator_provider: str | None = None
+    expected_generator_model: str | None = None
+    expected_top_k: int | None = None
+    expected_fetch_k: int | None = None
+    expected_reranker_enabled: bool | None = None
+    expected_fallback_to_global: bool | None = None
     require_hybrid_diagnostics: bool = False
     require_reranker_diagnostics: bool = False
     require_routing_diagnostics: bool = False

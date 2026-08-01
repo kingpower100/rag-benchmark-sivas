@@ -1,0 +1,62 @@
+extends: "../base_eval.yaml"
+
+# ============================================================
+# F00 Pipeline 2 evaluation config
+# ============================================================
+# Evaluates the saved Pipeline 1 outputs of F00.
+# Never initialises or calls GPT-5.5 — reads results.jsonl only.
+#
+# Source: data/runs/pipeline1/F00/results.jsonl
+# Retriever validated: adaptive_category_aware_hybrid_rrf
+# Orchestration: enabled (llama3.1:8b category routing)
+# Reranker: enabled (BAAI/bge-reranker-v2-m3)
+#
+# Evaluation scope (identical to R01/G03 for controlled comparison):
+#   k  : 5      (matches F00 top_k)
+#   ks : [1,3,5] (matches B00 comparison baseline)
+#
+# Metrics computed:
+#   - Document-level retrieval (MRR, Recall@k)
+#   - Chunk-level retrieval (requires gold_chunk_annotations C02)
+#   - BERTScore (bert-base-multilingual-cased)
+#   - Embedding similarity (multilingual-e5-large)
+#   - Routing diagnostics (category_route_rate, fallback_rate)
+#   - Latency and token usage
+# ============================================================
+
+evaluation:
+  eval_run_id: "F00"
+  strict_failure_threshold: true
+  max_generation_failure_rate: 0.0
+
+inputs:
+  pipeline1_results_path: "data/runs/pipeline1/F00/results.jsonl"
+  rag_outputs:
+    - "data/runs/pipeline1/F00/results.jsonl"
+
+source_validation:
+  expected_experiment_id: "F00"
+  expected_retriever_type: "adaptive_category_aware_hybrid_rrf"
+  expected_orchestration_enabled: true
+  expected_generator_provider: "openai"
+  expected_generator_model: "gpt-5.5"
+  expected_top_k: 5
+  expected_fetch_k: 20
+  expected_reranker_enabled: true
+  expected_fallback_to_global: true
+  require_hybrid_diagnostics: true
+  require_reranker_diagnostics: true
+  require_routing_diagnostics: true
+  require_routing_reconciliation: true
+
+retrieval:
+  k: 5
+  ks: [1, 3, 5]
+
+retrieval_evaluation:
+  document_level:
+    enabled: true
+  chunk_level:
+    enabled: true
+    ground_truth_path: "data/ground_truth/chunk_level/C02_sentence1024_overlap400/gold_chunk_annotations_C02_sentence1024_overlap400.jsonl"
+    missing_question_policy: error

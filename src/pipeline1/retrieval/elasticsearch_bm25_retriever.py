@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from src.pipeline1.retrieval.base import BaseRetriever
 from src.pipeline1.schemas.chunk import ChunkRecord
 from src.pipeline1.schemas.retrieval import RetrievalItem
+
+_log = logging.getLogger(__name__)
 
 
 class ElasticsearchBM25Error(RuntimeError):
@@ -69,6 +72,10 @@ class ElasticsearchBM25Retriever(BaseRetriever):
                 "Category-scoped Elasticsearch BM25 retrieval requires filtered "
                 "Elasticsearch search support; refusing unfiltered fallback."
             )
+        _log.info(
+            "ElasticsearchBM25 retrieve_with_category: index=%r category=%r field=%r top_k=%s",
+            self.index_name, category, category_field, top_k,
+        )
         try:
             response = self.client.search(
                 index=self.index_name,
@@ -98,6 +105,10 @@ class ElasticsearchBM25Retriever(BaseRetriever):
             "hits_count": len(hits),
             "top_k": top_k,
         }
+        _log.info(
+            "ElasticsearchBM25 retrieve_with_category done: hits=%s category_filter_applied_bm25=True",
+            len(hits),
+        )
         return rows
 
     def extract_query_metadata(self, question: str):

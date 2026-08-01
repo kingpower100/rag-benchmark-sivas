@@ -1,0 +1,40 @@
+extends: "../base_pipeline3.yaml"
+
+# ============================================================
+# F00 Pipeline 3 evaluation config
+# ============================================================
+# Evaluates the saved Pipeline 1 answers of F00.
+# Never regenerates GPT-5.5 responses — reads results.jsonl only.
+# Reuses the stable RAGAS and LLM-as-Judge implementation.
+#
+# Source: data/runs/pipeline1/F00/results.jsonl
+# Retriever validated: adaptive_category_aware_hybrid_rrf
+# Orchestration: enabled (llama3.1:8b category routing)
+# Reranker: enabled (BAAI/bge-reranker-v2-m3)
+#
+# Metrics computed:
+#   - RAGAS: faithfulness, answer_relevancy, context_recall
+#   - LLM-as-Judge: correctness, faithfulness, completeness,
+#                   hallucination, context_relevance
+# ============================================================
+
+pipeline3:
+  run_id: "F00"
+
+inputs:
+  pipeline1_results_path: "data/runs/pipeline1/F00/results.jsonl"
+
+source_validation:
+  expected_experiment_id: "F00"
+  expected_retriever_type: "adaptive_category_aware_hybrid_rrf"
+  expected_orchestration_enabled: true
+  expected_generator_provider: "openai"
+  expected_generator_model: "gpt-5.5"
+  expected_top_k: 5
+  expected_fetch_k: 20
+  expected_reranker_enabled: true
+  expected_fallback_to_global: true
+  require_hybrid_diagnostics: true
+  require_reranker_diagnostics: true
+  require_routing_diagnostics: true
+  require_routing_reconciliation: true

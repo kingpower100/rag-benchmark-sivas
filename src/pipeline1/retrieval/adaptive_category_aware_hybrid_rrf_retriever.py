@@ -1,8 +1,12 @@
 from __future__ import annotations
 
+import logging
+
 from src.pipeline1.retrieval.base import BaseRetriever
 from src.pipeline1.schemas.retrieval import RetrievalItem
 from src.pipeline1.utils.ids import stable_retrieved_document_id
+
+_log = logging.getLogger(__name__)
 
 
 class AdaptiveCategoryAwareHybridRRFRetriever(BaseRetriever):
@@ -30,11 +34,27 @@ class AdaptiveCategoryAwareHybridRRFRetriever(BaseRetriever):
 
     def retrieve(self, question: str, top_k: int) -> list[RetrievalItem]:
         if self.active_category and hasattr(self.hybrid_retriever, "retrieve_with_category"):
+            _log.info(
+                "AdaptiveCategoryAwareHybridRRF retrieve: category_filter=True category=%r top_k=%s",
+                self.active_category, top_k,
+            )
             results = self.hybrid_retriever.retrieve_with_category(
                 question, top_k, self.active_category, self.category_field
             )
+            _log.info(
+                "AdaptiveCategoryAwareHybridRRF category retrieve done: results=%s",
+                len(results),
+            )
         else:
+            _log.info(
+                "AdaptiveCategoryAwareHybridRRF retrieve: category_filter=False (global) top_k=%s",
+                top_k,
+            )
             results = self.hybrid_retriever.retrieve(question, top_k)
+            _log.info(
+                "AdaptiveCategoryAwareHybridRRF global retrieve done: results=%s",
+                len(results),
+            )
         self._sync_candidates()
         self.last_retrieval_diagnostics = {
             **dict(getattr(self.hybrid_retriever, "last_retrieval_diagnostics", {})),
@@ -55,8 +75,14 @@ class AdaptiveCategoryAwareHybridRRFRetriever(BaseRetriever):
 
     def retrieve_global_probe(self, question: str, probe_fetch_k: int) -> list[RetrievalItem]:
         """Global Hybrid RRF probe used by the adaptive routing validation logic."""
+        _log.info(
+            "AdaptiveCategoryAwareHybridRRF global probe: probe_fetch_k=%s", probe_fetch_k
+        )
         self.set_active_category(None)
         results = self.hybrid_retriever.retrieve(question, probe_fetch_k)
+        _log.info(
+            "AdaptiveCategoryAwareHybridRRF global probe done: results=%s", len(results)
+        )
         self._sync_candidates()
         self.last_retrieval_diagnostics = {
             **dict(getattr(self.hybrid_retriever, "last_retrieval_diagnostics", {})),

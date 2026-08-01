@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import time
 
 from src.pipeline1.retrieval.adapters import (
@@ -10,6 +11,9 @@ from src.pipeline1.retrieval.adapters import (
 from src.pipeline1.retrieval.base import BaseRetriever
 from src.pipeline1.retrieval.contracts import DedupePolicy, RetrievalTrace, SearchQuery
 from src.pipeline1.schemas.retrieval import RetrievalItem
+
+
+_log = logging.getLogger(__name__)
 
 
 class ElasticsearchHybridRRFRetriever(BaseRetriever):
@@ -115,6 +119,10 @@ class ElasticsearchHybridRRFRetriever(BaseRetriever):
         """
         dense_k = max(top_k, self.dense_fetch_k)
         bm25_k = max(top_k, self.bm25_fetch_k)
+        _log.info(
+            "ElasticsearchHybridRRF retrieve_with_category: category=%r field=%r dense_k=%s bm25_k=%s rrf_k=%s",
+            category, category_field, dense_k, bm25_k, self.rrf_k,
+        )
         if hasattr(self.dense_retriever, "retrieve_with_category"):
             dense = self.dense_retriever.retrieve_with_category(question, dense_k, category, category_field)
         else:
@@ -140,6 +148,11 @@ class ElasticsearchHybridRRFRetriever(BaseRetriever):
             "category_filter_field": category_field,
             "detected_category": category,
         }
+        _log.info(
+            "ElasticsearchHybridRRF retrieve_with_category done: dense=%s bm25=%s fused=%s final=%s "
+            "category_filter_applied_dense=True category_filter_applied_bm25=True",
+            len(dense), len(bm25), len(fused), min(top_k, len(fused)),
+        )
         return fused[:top_k]
 
     def extract_query_metadata(self, question: str):
