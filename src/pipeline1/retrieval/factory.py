@@ -131,6 +131,7 @@ def _build_adaptive_category_aware_hybrid_rrf_retriever(config: RetrievalConfig,
     return AdaptiveCategoryAwareHybridRRFRetriever(
         hybrid_retriever=hybrid,
         category_field=config.category_field,
+        category_filter_field=config.category_filter_field,
     )
 
 

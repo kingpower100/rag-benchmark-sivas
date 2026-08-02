@@ -20,10 +20,17 @@ class AdaptiveCategoryAwareHybridRRFRetriever(BaseRetriever):
     retrieve() path is used with no change to algorithm or scoring.
     """
 
-    def __init__(self, hybrid_retriever, category_field: str = "kategorie") -> None:
+    def __init__(
+        self,
+        hybrid_retriever,
+        category_field: str = "kategorie",
+        category_filter_field: str | None = None,
+    ) -> None:
         self.hybrid_retriever = hybrid_retriever
         self.category_field = category_field
+        self.category_filter_field = category_filter_field or f"metadata.{category_field}.keyword"
         self.active_category: str | None = None
+        self.category_retrieval_empty: bool = False
         self.last_dense_candidates: list[RetrievalItem] = []
         self.last_bm25_candidates: list[RetrievalItem] = []
         self.last_fused_candidates: list[RetrievalItem] = []
@@ -33,18 +40,36 @@ class AdaptiveCategoryAwareHybridRRFRetriever(BaseRetriever):
         self.active_category = str(category).strip() if category else None
 
     def retrieve(self, question: str, top_k: int) -> list[RetrievalItem]:
+        self.category_retrieval_empty = False
+        _category_filter_diag: dict = {}
+
         if self.active_category and hasattr(self.hybrid_retriever, "retrieve_with_category"):
             _log.info(
                 "AdaptiveCategoryAwareHybridRRF retrieve: category_filter=True category=%r top_k=%s",
                 self.active_category, top_k,
             )
             results = self.hybrid_retriever.retrieve_with_category(
-                question, top_k, self.active_category, self.category_field
+                question, top_k, self.active_category, self.category_filter_field
             )
             _log.info(
                 "AdaptiveCategoryAwareHybridRRF category retrieve done: results=%s",
                 len(results),
             )
+            if not results:
+                self.category_retrieval_empty = True
+                _category_filter_diag = {
+                    k: dict(getattr(self.hybrid_retriever, "last_retrieval_diagnostics", {})).get(k)
+                    for k in ("category_filter_applied_dense", "category_filter_applied_bm25")
+                }
+                _log.warning(
+                    "AdaptiveCategoryAwareHybridRRF: category=%r returned 0 candidates; falling back to global",
+                    self.active_category,
+                )
+                results = self.hybrid_retriever.retrieve(question, top_k)
+                _log.info(
+                    "AdaptiveCategoryAwareHybridRRF empty-category global fallback done: results=%s",
+                    len(results),
+                )
         else:
             _log.info(
                 "AdaptiveCategoryAwareHybridRRF retrieve: category_filter=False (global) top_k=%s",
@@ -58,18 +83,20 @@ class AdaptiveCategoryAwareHybridRRFRetriever(BaseRetriever):
         self._sync_candidates()
         self.last_retrieval_diagnostics = {
             **dict(getattr(self.hybrid_retriever, "last_retrieval_diagnostics", {})),
-            "category_filter_field": self.category_field,
+            "category_filter_field": self.category_filter_field,
             "detected_category": self.active_category,
             "category_filter_applied": bool(self.active_category),
-            "category_fallback_used": False,
+            "category_fallback_used": self.category_retrieval_empty,
             "category_filter_fallback": False,
+            "category_retrieval_empty": self.category_retrieval_empty,
             "retrieval_backend": (
                 "adaptive_category_aware_hybrid_rrf_category"
-                if self.active_category
+                if (self.active_category and not self.category_retrieval_empty)
                 else "adaptive_category_aware_hybrid_rrf_global"
             ),
             "category_index_used": False,
             **_result_payload(results, self.category_field),
+            **_category_filter_diag,
         }
         return results
 
@@ -86,7 +113,7 @@ class AdaptiveCategoryAwareHybridRRFRetriever(BaseRetriever):
         self._sync_candidates()
         self.last_retrieval_diagnostics = {
             **dict(getattr(self.hybrid_retriever, "last_retrieval_diagnostics", {})),
-            "category_filter_field": self.category_field,
+            "category_filter_field": self.category_filter_field,
             "detected_category": None,
             "category_filter_applied": False,
             "category_fallback_used": False,

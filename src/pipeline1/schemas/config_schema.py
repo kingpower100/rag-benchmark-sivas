@@ -263,6 +263,7 @@ class RetrievalConfig(StrictConfigModel):
     top_k: int = Field(gt=0)
     fetch_k: int = Field(gt=0)
     category_field: str = "kategorie"
+    category_filter_field: Optional[str] = None
     fallback_to_global: bool = True
     category_routing_validation: CategoryRoutingValidationConfig = Field(default_factory=CategoryRoutingValidationConfig)
     metadata_boosting: MetadataBoostingConfig = Field(default_factory=MetadataBoostingConfig)
@@ -277,6 +278,8 @@ class RetrievalConfig(StrictConfigModel):
                 f"retrieval.fetch_k ({self.fetch_k}) must be >= retrieval.top_k ({self.top_k}). "
                 "fetch_k is a strict raw-candidate cap."
             )
+        if self.category_filter_field is None:
+            self.category_filter_field = f"metadata.{self.category_field}.keyword"
         return self
 
 

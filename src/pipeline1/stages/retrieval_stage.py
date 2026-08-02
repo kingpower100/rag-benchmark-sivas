@@ -547,6 +547,17 @@ def run_adaptive_category_aware_retrieval(
         max_candidates=max_candidates,
         rerank_top_k=rerank_top_k,
     )
+    # Post-retrieval: detect if an accepted category route fell back to global
+    # because the category-filtered ES query returned zero candidates.
+    if accepted and getattr(retriever, "category_retrieval_empty", False):
+        final_mode = "global"
+        retrieval_mode = "empty_category_global_fallback"
+        category_fallback_used = True
+        fallback_used = True
+        fallback_reason = "empty_category_retrieval"
+        # category_filter_applied stays True: the filter was attempted
+
+    successful_category = accepted and not fallback_used
     diagnostics = {
         **base_diagnostics,
         **probe_stats,
@@ -559,8 +570,8 @@ def run_adaptive_category_aware_retrieval(
         "category_fallback_used": category_fallback_used,
         "fallback_used": fallback_used,
         "fallback_reason": fallback_reason,
-        "number_of_category_results": len(retrieved) if accepted else 0,
-        "number_of_global_fallback_results": 0 if accepted else len(retrieved),
+        "number_of_category_results": len(retrieved) if successful_category else 0,
+        "number_of_global_fallback_results": 0 if successful_category else len(retrieved),
     }
     return raw_retrieved, retrieved, warnings, reranker_used, selection_diagnostics, diagnostics
 
@@ -649,14 +660,14 @@ def retrieve_top_k_unique_contexts(
     rerank_top_k: int | None = None,
 ) -> tuple[list, list, list[str], bool, dict]:
     candidate_k = fetch_k
-    reranker_used = reranker is not None
     retriever_start = time.perf_counter()
     raw_retrieved = retriever.retrieve(question, candidate_k)
     retriever_time_ms = (time.perf_counter() - retriever_start) * 1000
     rerank_time_ms = 0.0
     rerank_candidate_limit = max(0, min(rerank_top_k or max_candidates, max_candidates))
     ranked = raw_retrieved
-    if reranker is not None:
+    reranker_used = reranker is not None and bool(raw_retrieved)
+    if reranker is not None and raw_retrieved:
         rerank_start = time.perf_counter()
         ranked = reranker.rerank(question, raw_retrieved, len(raw_retrieved))
         rerank_time_ms = (time.perf_counter() - rerank_start) * 1000
@@ -674,7 +685,8 @@ def retrieve_top_k_unique_contexts(
         "retriever_time_ms": retriever_time_ms,
         "rerank_time_ms": rerank_time_ms,
         "reranker_enabled": reranker is not None,
-        "reranker_applied": reranker is not None,
+        "reranker_applied": reranker_used,
+        "reranker_skipped_reason": "no_candidates" if (reranker is not None and not raw_retrieved) else None,
         "reranker_model_name": getattr(reranker, "model_name", None),
         "reranker_device_requested": getattr(reranker, "requested_device", None),
         "reranker_device_actual": getattr(reranker, "runtime_device", None),

@@ -795,51 +795,63 @@ def _print_f00_startup_summary(
     if cfg.experiment.experiment_id != "F00":
         return
     errors: list[str] = []
-    if cfg.retrieval.retriever_type != "adaptive_category_aware_hybrid_rrf":
+    if cfg.retrieval.retriever_type != "elasticsearch_hybrid_rrf":
         errors.append(
-            f"retriever_type={cfg.retrieval.retriever_type!r} (expected adaptive_category_aware_hybrid_rrf)"
+            f"retriever_type={cfg.retrieval.retriever_type!r} (expected elasticsearch_hybrid_rrf)"
         )
     if cfg.retrieval.top_k != 5:
         errors.append(f"top_k={cfg.retrieval.top_k} (expected 5)")
     if cfg.retrieval.fetch_k != 20:
         errors.append(f"fetch_k={cfg.retrieval.fetch_k} (expected 20)")
+    if cfg.retrieval.hybrid.dense_fetch_k != 20:
+        errors.append(f"hybrid.dense_fetch_k={cfg.retrieval.hybrid.dense_fetch_k} (expected 20)")
+    if cfg.retrieval.hybrid.bm25_fetch_k != 20:
+        errors.append(f"hybrid.bm25_fetch_k={cfg.retrieval.hybrid.bm25_fetch_k} (expected 20)")
+    if cfg.retrieval.hybrid.rrf_k != 60:
+        errors.append(f"hybrid.rrf_k={cfg.retrieval.hybrid.rrf_k} (expected 60)")
     if cfg.generation.provider != "openai":
         errors.append(f"generation.provider={cfg.generation.provider!r} (expected openai)")
     if cfg.generation.model_name != "gpt-5.5":
         errors.append(f"generation.model_name={cfg.generation.model_name!r} (expected gpt-5.5)")
+    if cfg.generation.max_tokens != 2048:
+        errors.append(f"generation.max_tokens={cfg.generation.max_tokens} (expected 2048)")
     if not cfg.reranker.enabled:
         errors.append("reranker.enabled=False (expected True)")
-    if not cfg.orchestration.enabled:
-        errors.append("orchestration.enabled=False (expected True)")
+    if cfg.orchestration.enabled:
+        errors.append("orchestration.enabled=True (expected False)")
+    if cfg.retrieval.category_routing_validation.enabled:
+        errors.append("category_routing_validation.enabled=True (expected False)")
     if errors:
         raise RuntimeError(
             "F00 startup validation failed — config does not match expected F00 architecture:\n"
             + "\n".join(f"  - {e}" for e in errors)
         )
     rrf = cfg.retrieval.hybrid
-    rv = cfg.retrieval.category_routing_validation
     sep = "=" * 60
     print(sep)
     print(f"FINAL SYSTEM: {cfg.experiment.experiment_id}")
     print(sep)
-    print(f"Chunking    : {cfg.chunking.strategy} / {cfg.chunking.chunk_size} tokens / {cfg.chunking.chunk_overlap} overlap")
-    print(f"Embedding   : {cfg.embedding.model_name} ({cfg.index.dense_dim} dim, normalize={cfg.embedding.normalize_embeddings})")
-    print(f"Backend     : {cfg.index.type}")
-    print(f"Retrieval   : {cfg.retrieval.retriever_type}")
+    print(f"Chunking          : {cfg.chunking.strategy} / {cfg.chunking.chunk_size} tokens / {cfg.chunking.chunk_overlap} overlap")
+    print(f"Embedding         : {cfg.embedding.model_name} ({cfg.index.dense_dim} dim, normalize={cfg.embedding.normalize_embeddings})")
+    print(f"Backend           : {str(cfg.index.type).capitalize()}")
+    print("Retrieval strategy: Global")
+    print("Retrieval method  : Elasticsearch Hybrid RRF")
     print(f"  Dense fetch_k={rrf.dense_fetch_k}  BM25 fetch_k={rrf.bm25_fetch_k}  RRF k={rrf.rrf_k}")
-    print(f"Routing     : adaptive category-aware ({cfg.orchestration.model_name}, {cfg.orchestration.prompt_path})")
-    print(f"  Validation: enabled  share>={rv.minimum_category_share}  count>={rv.minimum_category_count}  margin>={rv.minimum_margin}")
-    print(f"Reranker    : {cfg.reranker.model_name} ({cfg.reranker.device}, rerank_top_k={cfg.reranker.rerank_top_k})")
-    print(f"Final top_k : {cfg.retrieval.top_k}")
-    print(f"Generator   : {cfg.generation.provider} / {cfg.generation.model_name}")
+    print("Orchestration     : Disabled")
+    print("Category routing  : Disabled")
+    print("Category validation: Disabled")
+    print(f"Reranker          : {cfg.reranker.model_name} ({cfg.reranker.device}, rerank_top_k={cfg.reranker.rerank_top_k})")
+    print(f"Final top_k       : {cfg.retrieval.top_k}")
+    print(f"Generator         : {cfg.generation.provider} / {cfg.generation.model_name}")
+    print(f"Max tokens        : {cfg.generation.max_tokens}")
     print(sep)
-    print(f"Documents   : {docs_count}")
-    print(f"Chunks      : {chunk_count}")
-    print(f"Questions   : {question_count}")
+    print(f"Documents         : {docs_count}")
+    print(f"Chunks            : {chunk_count}")
+    print(f"Questions         : {question_count}")
     dense_idx = getattr(cfg.index, "index_name", "<unknown>")
     bm25_idx = getattr(cfg.retrieval.bm25, "index_name", "<unknown>") if cfg.retrieval.bm25 else "<unknown>"
-    print(f"Dense index : {dense_idx}  [reused from A00]")
-    print(f"BM25 index  : {bm25_idx}  [reused from A01]")
+    print(f"Dense index       : {dense_idx}")
+    print(f"BM25 index        : {bm25_idx}")
     print(sep)
 
 

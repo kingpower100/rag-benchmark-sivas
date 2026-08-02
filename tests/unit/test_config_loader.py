@@ -451,14 +451,14 @@ def test_g_series_reasoning_effort_unset_and_repair_config_is_q023_only_override
     g03 = PipelineConfig.from_yaml("configs/pipeline1/final_experiments/G03_gpt55.yaml")
     repair = PipelineConfig.from_yaml("configs/pipeline1/final_experiments/G03_Q023_repair.yaml")
 
-    assert [cfg.generation.max_tokens for cfg in (g00, g01, g02, g03)] == [512, 512, 512, 512]
+    assert [cfg.generation.max_tokens for cfg in (g00, g01, g02, g03)] == [2048, 2048, 2048, 2048]
     assert [cfg.generation.reasoning_effort for cfg in (g00, g01, g02, g03)] == [None, None, None, None]
     assert g03.generation.provider == "openai"
     assert g03.generation.model_name == "gpt-5.5"
     assert repair.experiment.experiment_id == "G03_Q023_repair"
     assert repair.data.questions_path == "data/repair/questions_Q023_only.jsonl"
     assert repair.generation.reasoning_effort == "none"
-    assert repair.generation.max_tokens == 512
+    assert repair.generation.max_tokens == g03.generation.max_tokens
     assert repair.generation.provider == g03.generation.provider
     assert repair.generation.model_name == g03.generation.model_name
 

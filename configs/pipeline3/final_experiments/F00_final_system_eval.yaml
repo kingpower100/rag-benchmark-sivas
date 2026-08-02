@@ -1,21 +1,24 @@
 extends: "../base_pipeline3.yaml"
 
 # ============================================================
-# F00 Pipeline 3 evaluation config
+# F00 Pipeline 3 Evaluation Config
 # ============================================================
 # Evaluates the saved Pipeline 1 answers of F00.
-# Never regenerates GPT-5.5 responses — reads results.jsonl only.
-# Reuses the stable RAGAS and LLM-as-Judge implementation.
+# Never re-invokes GPT-5.5 — reads results.jsonl only.
 #
-# Source: data/runs/pipeline1/F00/results.jsonl
-# Retriever validated: adaptive_category_aware_hybrid_rrf
-# Orchestration: enabled (llama3.1:8b category routing)
-# Reranker: enabled (BAAI/bge-reranker-v2-m3)
+# Source run   : data/runs/pipeline1/F00/results.jsonl
+# Retriever    : elasticsearch_hybrid_rrf (global, no routing)
+# Orchestration: disabled
+# Reranker     : BAAI/bge-reranker-v2-m3 (enabled)
+# Generator    : openai / gpt-5.5
 #
 # Metrics computed:
-#   - RAGAS: faithfulness, answer_relevancy, context_recall
-#   - LLM-as-Judge: correctness, faithfulness, completeness,
-#                   hallucination, context_relevance
+#   RAGAS     : faithfulness, answer_relevancy, context_recall
+#   LLM-Judge : correctness, faithfulness, completeness,
+#               hallucination, context_relevance
+#
+# Routing diagnostics are DISABLED because F00 uses global
+# retrieval (R00 strategy); there is no category routing to audit.
 # ============================================================
 
 pipeline3:
@@ -26,15 +29,14 @@ inputs:
 
 source_validation:
   expected_experiment_id: "F00"
-  expected_retriever_type: "adaptive_category_aware_hybrid_rrf"
-  expected_orchestration_enabled: true
+  expected_retriever_type: "elasticsearch_hybrid_rrf"
+  expected_orchestration_enabled: false
   expected_generator_provider: "openai"
   expected_generator_model: "gpt-5.5"
   expected_top_k: 5
   expected_fetch_k: 20
   expected_reranker_enabled: true
-  expected_fallback_to_global: true
   require_hybrid_diagnostics: true
   require_reranker_diagnostics: true
-  require_routing_diagnostics: true
-  require_routing_reconciliation: true
+  require_routing_diagnostics: false
+  require_routing_reconciliation: false

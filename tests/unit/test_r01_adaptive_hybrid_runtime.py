@@ -56,8 +56,8 @@ def test_adaptive_hybrid_runs_orchestration_and_passes_category_to_retrieval():
     assert diag["predicted_category"] == "Finanzen"
     assert diag["routing_decision"] == "accepted"
     assert diag["final_retrieval_mode"] == "category"
-    assert tracking["dense"].category_calls == [("Finanzen", "kategorie", 4)]
-    assert tracking["bm25"].category_calls == [("Finanzen", "kategorie", 4)]
+    assert tracking["dense"].category_calls == [("Finanzen", "metadata.kategorie.keyword", 4)]
+    assert tracking["bm25"].category_calls == [("Finanzen", "metadata.kategorie.keyword", 4)]
 
 
 def test_preflight_rejects_adaptive_hybrid_when_orchestration_disabled(monkeypatch):
@@ -103,8 +103,8 @@ def test_accepted_route_calls_category_dense_bm25_rrf_and_reranker():
 
     assert tracking["dense"].global_calls == [4]
     assert tracking["bm25"].global_calls == [4]
-    assert tracking["dense"].category_calls == [("Finanzen", "kategorie", 4)]
-    assert tracking["bm25"].category_calls == [("Finanzen", "kategorie", 4)]
+    assert tracking["dense"].category_calls == [("Finanzen", "metadata.kategorie.keyword", 4)]
+    assert tracking["bm25"].category_calls == [("Finanzen", "metadata.kategorie.keyword", 4)]
     assert tracking["hybrid"].fuse_calls == 2
     assert reranker.calls == [3]
     assert diag["final_retrieval_mode"] == "category"

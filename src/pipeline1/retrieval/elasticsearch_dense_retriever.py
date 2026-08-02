@@ -149,7 +149,7 @@ class ElasticsearchDenseRetriever(BaseRetriever):
         )
         query_vec = self.embedder.encode_query(question)
         hits = self.index.search_hits_filtered(
-            query_vec, candidate_k, f"metadata.{category_field}", category
+            query_vec, candidate_k, category_field, category
         )
         query_metadata = extract_query_metadata(question, (chunk.metadata for chunk in self.chunks))
         items = [self._hit_to_item(hit, query_metadata) for hit in hits]

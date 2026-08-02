@@ -83,7 +83,7 @@ class ElasticsearchBM25Retriever(BaseRetriever):
                 query={
                     "bool": {
                         "must": [{"match": {"cleaned_context": {"query": question}}}],
-                        "filter": [{"term": {f"metadata.{category_field}": category}}],
+                        "filter": [{"term": {category_field: category}}],
                     }
                 },
             )

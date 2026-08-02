@@ -1,100 +1,261 @@
-extends: "R01_adaptive_category_aware.yaml"
+extends: "G03_gpt55.yaml"
 
 # ============================================================
 # F00 — Final Production System
 # ============================================================
-# Final integrated RAG system combining every benchmark winner
-# and the adaptive routing strategy validated in the B00 audit.
+# The SIVAS RAG benchmark final system, assembled by selecting
+# the winner of every benchmark series (C, E, V, A, R, G) and
+# combining them into the simplest architecture that delivered
+# the best experimental performance.
 #
-# Inheritance chain (innermost → outermost):
+# F00 is NOT an experiment.
+# F00 is the production outcome of the complete benchmark.
+# It is compared end-to-end against the reference system B00.
+# The contribution of each individual component was already
+# validated during the C-, E-, V-, A-, R-, and G-series
+# experiments. The F00 vs B00 comparison measures the net
+# end-to-end gain of replacing all B00 components with their
+# benchmark-selected counterparts.
+#
+# ============================================================
+# INHERITANCE CHAIN (innermost → outermost)
+# ============================================================
+#
 #   F00_final_system.yaml
-#     → R01_adaptive_category_aware.yaml
-#       → A_final.yaml
-#         → A04-K10_top10.yaml
-#           → A03_reranker.yaml
-#             → A02_elasticsearch_hybrid_rrf.yaml
-#               → A00_elasticsearch_dense.yaml
-#                 → E03_mistral_api_embedding.yaml
-#                   → ../phase3_embedding_base.yaml
-#                     → final_experiments/C02_sentence1024.yaml
-#                       → C00_sentence512_baseline.yaml
-#                         → E00-G_global_dense_baseline.yaml
+#     → G03_gpt55.yaml
+#         → R00_global_retrieval.yaml
+#             → A_final.yaml
+#                 → A04-K10_top10.yaml
+#                     → A03_reranker.yaml
+#                         → A02_elasticsearch_hybrid_rrf.yaml
+#                             → A00_elasticsearch_dense.yaml
+#                                 → E03_mistral_api_embedding.yaml
+#                                     → ../phase3_embedding_base.yaml
+#                                         → C02_sentence1024.yaml
+#                                             → C00_sentence512_baseline.yaml
+#                                                 → E00-G_global_dense_baseline.yaml
 #
-# Selected components (one winner per benchmark phase):
-#   Chunking   : C02 — sentence / 1024 tokens / 400 token overlap
-#   Embedding  : E03 — mistral-embed (1024 dim, normalize=true)
-#   Backend    : V02-class Elasticsearch script_score cosine
-#   Algorithm  : A02 Hybrid RRF (dense cosine + BM25 via RRF, rrf_k=60)
-#   Reranker   : A03 — BAAI/bge-reranker-v2-m3 (cuda, rerank_top_k=20)
-#   Routing    : R01 — adaptive category-aware with validated global fallback
-#   Generator  : GPT-5.5 (OpenAI API) — same implementation as G03
+# ============================================================
+# BENCHMARK WINNERS — ONE WINNER PER SERIES
+# ============================================================
 #
-# Retrieval depth (identical to B00 for controlled comparison):
-#   top_k  : 5
-#   fetch_k: 20
+#   Series  Winner  Component               Selected Value
+#   ------  ------  ---------               ---------------
+#   C       C02     Chunking                Sentence, 1024 tokens, 400 overlap
+#   E       E03     Embedding               Mistral Embed API (mistral-embed, 1024 dim)
+#   V       V02     Vector Database         Elasticsearch (cosine script_score)
+#   A       A02     Retrieval Algorithm     Hybrid RRF (Dense + BM25, rrf_k=60)
+#   A       A03     Reranker                BGE-Reranker-v2-m3 (CUDA, rerank_top_k=20)
+#   A(k)    K05     Retrieval Depth         fetch_k=20, top_k=5
+#   R       R00     Retrieval Strategy      Global (no category routing)
+#   G       G03     Generator               GPT-5.5 (OpenAI API, temperature=0.0)
 #
-# Runtime flow per question:
-#   1. Orchestration LLM (Ollama llama3.1:8b, prompt V4)
-#      predicts the document category and cleans the question.
-#   2. A global Hybrid RRF probe (probe_fetch_k=20) retrieves
-#      candidates across the full Elasticsearch index.
-#   3. Routing validation checks three thresholds:
-#        category_share   >= 0.60
-#        category_count   >= 3
-#        support_margin   >= 2
-#   4a. Thresholds satisfied → Hybrid RRF restricted to the
-#       predicted category (dense script_score + BM25 term filter).
-#   4b. Thresholds not satisfied → global Hybrid RRF fallback
-#       (same algorithm, no category restriction).
-#   5. Cross-encoder reranker (bge-reranker-v2-m3 on GPU) applied
-#      to all 20 retrieved candidates.
-#   6. Top-5 reranked results sent to GPT-5.5 for answer generation.
+# ============================================================
+# DISABLED COMPONENTS — EXPERIMENTALLY OUTPERFORMED
+# ============================================================
 #
-# Dense Elasticsearch index  : sivas_phase4_a00_elasticsearch_dense_mistral_embed
-# BM25  Elasticsearch index  : sivas_phase4_a01_bm25_c02_chunks
-# (Both indexes were built during A00/A01 experiments; F00 reuses them.)
+#   Component                    Reason disabled
+#   ---------                    ---------------
+#   Adaptive retrieval (R01)     R00 (global) outperformed R01 in the R-series
+#   Orchestration LLM            Required only by R01 routing; unnecessary for R00
+#   Category prediction          Required only by adaptive routing; not needed
+#   Routing validation probes    Required only by category routing; not needed
+#   Routing thresholds           Required only by routing validation; not needed
+#   Fallback logic               Only meaningful when routing is active; not needed
+#   LLM-based global fallback    Subsumed by unconditional global retrieval
 #
-# Authentication (must be set before running):
-#   OPENAI_API_KEY   — GPT-5.5 generation (fails preflight if absent)
-#   MISTRAL_API_KEY  — mistral-embed embedding (loaded by EmbeddingStage)
+# ============================================================
+# COMPONENT DESCRIPTIONS
+# ============================================================
 #
-# Comparison target: B00_sivas_pgvector_reference
-#   B00 uses pgvector + adaptive dense retrieval with mistral-embed.
-#   F00 uses Elasticsearch + adaptive Hybrid RRF with the same embedding.
-#   top_k and fetch_k are intentionally identical to measure architecture
-#   improvements, not retrieval depth effects.
+# C02 — Sentence Chunking (1024 tokens / 400 overlap)
+#   Selected in the C-series as the optimal chunking strategy.
+#   Sentence boundaries preserve semantic coherence. The 1024-token
+#   window captures sufficient context for domain-specific ERP queries,
+#   and the 400-token overlap reduces boundary-clipping artefacts.
 #
-# GPT-5.5 implementation notes:
-#   Temperature is omitted in the API payload for gpt-5.5 (handled by
-#   OpenAIGenerator._build_payload; see _NO_CUSTOM_TEMPERATURE_PREFIXES).
-#   Retries: 3 attempts with exponential back-off (1s, 2s base).
-#   Checkpointing: one row written per question; resume=true means a
-#   second execution skips all already-completed questions without making
-#   any additional GPT API calls.
+# E03 — Mistral Embed API (mistral-embed)
+#   Selected in the E-series as the best embedding model.
+#   Produces 1024-dimensional cosine-normalised vectors via the
+#   Mistral API. Shared with B00 (same embedding model), ensuring
+#   the F00 vs B00 comparison isolates architectural differences
+#   rather than embedding model differences.
+#
+# V02 — Elasticsearch
+#   Selected in the V-series as the best vector backend.
+#   Hosts both the dense cosine script_score index and the BM25
+#   inverted index, enabling in-engine hybrid retrieval without
+#   inter-system latency.
+#
+# A02 — Hybrid Retrieval (Dense + BM25 via RRF)
+#   Selected in the A-series as the best retrieval algorithm.
+#   Combines dense cosine similarity with BM25 term matching.
+#   Reciprocal Rank Fusion (rrf_k=60) merges the two ranked lists,
+#   providing robustness to both semantic and lexical query types.
+#
+# A03 — BGE-Reranker-v2-m3
+#   Selected in the A-series as the best reranker.
+#   Multilingual cross-encoder; supports German ERP domain text.
+#   Applied to all fetch_k=20 candidates before top_k selection.
+#   Runs on CUDA for production-speed inference.
+#
+# K05 — Retrieval Depth (fetch_k=20, top_k=5)
+#   Selected in the A-series (K-ablation) as the optimal depth.
+#   fetch_k=20 passes 20 candidates to the reranker; top_k=5 are
+#   forwarded to the generator. Depth is intentionally identical
+#   to B00 to measure architecture gains, not depth effects.
+#
+# R00 — Global Retrieval
+#   Selected in the R-series as the winning strategy.
+#   Global retrieval unconditionally searches the complete
+#   Elasticsearch knowledge base. No category routing, no
+#   orchestration LLM, no validation probes, no fallback logic.
+#
+# G03 — GPT-5.5
+#   Selected in the G-series as the best generator.
+#   OpenAI API, temperature=0.0. Temperature is omitted from the
+#   API payload for gpt-5.5 (handled by _NO_CUSTOM_TEMPERATURE_PREFIXES
+#   in OpenAIGenerator._build_payload); 0.0 is recorded here for
+#   manifest accuracy only.
+#
+# ============================================================
+# COMPLETE RETRIEVAL FLOW
+# ============================================================
+#
+#   User query (German ERP question)
+#   │
+#   ├─→ Mistral Embed API (mistral-embed)
+#   │      → 1024-dim normalised vector
+#   │
+#   ├─→ Elasticsearch Dense Index
+#   │      (sivas_phase4_a00_elasticsearch_dense_mistral_embed)
+#   │      → script_score cosine similarity → ranked list A
+#   │
+#   ├─→ Elasticsearch BM25 Index
+#   │      (sivas_phase4_a01_bm25_c02_chunks)
+#   │      → BM25 term scoring → ranked list B
+#   │
+#   ├─→ Hybrid RRF Fusion (rrf_k=60)
+#   │      → merged ranked list → fetch_k=20 candidates
+#   │
+#   ├─→ BGE-Reranker-v2-m3 (CUDA, rerank_top_k=20)
+#   │      → cross-encoder re-scores all 20 candidates
+#   │
+#   └─→ Top-5 passages retained (top_k=5)
+#
+# ============================================================
+# COMPLETE GENERATION FLOW
+# ============================================================
+#
+#   Top-5 reranked passages
+#   │
+#   ├─→ ranked_budget context truncation
+#   │      max_context_tokens = 6000
+#   │      max_chunk_tokens   = 1800
+#   │      max_context_chars  = 24000
+#   │      max_chunk_chars    = 8000
+#   │
+#   ├─→ answer_generation_sivas_v1.txt prompt
+#   │      (German ERP domain; instructs UNKNOWN if unanswerable)
+#   │
+#   └─→ GPT-5.5 (OpenAI API, temperature=0.0)
+#          → Final answer in German
+#
+# ============================================================
+# FINAL ARCHITECTURE DIAGRAM
+# ============================================================
+#
+#   ┌──────────────────────────────────────────────┐
+#   │          Knowledge Base (JSONL)              │
+#   └──────────────────┬───────────────────────────┘
+#                      │
+#          ┌───────────▼────────────┐
+#          │   C02 Sentence Chunking │
+#          │   1024 tokens / 400 ov  │
+#          └───────────┬────────────┘
+#                      │
+#          ┌───────────▼────────────┐
+#          │    E03 Mistral Embed   │
+#          │    API  (1024 dim)     │
+#          └──────┬─────────┬───────┘
+#                 │         │
+#       ┌─────────▼──┐  ┌───▼────────┐
+#       │  V02 Dense  │  │  V02 BM25  │
+#       │  ES Index   │  │  ES Index  │
+#       └─────────┬──┘  └───┬────────┘
+#                 │         │
+#          ┌──────▼─────────▼──────┐
+#          │    A02 Hybrid RRF      │
+#          │   (rrf_k=60)           │
+#          └──────────┬─────────────┘
+#                     │  fetch_k = 20 candidates
+#          ┌──────────▼─────────────┐
+#          │   A03 BGE-Reranker     │
+#          │   v2-m3  (CUDA)        │
+#          └──────────┬─────────────┘
+#                     │  top_k = 5 passages
+#          ┌──────────▼─────────────┐
+#          │    G03 GPT-5.5         │
+#          │    temperature = 0.0   │
+#          └──────────┬─────────────┘
+#                     │
+#          ┌──────────▼─────────────┐
+#          │      Final Answer      │
+#          └────────────────────────┘
+#
+# ============================================================
+# COMPONENT COMPARISON: F00 vs B00
+# ============================================================
+#
+#   Dimension           B00 (Reference)              F00 (Final)
+#   ---------           ---------------              -----------
+#   Chunking            SIVAS char 2048 / 0 ov       Sentence 1024 / 400 ov
+#   Embedding           Mistral Embed API             Mistral Embed API
+#   Vector Backend      pgvector (HNSW, cosine)       Elasticsearch (cosine)
+#   Retrieval alg.      Dense only (pgvector)         Hybrid RRF (Dense + BM25)
+#   Reranker            None                          BGE-Reranker-v2-m3
+#   Routing             Adaptive (category-aware)     Global (unconditional)
+#   Orchestration       Mistral-small (local Ollama)  Disabled
+#   Generator           Mistral-small (local Ollama)  GPT-5.5 (OpenAI API)
+#   top_k / fetch_k     5 / 20                        5 / 20
+#
+# ============================================================
+# AUTHENTICATION (must be set before running)
+# ============================================================
+#   MISTRAL_API_KEY  — required by EmbeddingStage (mistral-embed)
+#   OPENAI_API_KEY   — required by OpenAIGenerator (gpt-5.5)
+#                      pipeline preflight check fails if absent
+#
+# ============================================================
+# ELASTICSEARCH INDEXES (reused from A-series; no re-indexing)
+# ============================================================
+#   Dense : sivas_phase4_a00_elasticsearch_dense_mistral_embed
+#   BM25  : sivas_phase4_a01_bm25_c02_chunks
+#
+# ============================================================
+# RUNTIME NOTES
+# ============================================================
+#   resume=true (inherited via E00-G): a second run skips all
+#   already-completed questions without additional GPT-5.5 API
+#   calls. Checkpointing writes one row per question to results.jsonl.
+#
+#   Monetary cost estimation is disabled (estimate_cost=false)
+#   because GPT-5.5 pricing has not been officially published.
+#   Token counts (input_tokens, output_tokens, total_tokens) are
+#   recorded normally in every output row and the run manifest.
+#   Update pricing.* and re-enable estimate_cost once rates are
+#   confirmed.
 # ============================================================
 
 experiment:
   experiment_id: "F00"
 
-# Generation: switch from the inherited Qwen2.5 Ollama model to GPT-5.5.
-# All other generation settings (max_tokens, timeout_s, prompt_path,
-# context budget, truncation strategy) are inherited unchanged from E00-G.
-# Authentication is read from OPENAI_API_KEY (never stored here).
-generation:
-  provider: "openai"
-  model_name: "gpt-5.5"
-  # base_url is informational — OpenAIGenerator always calls
-  # https://api.openai.com/v1/chat/completions directly.
-  base_url: "https://api.openai.com/v1"
-  # temperature is omitted from the OpenAI API payload for gpt-5.5
-  # (model rejects the parameter); 0.0 is recorded for manifest accuracy.
-  temperature: 0.0
+# All retrieval, reranking, chunking, embedding, and generation
+# settings are inherited from the chain above. No component is
+# overridden here. F00 is structurally identical to G03 in every
+# respect except experiment_id, which designates it as the final
+# production system rather than a G-series generation experiment.
 
-# Monetary cost estimation is disabled because GPT-5.5 pricing has not been
-# officially published. Token counts (input_tokens, output_tokens, total_tokens)
-# are recorded normally in every output row and in the run manifest.
-# Update pricing.input_per_1k_tokens_usd / output_per_1k_tokens_usd and
-# re-enable estimate_cost once rates are confirmed.
 telemetry:
   estimate_cost: false
   pricing:
