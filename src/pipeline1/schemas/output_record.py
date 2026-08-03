@@ -62,6 +62,11 @@ class OutputRecord(BaseModel):
     retriever_time_ms: float | None = None
     rerank_time_ms: float | None = None
     retrieval_pipeline_time_ms: float | None = None
+    orchestration_latency_ms: float | None = None
+    validation_probe_latency_ms: float | None = None
+    final_retrieval_latency_ms: float | None = None
+    reranker_latency_ms: float | None = None
+    end_to_end_latency_ms: float | None = None
     reranker_applied: bool = False
     reranker_candidate_count: int = 0
     reranker_output_count: int = 0
@@ -172,6 +177,11 @@ class OutputRecord(BaseModel):
             "retriever_time_ms": self.retriever_time_ms,
             "rerank_time_ms": self.rerank_time_ms,
             "retrieval_pipeline_time_ms": self.retrieval_pipeline_time_ms,
+            "orchestration_latency_ms": self.orchestration_latency_ms,
+            "validation_probe_latency_ms": self.validation_probe_latency_ms,
+            "final_retrieval_latency_ms": self.final_retrieval_latency_ms,
+            "reranker_latency_ms": self.reranker_latency_ms,
+            "end_to_end_latency_ms": self.end_to_end_latency_ms,
             "reranker_applied": self.reranker_applied,
             "reranker_candidate_count": self.reranker_candidate_count,
             "reranker_output_count": self.reranker_output_count,
@@ -265,6 +275,16 @@ class OutputRecord(BaseModel):
             self.rerank_time_ms = 0.0 if not self.reranker_used else None
         if self.retrieval_pipeline_time_ms is None:
             self.retrieval_pipeline_time_ms = self.retrieval_time_ms
+        if self.validation_probe_latency_ms is None:
+            self.validation_probe_latency_ms = self.retrieval_diagnostics.get("validation_probe_latency_ms")
+        if self.final_retrieval_latency_ms is None:
+            self.final_retrieval_latency_ms = self.retrieval_diagnostics.get("final_retrieval_latency_ms", self.retriever_time_ms)
+        if self.reranker_latency_ms is None:
+            self.reranker_latency_ms = self.retrieval_diagnostics.get("reranker_latency_ms", self.rerank_time_ms)
+        if self.orchestration_latency_ms is None:
+            self.orchestration_latency_ms = self.retrieval_diagnostics.get("orchestration_latency_ms")
+        if self.end_to_end_latency_ms is None:
+            self.end_to_end_latency_ms = self.total_latency_ms
         if not self.token_usage:
             self.token_usage = {
                 "input_tokens": self.input_tokens,

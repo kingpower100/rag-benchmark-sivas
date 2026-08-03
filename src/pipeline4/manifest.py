@@ -61,17 +61,15 @@ def write_manifest(
         "config_path": cfg_path,
         "ranking_mode": cfg.ranking_mode,
         "retrieval_score_weights": {
+            "ndcg_at_5": cfg.retrieval_score_weights.ndcg_at_5,
             "recall_at_5": cfg.retrieval_score_weights.recall_at_5,
             "mrr_at_5": cfg.retrieval_score_weights.mrr_at_5,
-            "ndcg_at_5": cfg.retrieval_score_weights.ndcg_at_5,
-            "context_precision_at_5": cfg.retrieval_score_weights.context_precision_at_5,
         },
         "rqi_weights": {
-            "correctness": cfg.rqi_weights.correctness,
+            "retrieval_score": cfg.rqi_weights.retrieval_score,
+            "answer_quality": cfg.rqi_weights.answer_quality,
             "faithfulness": cfg.rqi_weights.faithfulness,
-            "context_relevance": cfg.rqi_weights.context_relevance,
-            "recall_at_5": cfg.rqi_weights.recall_at_5,
-            "no_unknown": cfg.rqi_weights.no_unknown,
+            "generation": cfg.rqi_weights.generation,
         },
         "validation_thresholds": {
             "max_generation_failure_rate": cfg.validation.max_generation_failure_rate,

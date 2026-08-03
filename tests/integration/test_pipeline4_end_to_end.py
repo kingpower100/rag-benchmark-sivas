@@ -171,13 +171,12 @@ class TestPipeline4EndToEnd:
         recall = float(baseline["recall_at_5"])
         mrr = float(baseline["mrr_at_5"])
         ndcg = float(baseline["ndcg_at_5"])
-        cp = float(baseline["context_precision_at_5"])
         score = float(baseline["retrieval_score"])
 
-        expected = 0.35 * recall + 0.25 * mrr + 0.20 * ndcg + 0.20 * cp
+        expected = 0.60 * ndcg + 0.25 * recall + 0.15 * mrr
         assert abs(score - expected) < 1e-5
 
-    def test_a04_k03_aggregates_without_at5_metrics(self, tmp_path):
+    def test_a04_k03_without_at5_metrics_fails_closed(self, tmp_path):
         p2_root = tmp_path / "pipeline2"
         p3_root = tmp_path / "pipeline3"
         p2_dir = p2_root / "p2_A04-K03_top3_eval"
@@ -239,16 +238,8 @@ class TestPipeline4EndToEnd:
         cfg_path = tmp_path / "p4_a04_k03.yaml"
         cfg_path.write_text(yaml.dump(cfg), encoding="utf-8")
 
-        run_dir = Pipeline4Orchestrator().run(str(cfg_path))
-
-        rows = list(csv.DictReader((run_dir / "retrieval_leaderboard.csv").open(encoding="utf-8")))
-        assert len(rows) == 1
-        assert rows[0]["experiment_id"] == "A04-K03"
-        assert rows[0]["primary_k"] == "3"
-        assert rows[0]["recall_at_primary_k"] == "0.500000"
-        assert rows[0]["recall_at_5"] == ""
-        data = json.loads((run_dir / "leaderboard.json").read_text(encoding="utf-8"))
-        assert data["retrieval_leaderboard"][0]["recall_at_5"] is None
+        with pytest.raises(ValueError, match="mean_recall_at_5"):
+            Pipeline4Orchestrator().run(str(cfg_path))
 
 
 def _write_fixture_runs(p2_root: Path, p3_root: Path) -> None:

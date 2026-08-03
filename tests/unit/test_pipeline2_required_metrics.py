@@ -20,18 +20,25 @@ def test_embedding_similarity_uses_configurable_deterministic_embedder():
     assert compute_embedding_similarity("", "net income", embedder) == 0.0
 
 
-def test_total_latency_is_component_sum_with_rerank():
+def test_end_to_end_latency_is_primary_when_available():
     metrics = compute_efficiency_metrics(
-        {"retrieval_time_ms": 10, "rerank_time_ms": 2.5, "generation_time_ms": 20, "total_latency_ms": 999}
+        {
+            "end_to_end_latency_ms": 45,
+            "retrieval_time_ms": 10,
+            "rerank_time_ms": 2.5,
+            "generation_time_ms": 20,
+            "total_latency_ms": 999,
+        }
     )
 
     assert metrics["retrieval_time_ms"] == 10
     assert metrics["rerank_time_ms"] == 2.5
     assert metrics["generation_time_ms"] == 20
-    assert metrics["total_latency_ms"] == 32.5
+    assert metrics["end_to_end_latency_ms"] == 45
+    assert metrics["retrieval_generation_latency_ms"] == 32.5
 
 
-def test_total_latency_uses_backend_retrieval_time_when_available():
+def test_retrieval_generation_latency_uses_retrieval_pipeline_time_when_available():
     metrics = compute_efficiency_metrics(
         {
             "retriever_time_ms": 10,
@@ -39,6 +46,7 @@ def test_total_latency_uses_backend_retrieval_time_when_available():
             "rerank_time_ms": 5,
             "retrieval_pipeline_time_ms": 16,
             "generation_time_ms": 20,
+            "end_to_end_latency_ms": 40,
         }
     )
 
@@ -46,14 +54,17 @@ def test_total_latency_uses_backend_retrieval_time_when_available():
     assert metrics["retrieval_time_ms"] == 15
     assert metrics["rerank_time_ms"] == 5
     assert metrics["retrieval_pipeline_time_ms"] == 16
-    assert metrics["total_latency_ms"] == 36
+    assert metrics["retrieval_generation_latency_ms"] == 36
+    assert metrics["end_to_end_latency_ms"] == 40
 
 
-def test_legacy_missing_rerank_time_remains_unavailable():
-    metrics = compute_efficiency_metrics({"retrieval_time_ms": 10, "generation_time_ms": 20})
+def test_legacy_missing_end_to_end_latency_falls_back_with_warning():
+    with pytest.warns(RuntimeWarning, match="Legacy experiment detected"):
+        metrics = compute_efficiency_metrics({"retrieval_time_ms": 10, "generation_time_ms": 20})
 
     assert metrics["rerank_time_ms"] is None
-    assert metrics["total_latency_ms"] == 30
+    assert metrics["retrieval_generation_latency_ms"] == 30
+    assert metrics["end_to_end_latency_ms"] == 30
 
 
 def test_summary_aggregates_semantic_latency_and_reliability_denominators():
@@ -62,7 +73,8 @@ def test_summary_aggregates_semantic_latency_and_reliability_denominators():
             "experiment_id": "exp",
             "embedding_similarity": 1.0,
             "official_bertscore_f1": 1.0,
-            "total_latency_ms": 10,
+            "end_to_end_latency_ms": 12,
+            "retrieval_generation_latency_ms": 10,
             "generation_failed": False,
             "evaluation_errors": [],
         },
@@ -70,7 +82,8 @@ def test_summary_aggregates_semantic_latency_and_reliability_denominators():
             "experiment_id": "exp",
             "embedding_similarity": 0.0,
             "official_bertscore_f1": 0.0,
-            "total_latency_ms": 0,
+            "end_to_end_latency_ms": 2,
+            "retrieval_generation_latency_ms": 0,
             "generation_failed": True,
             "evaluation_errors": ["missing gold context"],
         },
@@ -81,7 +94,8 @@ def test_summary_aggregates_semantic_latency_and_reliability_denominators():
     assert summary["n_questions"] == 2
     assert summary["mean_embedding_similarity"] == 0.5
     assert summary["mean_official_bertscore_f1"] == 0.5
-    assert summary["mean_total_latency_ms"] == 5
+    assert summary["mean_end_to_end_latency_ms"] == 7
+    assert summary["mean_retrieval_generation_latency_ms"] == 5
     assert summary["pipeline_success_rate"] == 0.5
     assert summary["eval_success_rate"] == 0.5
 
@@ -105,6 +119,7 @@ def test_orchestrator_emits_generation_metrics_for_edge_cases():
             "retrieval_time_ms": 1,
             "rerank_time_ms": 2,
             "generation_time_ms": 3,
+            "end_to_end_latency_ms": 10,
         },
         {
             "question_id": "q2",
@@ -149,7 +164,8 @@ def test_orchestrator_emits_generation_metrics_for_edge_cases():
     assert evaluated[0]["recall_at_2"] == 0.5
     assert evaluated[0]["context_precision_at_2"] == 0.5
     assert evaluated[0]["duplicate_count_at_2"] == 0
-    assert evaluated[0]["total_latency_ms"] == 6
+    assert evaluated[0]["end_to_end_latency_ms"] == 10
+    assert evaluated[0]["retrieval_generation_latency_ms"] == 6
     assert evaluated[1]["abstention_rate"] == 1.0
     assert evaluated[1]["is_unknown"] == 1.0
     assert evaluated[2]["generation_failed"] is True
@@ -183,6 +199,7 @@ def test_required_output_files_are_written():
                     "retrieval_time_ms": 1,
                     "rerank_time_ms": 2,
                     "generation_time_ms": 3,
+                    "end_to_end_latency_ms": 10,
                 }
             ],
         )
@@ -226,7 +243,8 @@ embedding_similarity:
         # provider=deterministic_hash routes value to hashed_embedding_cosine_similarity
         assert row["hashed_embedding_cosine_similarity"] == pytest.approx(1.0)
         assert row["embedding_similarity"] is None
-        assert row["total_latency_ms"] == 6
+        assert row["end_to_end_latency_ms"] == 10
+        assert row["retrieval_generation_latency_ms"] == 6
         # Benchmark validity must be present
         assert "benchmark_validity" in summary
         assert summary["benchmark_validity"]["benchmark_validity_status"] in ("VALID", "WARNING", "INVALID")
@@ -245,7 +263,9 @@ embedding_similarity:
         assert csv_rows[0]["embedding_similarity"] == ""
         assert csv_rows[0]["hashed_embedding_cosine_similarity"] != ""
         assert csv_rows[0]["category_coverage"] == ""
-        assert csv_rows[0]["avg_latency"] == "6.0"
+        assert "avg_latency" not in csv_rows[0]
+        assert csv_rows[0]["avg_end_to_end_latency_ms"] == "10.0"
+        assert csv_rows[0]["avg_retrieval_generation_latency_ms"] == "6.0"
     finally:
         if workspace.exists():
             shutil.rmtree(workspace)

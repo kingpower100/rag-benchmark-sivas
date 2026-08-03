@@ -9,15 +9,14 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 class RetrievalScoreWeights(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    recall_at_5: float = Field(default=0.35, ge=0.0, le=1.0)
-    mrr_at_5: float = Field(default=0.25, ge=0.0, le=1.0)
-    ndcg_at_5: float = Field(default=0.20, ge=0.0, le=1.0)
-    context_precision_at_5: float = Field(default=0.20, ge=0.0, le=1.0)
+    ndcg_at_5: float = Field(default=0.60, ge=0.0, le=1.0)
+    recall_at_5: float = Field(default=0.25, ge=0.0, le=1.0)
+    mrr_at_5: float = Field(default=0.15, ge=0.0, le=1.0)
 
     @model_validator(mode="after")
     def weights_sum_to_one(self) -> "RetrievalScoreWeights":
         total = (
-            self.recall_at_5 + self.mrr_at_5 + self.ndcg_at_5 + self.context_precision_at_5
+            self.ndcg_at_5 + self.recall_at_5 + self.mrr_at_5
         )
         if abs(total - 1.0) > 1e-6:
             raise ValueError(
@@ -29,20 +28,18 @@ class RetrievalScoreWeights(BaseModel):
 class RQIWeights(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
-    correctness: float = Field(default=0.25, ge=0.0, le=1.0)
+    retrieval_score: float = Field(default=0.30, ge=0.0, le=1.0)
+    answer_quality: float = Field(default=0.20, ge=0.0, le=1.0)
     faithfulness: float = Field(default=0.25, ge=0.0, le=1.0)
-    context_relevance: float = Field(default=0.20, ge=0.0, le=1.0)
-    recall_at_5: float = Field(default=0.15, ge=0.0, le=1.0)
-    no_unknown: float = Field(default=0.15, ge=0.0, le=1.0)
+    generation: float = Field(default=0.25, ge=0.0, le=1.0)
 
     @model_validator(mode="after")
     def weights_sum_to_one(self) -> "RQIWeights":
         total = (
-            self.correctness
+            self.retrieval_score
+            + self.answer_quality
             + self.faithfulness
-            + self.context_relevance
-            + self.recall_at_5
-            + self.no_unknown
+            + self.generation
         )
         if abs(total - 1.0) > 1e-6:
             raise ValueError(f"rqi_weights must sum to 1.0, got {total:.6f}")

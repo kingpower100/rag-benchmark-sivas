@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import time
+from collections import Counter
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -52,10 +53,12 @@ class Pipeline4Orchestrator:
 
         print("Discovering P2 experiments...")
         p2_summaries = discover_p2_experiments(p2_runs_dir)
+        _assert_unique_experiment_ids("Pipeline 2", [p.experiment_id for p in p2_summaries])
         print(f"  Found {len(p2_summaries)} P2 experiment(s)")
 
         print("Discovering P3 experiments...")
         p3_summaries = discover_p3_experiments(p3_runs_dir)
+        _assert_unique_experiment_ids("Pipeline 3", [p.experiment_id for p in p3_summaries])
         print(f"  Found {len(p3_summaries)} P3 experiment(s)")
 
         p3_map = match_p3_to_p2(p2_summaries, p3_summaries)
@@ -139,3 +142,9 @@ class Pipeline4Orchestrator:
         print(f"  Output: {run_dir}")
 
         return run_dir
+
+
+def _assert_unique_experiment_ids(label: str, experiment_ids: list[str]) -> None:
+    duplicates = sorted(exp_id for exp_id, count in Counter(experiment_ids).items() if count > 1)
+    if duplicates:
+        raise ValueError(f"{label} contains duplicate experiment_id values: {duplicates}")

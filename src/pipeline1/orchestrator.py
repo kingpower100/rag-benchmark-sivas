@@ -317,6 +317,7 @@ def run_pipeline(config_path: str) -> Path:
     generation_total_ms = 0.0
     try:
         for row_index, query in enumerate(pending_queries, start=1):
+            row_start = time.perf_counter()
             logger.info(
                 "checkpoint_row_start question_id=%s row=%s/%s existing_completed=%s",
                 query.question_id,
@@ -391,6 +392,7 @@ def run_pipeline(config_path: str) -> Path:
                     diagnostics={"error": str(ex), "row": row_index, "total_rows": len(pending_queries)},
                 )
                 record = _fallback_error_record(cfg, query, str(ex))
+            record.end_to_end_latency_ms = (time.perf_counter() - row_start) * 1000
             output_write_start = time.perf_counter()
             event_writer.write(
                 stage="output",
@@ -979,6 +981,7 @@ def _query_with_orchestration_disabled(query):
             "category_validated": False,
             "category_validation_reason": "orchestration_disabled",
             "orchestration_error": None,
+            "orchestration_latency_ms": 0.0,
         }
     )
 

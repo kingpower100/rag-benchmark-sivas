@@ -1,0 +1,16 @@
+extends: "R01_adaptive_category_aware.yaml"
+
+# R01-M-V1 - Adaptive category-aware retrieval with Mistral Small V1 routing.
+#
+# Controlled variant of R01. It preserves the R01 retrieval/generation stack
+# and changes only the category-routing LLM and orchestration prompt.
+
+experiment:
+  experiment_id: "R01-M-V1"
+
+orchestration:
+  enabled: true
+  provider: "ollama"
+  model_name: "mistral-small"
+  prompt_version: "v1"
+  prompt_path: "src/pipeline1/prompts/orchestration_promptV1.txt"

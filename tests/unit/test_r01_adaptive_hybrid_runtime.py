@@ -121,6 +121,16 @@ def test_accepted_route_calls_category_dense_bm25_rrf_and_reranker():
     assert diag["fused_candidate_count"] == 3
     assert diag["reranked_candidate_count"] == 2
     assert diag["final_context_count"] == 2
+    assert diag["validation_probe_latency_ms"] >= 0.0
+    assert diag["final_retrieval_latency_ms"] >= 0.0
+    assert diag["reranker_latency_ms"] >= 0.0
+    assert diag["normalized_category"] == "Finanzen"
+    assert diag["category_valid"] is True
+    assert diag["routing_reason"] == "thresholds_satisfied"
+    assert diag["probe_support_count"] == 3
+    assert diag["probe_share"] == pytest.approx(0.75)
+    assert diag["probe_margin"] == 2
+    assert diag["final_context_ids"] == [item.chunk_id for item in row.retrieved]
     assert len(row.retrieved) == cfg.retrieval.top_k
 
 

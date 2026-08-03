@@ -1,6 +1,13 @@
 from __future__ import annotations
 
 from typing import Any
+import warnings
+
+
+LEGACY_LATENCY_WARNING = (
+    "Legacy experiment detected. Using retrieval+generation latency because "
+    "end_to_end_latency_ms is unavailable."
+)
 
 
 def compute_efficiency_metrics(row: dict[str, Any]) -> dict[str, float | int | None]:
@@ -9,6 +16,18 @@ def compute_efficiency_metrics(row: dict[str, Any]) -> dict[str, float | int | N
     rerank_time = _number(row.get("rerank_time_ms"))
     retrieval_pipeline_time = _number(row.get("retrieval_pipeline_time_ms"))
     generation_time = _number(row.get("generation_time_ms"))
+    retrieval_generation_latency = _retrieval_generation_latency(
+        row,
+        retriever_time,
+        retrieval_time,
+        rerank_time,
+        retrieval_pipeline_time,
+        generation_time,
+    )
+    end_to_end_latency = _number(row.get("end_to_end_latency_ms"))
+    if end_to_end_latency is None and retrieval_generation_latency is not None:
+        warnings.warn(LEGACY_LATENCY_WARNING, RuntimeWarning, stacklevel=2)
+        end_to_end_latency = retrieval_generation_latency
     return {
         "retriever_time_ms": retriever_time,
         "retrieval_time_ms": retrieval_time,
@@ -18,7 +37,8 @@ def compute_efficiency_metrics(row: dict[str, Any]) -> dict[str, float | int | N
         "reranker_candidate_count": _number(row.get("reranker_candidate_count")),
         "reranker_output_count": _number(row.get("reranker_output_count")),
         "generation_time_ms": generation_time,
-        "total_latency_ms": _total_latency(row, retriever_time, retrieval_time, rerank_time, retrieval_pipeline_time, generation_time),
+        "end_to_end_latency_ms": end_to_end_latency,
+        "retrieval_generation_latency_ms": retrieval_generation_latency,
         "input_tokens": _number(row.get("input_tokens")),
         "output_tokens": _number(row.get("output_tokens")),
         "total_tokens": _number(row.get("total_tokens")),
@@ -36,7 +56,7 @@ def _number(value: Any) -> float | int | None:
     return int(numeric) if numeric.is_integer() else numeric
 
 
-def _total_latency(
+def _retrieval_generation_latency(
     row: dict[str, Any],
     retriever_time: float | int | None,
     retrieval_time: float | int | None,

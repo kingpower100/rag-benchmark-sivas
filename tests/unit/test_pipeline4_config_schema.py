@@ -12,27 +12,27 @@ from src.pipeline4.schemas import Pipeline4Config, RetrievalScoreWeights, RQIWei
 class TestRetrievalScoreWeights:
     def test_default_weights_sum_to_one(self):
         w = RetrievalScoreWeights()
-        total = w.recall_at_5 + w.mrr_at_5 + w.ndcg_at_5 + w.context_precision_at_5
+        total = w.ndcg_at_5 + w.recall_at_5 + w.mrr_at_5
         assert abs(total - 1.0) < 1e-9
 
     def test_invalid_weights_raise(self):
         with pytest.raises(Exception):
-            RetrievalScoreWeights(recall_at_5=0.4, mrr_at_5=0.4, ndcg_at_5=0.4, context_precision_at_5=0.4)
+            RetrievalScoreWeights(ndcg_at_5=0.4, recall_at_5=0.4, mrr_at_5=0.4)
 
     def test_extra_fields_forbidden(self):
         with pytest.raises(Exception):
-            RetrievalScoreWeights(recall_at_5=0.35, mrr_at_5=0.25, ndcg_at_5=0.20, context_precision_at_5=0.20, extra=0.0)
+            RetrievalScoreWeights(ndcg_at_5=0.60, recall_at_5=0.25, mrr_at_5=0.15, extra=0.0)
 
 
 class TestRQIWeights:
     def test_default_weights_sum_to_one(self):
         w = RQIWeights()
-        total = w.correctness + w.faithfulness + w.context_relevance + w.recall_at_5 + w.no_unknown
+        total = w.retrieval_score + w.answer_quality + w.faithfulness + w.generation
         assert abs(total - 1.0) < 1e-9
 
     def test_invalid_weights_raise(self):
         with pytest.raises(Exception):
-            RQIWeights(correctness=0.3, faithfulness=0.3, context_relevance=0.3, recall_at_5=0.3, no_unknown=0.3)
+            RQIWeights(retrieval_score=0.3, answer_quality=0.3, faithfulness=0.3, generation=0.3)
 
 
 class TestPipeline4Config:

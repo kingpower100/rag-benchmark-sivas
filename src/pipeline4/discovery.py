@@ -20,13 +20,10 @@ def discover_p2_experiments(p2_runs_dir: Path) -> list[P2Summary]:
             continue
         if not (run_dir / "summary_metrics.json").exists():
             continue
-        try:
-            summary = load_p2_summary(run_dir)
-            if _is_smoke_run(summary.experiment_id) or _is_smoke_run(run_dir.name):
-                continue
-            summaries.append(summary)
-        except Exception as exc:
-            print(f"  Warning: skipping P2 run {run_dir.name}: {exc}")
+        summary = load_p2_summary(run_dir)
+        if _is_smoke_run(summary.experiment_id) or _is_smoke_run(run_dir.name):
+            continue
+        summaries.append(summary)
     return summaries
 
 
@@ -39,13 +36,10 @@ def discover_p3_experiments(p3_runs_dir: Path) -> list[P3Summary]:
             continue
         if not (run_dir / "evaluation_manifest.json").exists():
             continue
-        try:
-            summary = load_p3_summary(run_dir)
-            if _is_smoke_run(summary.experiment_id) or _is_smoke_run(run_dir.name):
-                continue
-            summaries.append(summary)
-        except Exception as exc:
-            print(f"  Warning: skipping P3 run {run_dir.name}: {exc}")
+        summary = load_p3_summary(run_dir)
+        if _is_smoke_run(summary.experiment_id) or _is_smoke_run(run_dir.name):
+            continue
+        summaries.append(summary)
     return summaries
 
 

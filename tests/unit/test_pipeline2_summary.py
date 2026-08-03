@@ -20,7 +20,8 @@ def test_summary_aggregates_final_metrics_and_success_rates():
             "question_answer_lexical_f1": 0.5,
             "retrieval_time_ms": 40.0,
             "generation_time_ms": 60.0,
-            "total_latency_ms": 100.0,
+            "end_to_end_latency_ms": 120.0,
+            "retrieval_generation_latency_ms": 100.0,
             "input_tokens": 7,
             "output_tokens": 3,
             "total_tokens": 10,
@@ -43,7 +44,8 @@ def test_summary_aggregates_final_metrics_and_success_rates():
             "answer_coverage_rate": 0.0,
             "abstention_rate": 1.0,
             "question_answer_lexical_f1": 0.0,
-            "total_latency_ms": 0.0,
+            "end_to_end_latency_ms": 20.0,
+            "retrieval_generation_latency_ms": 0.0,
             "total_tokens": 0,
             "estimated_cost": 0.0,
             "pipeline1_error": "generation failed",
@@ -71,7 +73,8 @@ def test_summary_aggregates_final_metrics_and_success_rates():
     assert summary["diagnostic_mean_question_answer_lexical_f1"] == 0.25
     assert summary["mean_retrieval_time_ms"] == 40.0
     assert summary["mean_generation_time_ms"] == 60.0
-    assert summary["mean_total_latency_ms"] == 50.0
+    assert summary["mean_end_to_end_latency_ms"] == 70.0
+    assert summary["mean_retrieval_generation_latency_ms"] == 50.0
     assert summary["mean_input_tokens"] == 7.0
     assert summary["mean_output_tokens"] == 3.0
     assert summary["mean_total_tokens"] == 5.0

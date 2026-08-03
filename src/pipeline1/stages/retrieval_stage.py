@@ -306,11 +306,28 @@ class RetrievalStage(BaseStage):
                     "reranked_candidate_ids": [item.chunk_id for item in reranked_candidates],
                     "final_candidate_ids": [item.chunk_id for item in retrieved],
                     "final_chunk_ids": [item.chunk_id for item in retrieved],
+                    "final_context_ids": [item.chunk_id for item in retrieved],
                     "dense_candidate_count": len(raw_dense_retrieved),
                     "bm25_candidate_count": len(raw_bm25_retrieved),
                     "fused_candidate_count": len(fused_retrieved),
                     "reranked_candidate_count": len(reranked_candidates),
                     "final_context_count": len(retrieved),
+                    "orchestration_latency_ms": query.orchestration_latency_ms,
+                    "validation_probe_latency_ms": adaptive_diagnostics.get("validation_probe_latency_ms", 0.0),
+                    "final_retrieval_latency_ms": adaptive_diagnostics.get(
+                        "final_retrieval_latency_ms",
+                        selection_diagnostics.get("retriever_time_ms", 0.0),
+                    ),
+                    "reranker_latency_ms": adaptive_diagnostics.get(
+                        "reranker_latency_ms",
+                        selection_diagnostics.get("rerank_time_ms", 0.0),
+                    ),
+                    "normalized_category": query.detected_category,
+                    "category_valid": query.category_validated,
+                    "routing_reason": adaptive_diagnostics.get("decision_reason"),
+                    "probe_support_count": adaptive_diagnostics.get("predicted_category_count", 0),
+                    "probe_share": adaptive_diagnostics.get("predicted_category_share", 0.0),
+                    "probe_margin": adaptive_diagnostics.get("support_margin", 0),
                     # Fields required for per-question output records.
                     "retriever_type": self.cfg.retrieval.retriever_type,
                     "configured_retriever_type": self.cfg.retrieval.retriever_type,
@@ -479,6 +496,9 @@ def run_adaptive_category_aware_retrieval(
             "fallback_reason": "invalid_category_global_fallback",
             "number_of_category_results": 0,
             "number_of_global_fallback_results": len(retrieved),
+            "validation_probe_latency_ms": 0.0,
+            "final_retrieval_latency_ms": selection_diagnostics.get("retriever_time_ms", 0.0),
+            "reranker_latency_ms": selection_diagnostics.get("rerank_time_ms", 0.0),
         }
         return raw_retrieved, retrieved, warnings, reranker_used, selection_diagnostics, diagnostics
 
@@ -507,14 +527,19 @@ def run_adaptive_category_aware_retrieval(
             "fallback_reason": None,
             "number_of_category_results": len(retrieved),
             "number_of_global_fallback_results": 0,
+            "validation_probe_latency_ms": 0.0,
+            "final_retrieval_latency_ms": selection_diagnostics.get("retriever_time_ms", 0.0),
+            "reranker_latency_ms": selection_diagnostics.get("rerank_time_ms", 0.0),
         }
         return raw_retrieved, retrieved, warnings, reranker_used, selection_diagnostics, diagnostics
 
     retriever.set_active_category(None)
+    probe_start = time.perf_counter()
     if hasattr(retriever, "retrieve_global_probe"):
         probe_candidates = retriever.retrieve_global_probe(query.retrieval_question, validation_cfg.probe_fetch_k)
     else:
         probe_candidates = retriever.retrieve(query.retrieval_question, validation_cfg.probe_fetch_k)
+    validation_probe_latency_ms = (time.perf_counter() - probe_start) * 1000
     probe_stats = category_probe_support_stats(
         probe_candidates,
         predicted_category,
@@ -572,6 +597,9 @@ def run_adaptive_category_aware_retrieval(
         "fallback_reason": fallback_reason,
         "number_of_category_results": len(retrieved) if successful_category else 0,
         "number_of_global_fallback_results": 0 if successful_category else len(retrieved),
+        "validation_probe_latency_ms": validation_probe_latency_ms,
+        "final_retrieval_latency_ms": selection_diagnostics.get("retriever_time_ms", 0.0),
+        "reranker_latency_ms": selection_diagnostics.get("rerank_time_ms", 0.0),
     }
     return raw_retrieved, retrieved, warnings, reranker_used, selection_diagnostics, diagnostics
 

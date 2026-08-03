@@ -4,6 +4,8 @@ import csv
 import json
 from pathlib import Path
 
+import pytest
+
 from src.pipeline4.loaders import load_p2_summary, load_p3_summary
 
 
@@ -53,7 +55,7 @@ def test_load_p2_summary_marks_legacy_manifest_missing(tmp_path: Path):
     assert summary.required_outputs_present is False
 
 
-def test_load_p2_summary_accepts_a04_k03_without_at5_metrics(tmp_path: Path):
+def test_load_p2_summary_rejects_missing_at5_scoring_metrics(tmp_path: Path):
     run_dir = tmp_path / "p2_a04_k03"
     run_dir.mkdir()
     _write_p2_summary(
@@ -61,6 +63,10 @@ def test_load_p2_summary_accepts_a04_k03_without_at5_metrics(tmp_path: Path):
         "A04-K03",
         96,
         metrics={
+            "mean_recall_at_5": None,
+            "mean_mrr_at_5": None,
+            "mean_ndcg_at_5": None,
+            "mean_context_precision_at_5": None,
             "mean_recall_at_1": 0.2,
             "mean_mrr_at_1": 0.2,
             "mean_ndcg_at_1": 0.2,
@@ -77,22 +83,8 @@ def test_load_p2_summary_accepts_a04_k03_without_at5_metrics(tmp_path: Path):
         },
     )
 
-    summary = load_p2_summary(run_dir)
-
-    assert summary.primary_k == 3
-    assert summary.available_ks == [1, 3]
-    assert summary.primary_recall == 0.5
-    assert summary.primary_mrr == 0.6
-    assert summary.primary_ndcg == 0.7
-    assert summary.primary_context_precision == 0.8
-    assert summary.primary_chunk_hit == 0.3
-    assert summary.primary_chunk_recall == 0.4
-    assert summary.primary_chunk_mrr == 0.5
-    assert summary.primary_chunk_ndcg == 0.6
-    assert summary.mean_recall_at_5 is None
-    assert summary.mean_mrr_at_5 is None
-    assert summary.mean_ndcg_at_5 is None
-    assert summary.mean_context_precision_at_5 is None
+    with pytest.raises(ValueError, match="mean_recall_at_5"):
+        load_p2_summary(run_dir)
 
 
 def test_load_p2_summary_uses_a04_primary_cutoffs(tmp_path: Path):
@@ -102,11 +94,10 @@ def test_load_p2_summary_uses_a04_primary_cutoffs(tmp_path: Path):
         run_dir.mkdir()
         metrics = {}
         for k in [1, 3, 5, 10]:
-            if k <= primary_k:
-                metrics[f"mean_recall_at_{k}"] = k / 10
-                metrics[f"mean_mrr_at_{k}"] = k / 10
-                metrics[f"mean_ndcg_at_{k}"] = k / 10
-                metrics[f"mean_context_precision_at_{k}"] = k / 10
+            metrics[f"mean_recall_at_{k}"] = k / 10
+            metrics[f"mean_mrr_at_{k}"] = k / 10
+            metrics[f"mean_ndcg_at_{k}"] = k / 10
+            metrics[f"mean_context_precision_at_{k}"] = k / 10
         _write_p2_summary(run_dir, exp_id, 96, metrics=metrics)
 
         summary = load_p2_summary(run_dir)
@@ -152,18 +143,52 @@ def test_load_p3_summary_detects_duplicate_question_ids(tmp_path: Path):
     assert summary.duplicate_question_ids == ["q001"]
 
 
+def test_load_p2_summary_rejects_nan_metric(tmp_path: Path):
+    run_dir = tmp_path / "p2_nan"
+    run_dir.mkdir()
+    _write_p2_summary(run_dir, "nan", 96, metrics={"mean_recall_at_5": "NaN", "mean_mrr_at_5": 0.6, "mean_ndcg_at_5": 0.7})
+
+    with pytest.raises(ValueError, match="not finite"):
+        load_p2_summary(run_dir)
+
+
+def test_load_p2_summary_rejects_out_of_range_metric(tmp_path: Path):
+    run_dir = tmp_path / "p2_bad"
+    run_dir.mkdir()
+    _write_p2_summary(run_dir, "bad", 96, metrics={"mean_recall_at_5": 1.2, "mean_mrr_at_5": 0.6, "mean_ndcg_at_5": 0.7})
+
+    with pytest.raises(ValueError, match="outside"):
+        load_p2_summary(run_dir)
+
+
+def test_load_p2_summary_rejects_multiple_experiments(tmp_path: Path):
+    run_dir = tmp_path / "p2_multi"
+    run_dir.mkdir()
+    _write_p2_summary(run_dir, "a", 96)
+    data = json.loads((run_dir / "summary_metrics.json").read_text(encoding="utf-8"))
+    data["summary_by_experiment"].append(dict(data["summary_by_experiment"][0], experiment_id="b"))
+    (run_dir / "summary_metrics.json").write_text(json.dumps(data), encoding="utf-8")
+
+    with pytest.raises(ValueError, match="exactly one experiment"):
+        load_p2_summary(run_dir)
+
+
 def _write_p2_summary(
     run_dir: Path,
     exp_id: str,
     n_questions: int,
     metrics: dict | None = None,
 ) -> None:
-    metric_values = metrics or {
+    metric_values = {
         "mean_recall_at_5": 0.5,
         "mean_mrr_at_5": 0.6,
         "mean_ndcg_at_5": 0.7,
         "mean_context_precision_at_5": 0.8,
+        "mean_embedding_similarity": 0.9,
+        "mean_official_bertscore_f1": 0.7,
     }
+    if metrics:
+        metric_values.update(metrics)
     (run_dir / "summary_metrics.json").write_text(
         json.dumps(
             {
@@ -196,7 +221,9 @@ def _write_p3_manifest(run_dir: Path, exp_id: str, n_questions: int) -> None:
                     "judge_failure_count": 0,
                     "mean_judge_correctness": 3.0,
                     "mean_judge_faithfulness": 3.0,
+                    "mean_judge_completeness": 3.0,
                     "mean_judge_context_relevance": 3.0,
+                    "mean_ragas_faithfulness": 0.6,
                 },
             }
         ),

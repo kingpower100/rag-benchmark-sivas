@@ -9,6 +9,9 @@ from typing import Any, Optional
 from src.pipeline4.loaders import P2Summary, P3Summary
 from src.pipeline4.schemas import Pipeline4Config
 from src.pipeline4.scoring import (
+    compute_answer_quality,
+    compute_faithfulness,
+    compute_generation,
     compute_retrieval_score,
     compute_rqi,
     retrieval_score_contributions,
@@ -76,6 +79,9 @@ class ExperimentRecord:
     ragas_answer_relevancy_nan_rate: Optional[float]
     qa_sha256: Optional[str]
     retrieval_score: float
+    answer_quality: Optional[float]
+    faithfulness_score: Optional[float]
+    generation_score: Optional[float]
     rqi: Optional[float]
     p2_status: str
     p3_status: Optional[str]
@@ -110,8 +116,14 @@ def build_records(
         p3 = p3_map.get(p2.experiment_id)
 
         retrieval_score = compute_retrieval_score(p2, cfg.retrieval_score_weights)
+        answer_quality: Optional[float] = None
+        faithfulness_score: Optional[float] = None
+        generation_score: Optional[float] = None
         rqi: Optional[float] = None
         if p3 is not None and val.overall_leaderboard_eligible:
+            answer_quality = compute_answer_quality(p2)
+            faithfulness_score = compute_faithfulness(p3)
+            generation_score = compute_generation(p3)
             rqi = compute_rqi(p2, p3, cfg.rqi_weights)
 
         rec = ExperimentRecord(
@@ -156,6 +168,9 @@ def build_records(
             ragas_answer_relevancy_nan_rate=p3.ragas_answer_relevancy_nan_rate if p3 else None,
             qa_sha256=p3.qa_sha256 if p3 else None,
             retrieval_score=retrieval_score,
+            answer_quality=answer_quality,
+            faithfulness_score=faithfulness_score,
+            generation_score=generation_score,
             rqi=rqi,
             p2_status=val.p2_status,
             p3_status=val.p3_status,
@@ -238,8 +253,12 @@ def write_rqi_leaderboard(records: list[ExperimentRecord], out_path: Path) -> No
         "experiment_id",
         "rqi",
         "retrieval_score",
+        "answer_quality",
+        "faithfulness_score",
+        "generation_score",
         "judge_correctness_norm",
         "judge_faithfulness_norm",
+        "judge_completeness_norm",
         "judge_context_relevance_norm",
         "primary_k",
         "recall_at_primary_k",
@@ -260,6 +279,9 @@ def write_rqi_leaderboard(records: list[ExperimentRecord], out_path: Path) -> No
                     "experiment_id": r.experiment_id,
                     "rqi": f"{r.rqi:.6f}",
                     "retrieval_score": f"{r.retrieval_score:.6f}",
+                    "answer_quality": f"{r.answer_quality:.6f}" if r.answer_quality is not None else "",
+                    "faithfulness_score": f"{r.faithfulness_score:.6f}" if r.faithfulness_score is not None else "",
+                    "generation_score": f"{r.generation_score:.6f}" if r.generation_score is not None else "",
                     "judge_correctness_norm": (
                         f"{r.mean_judge_correctness / 5.0:.6f}"
                         if r.mean_judge_correctness is not None
@@ -273,6 +295,11 @@ def write_rqi_leaderboard(records: list[ExperimentRecord], out_path: Path) -> No
                     "judge_context_relevance_norm": (
                         f"{r.mean_judge_context_relevance / 5.0:.6f}"
                         if r.mean_judge_context_relevance is not None
+                        else ""
+                    ),
+                    "judge_completeness_norm": (
+                        f"{r.mean_judge_completeness / 5.0:.6f}"
+                        if r.mean_judge_completeness is not None
                         else ""
                     ),
                     "primary_k": r.primary_k,
@@ -298,6 +325,9 @@ def write_full_summary(records: list[ExperimentRecord], out_path: Path) -> None:
         "retrieval_rank",
         "rqi_rank",
         "retrieval_score",
+        "answer_quality",
+        "faithfulness_score",
+        "generation_score",
         "rqi",
         "primary_k",
         "available_ks",
@@ -354,6 +384,9 @@ def write_full_summary(records: list[ExperimentRecord], out_path: Path) -> None:
                     "retrieval_rank": r.retrieval_rank if r.retrieval_rank is not None else "",
                     "rqi_rank": r.rqi_rank if r.rqi_rank is not None else "",
                     "retrieval_score": _fmt(r.retrieval_score),
+                    "answer_quality": _fmt(r.answer_quality),
+                    "faithfulness_score": _fmt(r.faithfulness_score),
+                    "generation_score": _fmt(r.generation_score),
                     "rqi": _fmt(r.rqi),
                     "primary_k": r.primary_k,
                     "available_ks": ",".join(str(k) for k in r.available_ks),
@@ -413,6 +446,9 @@ def write_leaderboard_json(
                 "rank": r.retrieval_rank,
                 "experiment_id": r.experiment_id,
                 "retrieval_score": round(r.retrieval_score, 6),
+                "answer_quality": _round_optional(r.answer_quality),
+                "faithfulness_score": _round_optional(r.faithfulness_score),
+                "generation_score": _round_optional(r.generation_score),
                 "primary_k": r.primary_k,
                 "available_ks": r.available_ks,
                 "recall_at_primary_k": round(r.primary_recall, 6),
@@ -444,6 +480,9 @@ def write_leaderboard_json(
                 "experiment_id": r.experiment_id,
                 "rqi": round(r.rqi, 6),
                 "retrieval_score": round(r.retrieval_score, 6),
+                "answer_quality": _round_optional(r.answer_quality),
+                "faithfulness_score": _round_optional(r.faithfulness_score),
+                "generation_score": _round_optional(r.generation_score),
                 "judge_correctness_norm": (
                     round(r.mean_judge_correctness / 5.0, 6)
                     if r.mean_judge_correctness is not None
@@ -457,6 +496,11 @@ def write_leaderboard_json(
                 "judge_context_relevance_norm": (
                     round(r.mean_judge_context_relevance / 5.0, 6)
                     if r.mean_judge_context_relevance is not None
+                    else None
+                ),
+                "judge_completeness_norm": (
+                    round(r.mean_judge_completeness / 5.0, 6)
+                    if r.mean_judge_completeness is not None
                     else None
                 ),
                 "primary_k": r.primary_k,
@@ -617,17 +661,13 @@ def write_comparison_report(
     lines.append("")
     lines.append("| Component | Weight | Formula |")
     lines.append("|-----------|--------|---------|")
-    lines.append(f"| Recall@primary_k | {w.recall_at_5} | `{w.recall_at_5} x Recall@primary_k` |")
-    lines.append(f"| MRR@primary_k | {w.mrr_at_5} | `{w.mrr_at_5} x MRR@primary_k` |")
-    lines.append(f"| nDCG@primary_k | {w.ndcg_at_5} | `{w.ndcg_at_5} x nDCG@primary_k` |")
-    lines.append(
-        f"| ContextPrecision@primary_k | {w.context_precision_at_5} | "
-        f"`{w.context_precision_at_5} x ContextPrecision@primary_k` when available |"
-    )
+    lines.append(f"| nDCG@5 | {w.ndcg_at_5} | `{w.ndcg_at_5} x nDCG@5` |")
+    lines.append(f"| Recall@5 | {w.recall_at_5} | `{w.recall_at_5} x Recall@5` |")
+    lines.append(f"| MRR@5 | {w.mrr_at_5} | `{w.mrr_at_5} x MRR@5` |")
     lines.append("")
     lines.append(
-        "Unavailable primary-k metric components are excluded from retrieval-score "
-        "calculations and the remaining weights are renormalized."
+        "Hit@k is excluded because it saturates in this benchmark. Context Precision is "
+        "excluded because it is not consistently available across all experiments."
     )
     lines.append("")
 
@@ -635,13 +675,12 @@ def write_comparison_report(
         lines.append("## RQI Weights")
         lines.append("")
         rw = cfg.rqi_weights
-        lines.append("| Component | Weight | Normalization |")
+        lines.append("| Component | Weight | Formula |")
         lines.append("|-----------|--------|---------------|")
-        lines.append(f"| Correctness | {rw.correctness} | `judge_correctness / 5` |")
-        lines.append(f"| Faithfulness | {rw.faithfulness} | `judge_faithfulness / 5` |")
-        lines.append(f"| Context Relevance | {rw.context_relevance} | `judge_context_relevance / 5` |")
-        lines.append(f"| Recall@primary_k | {rw.recall_at_5} | raw |")
-        lines.append(f"| No-Unknown | {rw.no_unknown} | `1 - unknown_rate` |")
+        lines.append(f"| RSI | {rw.retrieval_score} | Retrieval Score Index |")
+        lines.append(f"| Answer Quality | {rw.answer_quality} | `0.50 x BERTScore F1 + 0.50 x Embedding Similarity` |")
+        lines.append(f"| Faithfulness | {rw.faithfulness} | `0.50 x RAGAS Faithfulness + 0.50 x (Judge Faithfulness / 5)` |")
+        lines.append(f"| Generation | {rw.generation} | `0.40 x (Correctness / 5) + 0.30 x (Context Relevance / 5) + 0.30 x (Completeness / 5)` |")
         lines.append("")
 
     lines.append("## Retrieval Leaderboard")
@@ -671,17 +710,14 @@ def write_comparison_report(
         lines.append("## RQI Leaderboard")
         lines.append("")
         lines.append(
-            "| Rank | Experiment | RQI | Correctness/5 | Faithfulness/5 | CR/5 | Recall@primary_k | 1-Unknown |"
+            "| Rank | Experiment | RQI | RSI | Answer Quality | Faithfulness | Generation |"
         )
-        lines.append("|------|-----------|-----|---------------|----------------|------|----------|-----------|")
+        lines.append("|------|-----------|-----|-----|----------------|--------------|------------|")
         for r in ranked_rqi:
-            c_norm = f"{r.mean_judge_correctness / 5.0:.4f}" if r.mean_judge_correctness is not None else "N/A"
-            f_norm = f"{r.mean_judge_faithfulness / 5.0:.4f}" if r.mean_judge_faithfulness is not None else "N/A"
-            cr_norm = f"{r.mean_judge_context_relevance / 5.0:.4f}" if r.mean_judge_context_relevance is not None else "N/A"
             lines.append(
                 f"| {r.rqi_rank} | `{r.experiment_id}` | {r.rqi:.4f} "
-                f"| {c_norm} | {f_norm} | {cr_norm} "
-                f"| {r.primary_recall:.4f} | {1.0 - r.unknown_rate:.4f} |"
+                f"| {r.retrieval_score:.4f} | {_md_float(r.answer_quality)} "
+                f"| {_md_float(r.faithfulness_score)} | {_md_float(r.generation_score)} |"
             )
         lines.append("")
 
@@ -708,28 +744,25 @@ def write_comparison_report(
     lines.append("")
     lines.append(
         "**Retrieval Score** = "
-        f"{cfg.retrieval_score_weights.recall_at_5}xRecall@primary_k + "
-        f"{cfg.retrieval_score_weights.mrr_at_5}xMRR@primary_k + "
-        f"{cfg.retrieval_score_weights.ndcg_at_5}xnDCG@primary_k + "
-        f"{cfg.retrieval_score_weights.context_precision_at_5}xContextPrecision@primary_k "
-        "when available"
+        f"{cfg.retrieval_score_weights.ndcg_at_5}xnDCG@5 + "
+        f"{cfg.retrieval_score_weights.recall_at_5}xRecall@5 + "
+        f"{cfg.retrieval_score_weights.mrr_at_5}xMRR@5"
     )
     lines.append("")
     if cfg.ranking_mode == "overall_rag":
         rw = cfg.rqi_weights
         lines.append(
             "**RQI** = "
-            f"{rw.correctness}x(Correctness/5) + "
-            f"{rw.faithfulness}x(Faithfulness/5) + "
-            f"{rw.context_relevance}x(ContextRelevance/5) + "
-            f"{rw.recall_at_5}xRecall@primary_k + "
-            f"{rw.no_unknown}x(1-UnknownRate)"
+            f"{rw.retrieval_score}xRSI + "
+            f"{rw.answer_quality}xAnswerQuality + "
+            f"{rw.faithfulness}xFaithfulness + "
+            f"{rw.generation}xGeneration"
         )
         lines.append("")
     lines.append(
-        "All judge metrics (correctness, faithfulness, context_relevance) are on a 0-5 scale "
-        "and are normalized to [0, 1] by dividing by 5. "
-        "`judge_overall_score` from Pipeline 3 is **not** used in the RQI formula."
+        "All judge metrics used by RQI are on a 0-5 scale and are normalized to [0, 1] "
+        "by dividing by 5. `judge_overall_score`, hallucination, answer relevancy, and "
+        "context recall are reported but not used in the RQI formula."
     )
 
     out_path.write_text("\n".join(lines) + "\n", encoding="utf-8")

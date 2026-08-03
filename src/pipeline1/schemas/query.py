@@ -9,6 +9,7 @@ class QueryRecord(BaseModel):
     category_validated: bool = False
     category_validation_reason: str | None = None
     orchestration_error: str | None = None
+    orchestration_latency_ms: float | None = None
 
     @property
     def retrieval_question(self) -> str:

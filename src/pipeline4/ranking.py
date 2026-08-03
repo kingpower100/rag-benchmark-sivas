@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+import math
 from typing import Optional
 
 
@@ -17,6 +18,9 @@ def competition_rank(entries: list[tuple[str, float]]) -> list[tuple[str, float,
     """Assign competition ranks (1, 2, 2, 4) to score pairs."""
     if not entries:
         return []
+    for exp_id, score in entries:
+        if not math.isfinite(score):
+            raise ValueError(f"Cannot rank non-finite score for experiment {exp_id!r}: {score!r}")
 
     sorted_entries = sorted(entries, key=lambda x: (-x[1], x[0]))
     result: list[tuple[str, float, int]] = []

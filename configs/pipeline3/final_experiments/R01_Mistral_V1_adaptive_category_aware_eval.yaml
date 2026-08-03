@@ -1,0 +1,22 @@
+extends: "../base_pipeline3.yaml"
+
+pipeline3:
+  run_id: "R01-M-V1"
+
+inputs:
+  pipeline1_results_path: "data/runs/pipeline1/R01-M-V1/results.jsonl"
+
+source_validation:
+  expected_experiment_id: "R01-M-V1"
+  expected_retriever_type: "adaptive_category_aware_hybrid_rrf"
+  expected_orchestration_enabled: true
+  expected_generator_provider: "ollama"
+  expected_generator_model: "qwen2.5:7b-instruct"
+  expected_top_k: 5
+  expected_fetch_k: 20
+  expected_reranker_enabled: true
+  expected_fallback_to_global: true
+  require_hybrid_diagnostics: true
+  require_reranker_diagnostics: true
+  require_routing_diagnostics: true
+  require_routing_reconciliation: true

@@ -7,19 +7,32 @@ run_id: pipeline4_default
 ranking_mode: retrieval_only
 
 retrieval_score_weights:
-  recall_at_5: 0.35
-  mrr_at_5: 0.25
-  ndcg_at_5: 0.20
-  context_precision_at_5: 0.20
+  ndcg_at_5: 0.60
+  recall_at_5: 0.25
+  mrr_at_5: 0.15
 
 rqi_weights:
-  correctness: 0.25
+  retrieval_score: 0.30
+  answer_quality: 0.20
   faithfulness: 0.25
-  context_relevance: 0.20
-  recall_at_5: 0.15
-  no_unknown: 0.15
+  generation: 0.25
 
 validation:
   max_generation_failure_rate: 0.05
   min_judge_success_rate: 0.95
   max_ragas_nan_rate: 0.10
+
+# ============================================================
+# FINAL-SYSTEM COMPARISON GROUP (F-series)
+# ============================================================
+# Pipeline 4 discovers experiments automatically from run
+# directories (pipeline2_runs_dir / pipeline3_runs_dir).
+# No explicit experiment list is required.
+#
+# F-series experiments for end-to-end comparison:
+#   F00  — Final system + GPT-5.5        (OpenAI API)
+#   F01  — Final system + Mistral-Small  (local Ollama)
+#
+# Both appear automatically in the leaderboard once their
+# Pipeline 2 summary_metrics.json files are present.
+# ============================================================

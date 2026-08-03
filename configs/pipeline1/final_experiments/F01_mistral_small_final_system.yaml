@@ -1,0 +1,112 @@
+extends: "F00_final_system.yaml"
+
+# ============================================================
+# F01 — Final Production System — Mistral-Small
+# ============================================================
+# Controlled generation ablation of the final system (F00).
+# F01 is identical to F00 in every component except generation:
+#   F00: GPT-5.5   via OpenAI API      (external cloud)
+#   F01: Mistral-Small via local Ollama (local inference)
+#
+# The independent variable is the generation model only.
+# All retrieval, reranking, chunking, embedding, routing, and
+# evaluation settings are inherited unchanged from F00.
+#
+# ============================================================
+# INHERITANCE CHAIN (innermost → outermost)
+# ============================================================
+#
+#   F01_mistral_small_final_system.yaml
+#     → F00_final_system.yaml
+#         → G03_gpt55.yaml
+#             → R00_global_retrieval.yaml
+#                 → A_final.yaml
+#                     → A04-K10_top10.yaml
+#                         → A03_reranker.yaml
+#                             → A02_elasticsearch_hybrid_rrf.yaml
+#                                 → A00_elasticsearch_dense.yaml
+#                                     → E03_mistral_api_embedding.yaml
+#                                         → ../phase3_embedding_base.yaml
+#                                             → C02_sentence1024.yaml
+#                                                 → C00_sentence512_baseline.yaml
+#                                                     → E00-G_global_dense_baseline.yaml
+#
+# ============================================================
+# FROZEN COMPONENTS (identical to F00)
+# ============================================================
+#
+#   Component             Effective Value
+#   ---------             ---------------
+#   Chunking              C02: Sentence, 1024 tokens, 400 overlap
+#   Embedding             E03: Mistral Embed API (mistral-embed, 1024 dim)
+#   Vector backend        V02: Elasticsearch (cosine script_score)
+#   Dense index           sivas_phase4_a00_elasticsearch_dense_mistral_embed
+#   BM25 index            sivas_phase4_a01_bm25_c02_chunks
+#   Retrieval algorithm   A02: Hybrid RRF (Dense + BM25, rrf_k=60)
+#   Reranker              A03: BAAI/bge-reranker-v2-m3 (CUDA, rerank_top_k=20)
+#   Retrieval depth       K05: fetch_k=20, top_k=5
+#   Routing strategy      R00: Global (no category routing)
+#   Orchestration         Disabled
+#   Generation prompt     answer_generation_sivas_v1.txt (unchanged)
+#   Max context tokens    6000
+#   Max tokens (answer)   2048
+#   Temperature           0.0
+#
+# ============================================================
+# CHANGED COMPONENT
+# ============================================================
+#
+#   G (generation):
+#     F00: provider=openai,  model=gpt-5.5,             url=api.openai.com
+#     F01: provider=ollama,  model=mistral-small:latest, url=localhost:11434
+#
+# ============================================================
+# RESEARCH QUESTION
+# ============================================================
+#
+#   Does the final system performance differ when replacing
+#   GPT-5.5 (cloud API) with Mistral-Small (local Ollama),
+#   while keeping all retrieval, reranking, and prompt
+#   settings completely fixed?
+#
+# ============================================================
+# AUTHENTICATION
+# ============================================================
+#   MISTRAL_API_KEY  — still required by EmbeddingStage (E03 mistral-embed)
+#   OPENAI_API_KEY   — NOT required by F01 (Ollama generator, no API key)
+#   OLLAMA_BASE_URL  — optional override (default: http://localhost:11434)
+#
+# ============================================================
+# ELASTICSEARCH INDEXES (reused from F00; no re-indexing needed)
+# ============================================================
+#   Dense : sivas_phase4_a00_elasticsearch_dense_mistral_embed
+#   BM25  : sivas_phase4_a01_bm25_c02_chunks
+#
+# ============================================================
+# RUNTIME NOTES
+# ============================================================
+#   resume=true (inherited via E00-G): a second run skips all
+#   already-completed questions without additional Ollama calls.
+#   Checkpointing writes one row per question to results.jsonl.
+#
+#   estimate_cost=true: Ollama inference is local and free.
+#   Pricing is set to 0.0 (inherited from F00 re-declaration).
+#   Re-enable and set accurate rates if commercial Ollama is used.
+# ============================================================
+
+experiment:
+  experiment_id: "F01"
+
+# Override generation: replace GPT-5.5 (OpenAI) with Mistral-Small (Ollama).
+# All other generation settings (prompt_path, max_tokens, temperature,
+# context budget, truncation strategy) are inherited unchanged from F00.
+generation:
+  provider: "ollama"
+  model_name: "mistral-small:latest"
+  base_url: "http://localhost:11434"
+
+# Reset cost estimation: Ollama inference has no API cost.
+# F00 disabled estimate_cost because GPT-5.5 pricing was unpublished.
+# F01 restores the default (true) since local Ollama is free.
+telemetry:
+  estimate_cost: true

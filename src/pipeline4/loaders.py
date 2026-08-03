@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import csv
 import json
+import math
 from collections import Counter
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -109,6 +110,10 @@ def load_p2_summary(run_dir: Path) -> P2Summary:
     experiments = summary_data.get("summary_by_experiment", [])
     if not experiments:
         raise ValueError(f"summary_by_experiment is empty in {summary_path}")
+    if len(experiments) != 1:
+        raise ValueError(
+            f"Expected exactly one experiment in {summary_path}, found {len(experiments)}."
+        )
 
     exp = experiments[0]
     experiment_id = exp["experiment_id"]
@@ -145,7 +150,13 @@ def load_p2_summary(run_dir: Path) -> P2Summary:
         experiment_id=experiment_id,
         n_questions=int(exp["n_questions"]),
         run_valid=bool(exp.get("run_valid", False)),
-        generation_failure_rate=float(exp.get("generation_failure_rate", 0.0)),
+        generation_failure_rate=_bounded_float(
+            exp.get("generation_failure_rate", 0.0),
+            "generation_failure_rate",
+            summary_path,
+            minimum=0.0,
+            maximum=1.0,
+        ),
         primary_k=primary_k,
         available_ks=available_ks,
         primary_recall=primary_metrics["recall"],
@@ -156,13 +167,17 @@ def load_p2_summary(run_dir: Path) -> P2Summary:
         primary_chunk_recall=_optional_float(exp.get(f"mean_chunk_recall_at_{primary_k}")),
         primary_chunk_mrr=_optional_float(exp.get(f"mean_chunk_mrr_at_{primary_k}")),
         primary_chunk_ndcg=_optional_float(exp.get(f"mean_chunk_ndcg_at_{primary_k}")),
-        mean_recall_at_5=_optional_float(exp.get("mean_recall_at_5")),
-        mean_mrr_at_5=_optional_float(exp.get("mean_mrr_at_5")),
-        mean_ndcg_at_5=_optional_float(exp.get("mean_ndcg_at_5")),
-        mean_context_precision_at_5=_optional_float(exp.get("mean_context_precision_at_5")),
-        unknown_rate=float(exp.get("unknown_rate", 0.0)),
-        mean_embedding_similarity=exp.get("mean_embedding_similarity"),
-        mean_official_bertscore_f1=exp.get("mean_official_bertscore_f1"),
+        mean_recall_at_5=_required_bounded_float(exp.get("mean_recall_at_5"), "mean_recall_at_5", summary_path),
+        mean_mrr_at_5=_required_bounded_float(exp.get("mean_mrr_at_5"), "mean_mrr_at_5", summary_path),
+        mean_ndcg_at_5=_required_bounded_float(exp.get("mean_ndcg_at_5"), "mean_ndcg_at_5", summary_path),
+        mean_context_precision_at_5=_optional_bounded_float(exp.get("mean_context_precision_at_5"), "mean_context_precision_at_5", summary_path),
+        unknown_rate=_bounded_float(exp.get("unknown_rate", 0.0), "unknown_rate", summary_path, minimum=0.0, maximum=1.0),
+        mean_embedding_similarity=_required_bounded_float(
+            exp.get("mean_embedding_similarity"), "mean_embedding_similarity", summary_path
+        ),
+        mean_official_bertscore_f1=_required_bounded_float(
+            exp.get("mean_official_bertscore_f1"), "mean_official_bertscore_f1", summary_path
+        ),
         qa_hash=qa_hash,
         gold_contexts_hash=gold_contexts_hash,
         p2_run_dir=str(run_dir),
@@ -216,20 +231,36 @@ def load_p3_summary(run_dir: Path) -> P3Summary:
     ragas_context_recall_nan_rate: Optional[float] = None
     if n_questions > 0:
         if "ragas_faithfulness" in nan_counts:
-            ragas_faithfulness_nan_rate = nan_counts["ragas_faithfulness"] / n_questions
+            ragas_faithfulness_nan_rate = _bounded_float(
+                nan_counts["ragas_faithfulness"] / n_questions,
+                "ragas_faithfulness_nan_rate",
+                manifest_path,
+                minimum=0.0,
+                maximum=1.0,
+            )
         if "ragas_answer_relevancy" in nan_counts:
-            ragas_answer_relevancy_nan_rate = (
-                nan_counts["ragas_answer_relevancy"] / n_questions
+            ragas_answer_relevancy_nan_rate = _bounded_float(
+                nan_counts["ragas_answer_relevancy"] / n_questions,
+                "ragas_answer_relevancy_nan_rate",
+                manifest_path,
+                minimum=0.0,
+                maximum=1.0,
             )
         if "ragas_context_recall" in nan_counts:
-            ragas_context_recall_nan_rate = (
-                nan_counts["ragas_context_recall"] / n_questions
+            ragas_context_recall_nan_rate = _bounded_float(
+                nan_counts["ragas_context_recall"] / n_questions,
+                "ragas_context_recall_nan_rate",
+                manifest_path,
+                minimum=0.0,
+                maximum=1.0,
             )
 
     for required in (
         "mean_judge_correctness",
         "mean_judge_faithfulness",
+        "mean_judge_completeness",
         "mean_judge_context_relevance",
+        "mean_ragas_faithfulness",
     ):
         if required not in summary or summary[required] is None:
             raise ValueError(
@@ -244,17 +275,23 @@ def load_p3_summary(run_dir: Path) -> P3Summary:
         judge_model=judge_model,
         prompt_version=prompt_version,
         qa_sha256=inputs.get("qa_sha256"),
-        judge_success_rate=float(summary.get("judge_success_rate", 0.0)),
+        judge_success_rate=_bounded_float(
+            summary.get("judge_success_rate", 0.0),
+            "judge_success_rate",
+            manifest_path,
+            minimum=0.0,
+            maximum=1.0,
+        ),
         judge_failure_count=int(summary.get("judge_failure_count", 0)),
-        mean_judge_correctness=float(summary["mean_judge_correctness"]),
-        mean_judge_faithfulness=float(summary["mean_judge_faithfulness"]),
-        mean_judge_completeness=float(summary.get("mean_judge_completeness", 0.0)),
-        mean_judge_hallucination=float(summary.get("mean_judge_hallucination", 0.0)),
-        mean_judge_context_relevance=float(summary["mean_judge_context_relevance"]),
-        mean_judge_overall_score=float(summary.get("mean_judge_overall_score", 0.0)),
-        mean_ragas_faithfulness=summary.get("mean_ragas_faithfulness"),
-        mean_ragas_answer_relevancy=summary.get("mean_ragas_answer_relevancy"),
-        mean_ragas_context_recall=summary.get("mean_ragas_context_recall"),
+        mean_judge_correctness=_bounded_float(summary["mean_judge_correctness"], "mean_judge_correctness", manifest_path, minimum=0.0, maximum=5.0),
+        mean_judge_faithfulness=_bounded_float(summary["mean_judge_faithfulness"], "mean_judge_faithfulness", manifest_path, minimum=0.0, maximum=5.0),
+        mean_judge_completeness=_bounded_float(summary["mean_judge_completeness"], "mean_judge_completeness", manifest_path, minimum=0.0, maximum=5.0),
+        mean_judge_hallucination=_bounded_float(summary.get("mean_judge_hallucination", 0.0), "mean_judge_hallucination", manifest_path, minimum=0.0, maximum=5.0),
+        mean_judge_context_relevance=_bounded_float(summary["mean_judge_context_relevance"], "mean_judge_context_relevance", manifest_path, minimum=0.0, maximum=5.0),
+        mean_judge_overall_score=_bounded_float(summary.get("mean_judge_overall_score", 0.0), "mean_judge_overall_score", manifest_path, minimum=0.0, maximum=5.0),
+        mean_ragas_faithfulness=_required_bounded_float(summary.get("mean_ragas_faithfulness"), "mean_ragas_faithfulness", manifest_path),
+        mean_ragas_answer_relevancy=_optional_bounded_float(summary.get("mean_ragas_answer_relevancy"), "mean_ragas_answer_relevancy", manifest_path),
+        mean_ragas_context_recall=_optional_bounded_float(summary.get("mean_ragas_context_recall"), "mean_ragas_context_recall", manifest_path),
         ragas_faithfulness_nan_rate=ragas_faithfulness_nan_rate,
         ragas_answer_relevancy_nan_rate=ragas_answer_relevancy_nan_rate,
         ragas_context_recall_nan_rate=ragas_context_recall_nan_rate,
@@ -335,8 +372,12 @@ def _primary_metrics(exp: dict, primary_k: int, summary_path: Path) -> dict[str,
             raise ValueError(
                 f"Required primary P2 metric '{key}' is missing or null in {summary_path}"
             )
-        metrics[name] = float(exp[key])
-    metrics["context_precision"] = _optional_float(exp.get(f"mean_context_precision_at_{primary_k}"))
+        metrics[name] = _bounded_float(exp[key], key, summary_path, minimum=0.0, maximum=1.0)
+    metrics["context_precision"] = _optional_bounded_float(
+        exp.get(f"mean_context_precision_at_{primary_k}"),
+        f"mean_context_precision_at_{primary_k}",
+        summary_path,
+    )
     return metrics
 
 
@@ -344,6 +385,36 @@ def _optional_float(value: object) -> Optional[float]:
     if value is None:
         return None
     return float(value)
+
+
+def _required_bounded_float(value: object, metric_name: str, source_path: Path) -> float:
+    if value is None:
+        raise ValueError(f"Required metric '{metric_name}' is missing or null in {source_path}")
+    return _bounded_float(value, metric_name, source_path, minimum=0.0, maximum=1.0)
+
+
+def _optional_bounded_float(value: object, metric_name: str, source_path: Path) -> Optional[float]:
+    if value is None:
+        return None
+    return _bounded_float(value, metric_name, source_path, minimum=0.0, maximum=1.0)
+
+
+def _bounded_float(
+    value: object,
+    metric_name: str,
+    source_path: Path,
+    *,
+    minimum: float,
+    maximum: float,
+) -> float:
+    numeric = float(value)
+    if not math.isfinite(numeric):
+        raise ValueError(f"Metric '{metric_name}' is not finite in {source_path}: {value!r}")
+    if numeric < minimum or numeric > maximum:
+        raise ValueError(
+            f"Metric '{metric_name}' outside [{minimum}, {maximum}] in {source_path}: {numeric}"
+        )
+    return numeric
 
 
 def _resolve_question_id(row: dict) -> str:

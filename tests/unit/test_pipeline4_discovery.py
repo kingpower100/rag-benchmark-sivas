@@ -2,6 +2,8 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
 from src.pipeline4.discovery import discover_p2_experiments, discover_p3_experiments
 
 
@@ -31,6 +33,8 @@ def test_discovery_excludes_smoke_runs(tmp_path):
                         "mean_mrr_at_5": 1.0,
                         "mean_ndcg_at_5": 1.0,
                         "mean_context_precision_at_5": 1.0,
+                        "mean_embedding_similarity": 1.0,
+                        "mean_official_bertscore_f1": 1.0,
                     }
                 ]
             },
@@ -45,7 +49,9 @@ def test_discovery_excludes_smoke_runs(tmp_path):
                     "judge_failure_count": 0,
                     "mean_judge_correctness": 5.0,
                     "mean_judge_faithfulness": 5.0,
+                    "mean_judge_completeness": 5.0,
                     "mean_judge_context_relevance": 5.0,
+                    "mean_ragas_faithfulness": 1.0,
                 },
                 "inputs": {},
                 "ragas_stats": {},
@@ -58,3 +64,13 @@ def test_discovery_excludes_smoke_runs(tmp_path):
 
     assert p2_ids == ["91_sivas_fixed512_faiss_dense_mistralsmall_prompt_v0"]
     assert p3_ids == ["91_sivas_fixed512_faiss_dense_mistralsmall_prompt_v0"]
+
+
+def test_discovery_fails_on_malformed_p2_run(tmp_path):
+    p2_dir = tmp_path / "pipeline2"
+    bad = p2_dir / "bad"
+    bad.mkdir(parents=True)
+    (bad / "summary_metrics.json").write_text("{not json", encoding="utf-8")
+
+    with pytest.raises(json.JSONDecodeError):
+        discover_p2_experiments(p2_dir)

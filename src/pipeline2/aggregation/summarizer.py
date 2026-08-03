@@ -64,7 +64,8 @@ def summarize_by_experiment(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
             "reranker_candidate_count",
             "reranker_output_count",
             "generation_time_ms",
-            "total_latency_ms",
+            "end_to_end_latency_ms",
+            "retrieval_generation_latency_ms",
             "input_tokens",
             "output_tokens",
             "total_tokens",
@@ -148,7 +149,8 @@ def summarize_by_category(rows: list[dict[str, Any]]) -> list[dict[str, Any]]:
             "official_bertscore_precision",
             "official_bertscore_recall",
             "official_bertscore_f1",
-            "total_latency_ms",
+            "end_to_end_latency_ms",
+            "retrieval_generation_latency_ms",
             "total_tokens",
         ):
             summary[f"mean_{col}"] = _mean([row.get(col) for row in group if row.get(col) is not None])

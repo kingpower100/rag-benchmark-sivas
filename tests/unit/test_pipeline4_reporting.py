@@ -249,24 +249,12 @@ class TestWriteFullSummary:
         assert rows[0]["judge_model"] == ""
         assert rows[0]["mean_judge_correctness"] == ""
 
-    def test_missing_at5_metrics_are_blank_not_zero(self):
+    def test_missing_at5_metrics_fail_closed(self):
         p2_list = [_p2_k03()]
         p3_map = {"A04-K03": None}
         cfg = _cfg()
-        records, groups, _ = _make_records_and_groups(p2_list, p3_map, cfg)
-
-        with tempfile.TemporaryDirectory() as tmp:
-            out = Path(tmp) / "summary.csv"
-            write_full_summary(records, out)
-            rows = list(csv.DictReader(out.open(encoding="utf-8")))
-
-        assert rows[0]["primary_k"] == "3"
-        assert rows[0]["mean_recall_at_primary_k"] == "0.500000"
-        assert rows[0]["mean_chunk_ndcg_at_primary_k"] == "0.600000"
-        assert rows[0]["mean_recall_at_5"] == ""
-        assert rows[0]["mean_mrr_at_5"] == ""
-        assert rows[0]["mean_ndcg_at_5"] == ""
-        assert rows[0]["mean_context_precision_at_5"] == ""
+        with pytest.raises(ValueError, match="mean_ndcg_at_5"):
+            _make_records_and_groups(p2_list, p3_map, cfg)
 
 
 class TestLeaderboardJson:
@@ -314,3 +302,4 @@ class TestComparisonReport:
         assert "Retrieval Leaderboard" in text
         assert "Document Recall@primary_k" in text
         assert "not exact answer-passage localization" in text
+        assert "nDCG@5" in text

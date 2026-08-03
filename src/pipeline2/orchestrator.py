@@ -1453,7 +1453,8 @@ SUMMARY_METRICS_CSV_BASE_FIELDS = [
     "category_accuracy",
     "category_coverage",
     "fallback_rate",
-    "avg_latency",
+    "avg_end_to_end_latency_ms",
+    "avg_retrieval_generation_latency_ms",
 ]
 
 
@@ -1535,7 +1536,8 @@ def _summary_metrics_csv_row(
         "category_accuracy": "" if category_accuracy is None else category_accuracy,
         "category_coverage": "" if category_coverage is None else category_coverage,
         "fallback_rate": value("fallback_rate"),
-        "avg_latency": value("mean_total_latency_ms"),
+        "avg_end_to_end_latency_ms": value("mean_end_to_end_latency_ms"),
+        "avg_retrieval_generation_latency_ms": value("mean_retrieval_generation_latency_ms"),
         "document_enabled": value("document_enabled"),
         "document_evaluated_questions": value("document_evaluated_questions"),
         "document_skipped_questions": value("document_skipped_questions"),
@@ -1632,7 +1634,8 @@ def _per_question_fields(ks: list[int], cfg: EvalConfig | None = None) -> list[s
         "reranker_candidate_count",
         "reranker_output_count",
         "generation_time_ms",
-        "total_latency_ms",
+        "end_to_end_latency_ms",
+        "retrieval_generation_latency_ms",
         "input_tokens",
         "output_tokens",
         "total_tokens",
@@ -1917,7 +1920,12 @@ def _fake_run_row_checks(cfg: EvalConfig, rag_rows: list[dict[str, Any]]) -> lis
     retrieval_field = cfg.evaluation.retrieval_eval_field
     all_retrieval_empty = all(not _list_field(row, retrieval_field) for row in rag_rows)
     latencies = [
-        _as_float_or_none(row.get("total_latency_ms", row.get("latency_ms")))
+        _as_float_or_none(
+            row.get(
+                "end_to_end_latency_ms",
+                row.get("total_latency_ms", row.get("latency_ms")),
+            )
+        )
         for row in rag_rows
     ]
     all_latency_missing_or_zero = all(value is None or value == 0.0 for value in latencies)
@@ -2165,6 +2173,11 @@ def _audit_report_markdown(report: dict[str, Any]) -> str:
         lines.append(f"- {label} (`{name}`): `{retrieval_metrics.get(name)}`")
     lines.extend([
         "",
+        "## Latency Metrics",
+        "- End-to-end latency (`end_to_end_latency_ms`) includes orchestration, validation probe, retrieval, reranker, and generation.",
+        "- Retrieval-generation latency (`retrieval_generation_latency_ms`) includes validation probe, retrieval, reranker, and generation; it excludes orchestration.",
+        "- Legacy Pipeline 1 outputs without `end_to_end_latency_ms` are evaluated using retrieval-generation latency as the end-to-end fallback.",
+        "",
         "## Coverage",
         f"- Non-empty answers: `{answer_metrics.get('mean_non_empty_answer_rate', 'n/a')}`",
         "",
@@ -2403,6 +2416,30 @@ def _eval_manifest(
             )
             if key in all_summary
         },
+        "latency_metrics": {
+            "primary_metric": "mean_end_to_end_latency_ms",
+            "secondary_metric": "mean_retrieval_generation_latency_ms",
+            "mean_end_to_end_latency_ms": all_summary.get("mean_end_to_end_latency_ms"),
+            "mean_retrieval_generation_latency_ms": all_summary.get("mean_retrieval_generation_latency_ms"),
+            "end_to_end_latency_scope": [
+                "orchestration",
+                "validation_probe",
+                "retrieval",
+                "reranker",
+                "generation",
+            ],
+            "retrieval_generation_latency_scope": [
+                "validation_probe",
+                "retrieval",
+                "reranker",
+                "generation",
+            ],
+            "retrieval_generation_latency_excludes": ["orchestration"],
+            "legacy_fallback_behavior": (
+                "When end_to_end_latency_ms is unavailable, Pipeline 2 uses "
+                "retrieval_generation_latency_ms as the primary latency fallback."
+            ),
+        },
         "fallback_summary": compute_fallback_summary(per_question),
         "reported_vs_recomputed_comparison": reported_metric_comparison,
         "metric_priority": _metric_priority_report(cfg),
@@ -2515,7 +2552,8 @@ def _eval_manifest(
             "reranker_candidate_count",
             "reranker_output_count",
             "generation_time_ms",
-            "total_latency_ms",
+            "end_to_end_latency_ms",
+            "retrieval_generation_latency_ms",
             "input_tokens",
             "output_tokens",
             "total_tokens",

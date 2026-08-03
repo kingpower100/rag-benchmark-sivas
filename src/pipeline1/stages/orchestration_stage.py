@@ -93,7 +93,7 @@ class OrchestrationStage(BaseStage):
             categories,
         )
         duration_ms = (time.perf_counter() - start) * 1000
-        orchestrated = query.model_copy(update=parsed)
+        orchestrated = query.model_copy(update={**parsed, "orchestration_latency_ms": duration_ms})
         self._write_event(
             stage="orchestration",
             event_type=EventType.GENERATION_END,

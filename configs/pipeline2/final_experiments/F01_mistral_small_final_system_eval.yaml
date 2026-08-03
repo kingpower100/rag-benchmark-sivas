@@ -1,0 +1,33 @@
+extends: "F00_final_system_eval.yaml"
+
+# ============================================================
+# F01 Pipeline 2 Evaluation Config
+# ============================================================
+# Evaluates the saved Pipeline 1 outputs of F01.
+# Never re-invokes Mistral-Small — reads results.jsonl only.
+#
+# Source run   : data/runs/pipeline1/F01/results.jsonl
+# Retriever    : elasticsearch_hybrid_rrf (global, no routing)
+# Orchestration: disabled
+# Reranker     : BAAI/bge-reranker-v2-m3 (enabled)
+# Generator    : ollama / mistral-small:latest
+#
+# All retrieval metrics, answer metrics, chunk-level evaluation,
+# cutoffs, gold annotations, and aggregation behavior are
+# inherited from F00_final_system_eval.yaml without modification.
+# Only the evaluation identity and source-validation contract
+# are overridden to point to F01 outputs.
+# ============================================================
+
+evaluation:
+  eval_run_id: "F01"
+
+inputs:
+  pipeline1_results_path: "data/runs/pipeline1/F01/results.jsonl"
+  rag_outputs:
+    - "data/runs/pipeline1/F01/results.jsonl"
+
+source_validation:
+  expected_experiment_id: "F01"
+  expected_generator_provider: "ollama"
+  expected_generator_model: "mistral-small:latest"
