@@ -1,0 +1,27 @@
+extends: "F01_mistral_small_final_system_eval.yaml"
+
+# ============================================================
+# F03 Pipeline 2 Evaluation Config
+# ============================================================
+# Evaluates the saved Pipeline 1 outputs of F03.
+# Never re-invokes Mistral-Small - reads results.jsonl only.
+#
+# F03 is the controlled no-reranker ablation of F01. All
+# evaluation metrics, cutoffs, gold annotations, aggregation, and
+# runtime behavior are inherited from F01. Only the evaluation
+# identity, source paths, and source-validation reranker contract
+# are changed to match F03 outputs.
+# ============================================================
+
+evaluation:
+  eval_run_id: "F03"
+
+inputs:
+  pipeline1_results_path: "data/runs/pipeline1/F03/results.jsonl"
+  rag_outputs:
+    - "data/runs/pipeline1/F03/results.jsonl"
+
+source_validation:
+  expected_experiment_id: "F03"
+  expected_reranker_enabled: false
+  require_reranker_diagnostics: false

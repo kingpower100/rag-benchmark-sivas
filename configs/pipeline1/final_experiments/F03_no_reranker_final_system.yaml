@@ -1,0 +1,41 @@
+extends: "F01_mistral_small_final_system.yaml"
+
+# ============================================================
+# F03 - Final System - No Reranker
+# ============================================================
+# Controlled reranker-only ablation against F01.
+#
+# Objective:
+#   Measure the effect of removing the BGE-M3 reranker from the
+#   final optimized RAG architecture.
+#
+# Role:
+#   Controlled reranker-only comparison against F01.
+#
+# Strict ablation rule:
+#   F03 must be identical to F01 except for:
+#     reranker.enabled: false
+#
+# Frozen components inherited unchanged from F01:
+#   Chunking              C02 sentence, 1024 tokens, 400 overlap
+#   Embedding             E03 Mistral API embeddings
+#   Backend               Elasticsearch
+#   Retrieval             Hybrid RRF
+#   Retrieval top_k       5
+#   Retrieval fetch_k     20
+#   Hybrid rrf_k          60
+#   Orchestration         Disabled
+#   Prompt                answer_generation_sivas_v1.txt
+#   Dataset               SIVAS fixed dataset
+#   Runtime               F01 runtime settings
+#   Generation            Ollama / mistral-small:latest
+#
+# Any additional resolved configuration difference from F01 is a
+# configuration error and is guarded by unit tests.
+# ============================================================
+
+experiment:
+  experiment_id: "F03"
+
+reranker:
+  enabled: false
