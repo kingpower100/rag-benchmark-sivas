@@ -1,0 +1,53 @@
+extends: "B04_global_b00_dense.yaml"
+
+# F04 - Global Hybrid Retrieval-Stack Ablation
+#
+# Controlled comparison against B04. It keeps B00/B04 chunking, Mistral Embed,
+# generator, generation prompt/settings, global retrieval scope, top_k=5,
+# disabled orchestration, disabled category routing, disabled validation, and
+# disabled reranking fixed.
+#
+# Intentional change relative to B04:
+#   pgvector global dense retrieval
+#   -> Elasticsearch global Hybrid RRF retrieval
+#
+# This changes the backend and retrieval method together. It does not isolate
+# Elasticsearch alone.
+
+experiment:
+  experiment_id: "F04"
+
+index:
+  type: "elasticsearch"
+  metric: "cosine"
+  dense_dim: 1024
+  index_name: "sivas_phase4_f04_dense_b00_chunks"
+  host: "http://localhost:9201"
+  similarity: "cosine"
+  retrieval_mode: "script_score"
+  num_candidates: 100
+  shards: 1
+  replicas: 0
+  refresh_after_index: true
+  recreate: false
+  request_timeout: 60
+  verify_certs: false
+  username: null
+  password: null
+  api_key: null
+  pgvector: null
+
+retrieval:
+  retriever_type: "elasticsearch_hybrid_rrf"
+  fetch_k: 20
+  hybrid:
+    rrf_k: 60
+    dense_fetch_k: 20
+    bm25_fetch_k: 20
+  bm25:
+    backend: "elasticsearch"
+    host: "http://localhost:9201"
+    index_name: "sivas_phase4_f04_bm25_b00_chunks"
+    analyzer: "german"
+    rebuild_index: false
+    allow_fallback: false

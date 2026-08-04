@@ -1,0 +1,22 @@
+extends: "../base_pipeline3.yaml"
+
+pipeline3:
+  run_id: "F04"
+
+inputs:
+  pipeline1_results_path: "data/runs/pipeline1/F04/results.jsonl"
+
+source_validation:
+  expected_experiment_id: "F04"
+  expected_retriever_type: "elasticsearch_hybrid_rrf"
+  expected_orchestration_enabled: false
+  expected_generator_provider: "ollama"
+  expected_generator_model: "mistral-small"
+  expected_top_k: 5
+  expected_fetch_k: 20
+  expected_reranker_enabled: false
+  expected_fallback_to_global: false
+  require_hybrid_diagnostics: true
+  require_reranker_diagnostics: false
+  require_routing_diagnostics: false
+  require_routing_reconciliation: false

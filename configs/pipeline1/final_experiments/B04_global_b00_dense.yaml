@@ -1,0 +1,34 @@
+extends: "B00_sivas_pgvector_reference.yaml"
+
+# B04 - Global B00 Dense Baseline
+#
+# Controlled ablation of B00. The chunking, Mistral Embed configuration,
+# pgvector backend class, generation model, generation prompt, generation
+# limits, top_k, reranker state, dataset, and runtime behavior are inherited
+# from B00.
+#
+# Intentional change:
+#   adaptive_category_aware_dense with orchestration and validation
+#   -> global dense retrieval with orchestration disabled
+#
+# Storage isolation:
+#   The chunk inventory is identical to B00, but pgvector stores rows by
+#   chunk_id. B04 therefore uses a distinct table/logical index so a remote
+#   B04 rebuild cannot truncate or overwrite the B00 table.
+
+experiment:
+  experiment_id: "B04"
+
+index:
+  index_name: "sivas_phase4_b04_global_b00_dense_pgvector"
+  pgvector:
+    table_name: "chunk_embeddings_b04"
+
+retrieval:
+  retriever_type: "dense"
+  fallback_to_global: false
+  category_routing_validation:
+    enabled: false
+
+orchestration:
+  enabled: false

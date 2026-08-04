@@ -1,40 +1,43 @@
 {
-  "package_name": "SIVAS chunk-level retrieval ground truth",
   "chunk_config_id": "B00_sivas_character2048_overlap0",
-  "chunking_strategy": "sivas_character",
-  "size_unit": "characters",
-  "max_chunk_chars": 2048,
-  "chunk_overlap": 0,
-  "mapping_policy": "any_overlap",
-  "chunks": 854,
-  "questions": 96,
-  "gold_evidence_spans": 799,
-  "mapped_evidence_spans": 799,
-  "unmapped_evidence_spans": 0,
-  "primary_runtime_file": "gold_chunk_annotations_B00_sivas_character2048_overlap0.jsonl",
-  "canonical_evidence_source": "chunk_level_annotation/annotations/gold_evidence_spans.jsonl",
-  "production_config_source": "RAG BENCHM ERP11/rag_benchmark/configs/pipeline1/final_experiments/B00_sivas_pgvector_reference.yaml",
-  "validation_status": "PASS",
+  "chunks": 863,
   "files": [
     {
       "filename": "gold_chunk_annotations_B00_sivas_character2048_overlap0.jsonl",
       "purpose": "Primary runtime ground-truth file for Pipeline 2 chunk-level retrieval evaluation.",
-      "sha256": "8678fa4650ad552f3978b2a5bf6a2e72f433a12af24929e9b35e4fcec4dd22aa"
+      "sha256": "aaeee18c151233fc75bda34b1bf6c7a09e5b9f61085f190ce8a2501c02b2e14a"
     },
     {
       "filename": "gold_span_chunk_mappings_B00_sivas_character2048_overlap0.jsonl",
       "purpose": "Traceability artifact linking canonical evidence spans to production chunks.",
-      "sha256": "2a57fb355619fd55e92c8c474c31bc856046bf1e7095fd5c16ccb28cad4a14ca"
+      "sha256": "3f5fe93fe794fd2f048e94d188a9113fc5b08678f29f725fac71abd24f95e6a2"
+    },
+    {
+      "filename": "gold_evidence_spans.jsonl",
+      "purpose": "Copied canonical evidence-span provenance used to derive chunk-level labels.",
+      "sha256": "377c7d0b82162499da351870f8f3a0a082151db67a08f6dac9b1addf53980196"
     },
     {
       "filename": "chunk_mapping_summary_B00_sivas_character2048_overlap0.json",
       "purpose": "Chunk configuration and mapping summary.",
-      "sha256": "27e53c9b2f5aac54a743f3adfc4ec2da500734d8157496fae1eb8f84e7c9738e"
+      "sha256": "a19f51029a17d96ec72383d581762e9be8760f284c07ab7230f73b832dade042"
     },
     {
       "filename": "final_annotation_validation.json",
       "purpose": "Final validation report for the derived chunk annotation dataset.",
-      "sha256": "0e9a123767d8fd06ac42ed5f167ddbc04ec095cfa9f946c42ade552f8cdbbe10"
+      "sha256": "baf4d591aa0448246c8c3e560b981cec57cc88e18da0fd64083db72542de53e0"
+    },
+    {
+      "filename": "final_annotation_manifest.json",
+      "purpose": "Integrity manifest for finalized derived artifacts.",
+      "sha256": "c3a669e7281dffea6307a2a1c09fae2fb9c639070ea1b296cc6b947fad04a4ca"
     }
-  ]
+  ],
+  "gold_evidence_spans": 799,
+  "mapped_evidence_spans": 799,
+  "mapping_policy": "any_overlap",
+  "package_name": "SIVAS chunk-level retrieval ground truth",
+  "primary_runtime_file": "gold_chunk_annotations_B00_sivas_character2048_overlap0.jsonl",
+  "questions": 96,
+  "unmapped_evidence_spans": 0
 }
